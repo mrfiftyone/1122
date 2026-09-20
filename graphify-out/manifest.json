@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "src/app/page.tsx": {
-    "mtime": 1789882355.8161275,
-    "seen": 1789882377.8352406,
-    "ast_hash": "62a4f3ccbe8df690cb29d8f611279c34",
+    "mtime": 1789883579.4434364,
+    "seen": 1789883599.0833054,
+    "ast_hash": "57d085d1299cdc58092bf6a88ab14bd7",
     "semantic_hash": ""
   },
   "src/app/profile/[username]/page.tsx": {
@@ -54,9 +54,9 @@
     "semantic_hash": ""
   },
   "src/utils/icons.tsx": {
-    "mtime": 1789881848.6915774,
-    "seen": 1789882377.8396764,
-    "ast_hash": "6b185357b2bb235c1fd1225674dcab7f",
+    "mtime": 1789883154.1319127,
+    "seen": 1789883599.0833054,
+    "ast_hash": "5ed8f8dd6215c84e990aabaea0239e44",
     "semantic_hash": ""
   },
   "src/utils/image.ts": {
@@ -153,6 +153,12 @@
     "mtime": 1789880107.8002136,
     "seen": 1789880143.7345908,
     "ast_hash": "f01b2d142d452f018a6bef6bb3c6bfa0",
+    "semantic_hash": ""
+  },
+  "src/utils/i18n.ts": {
+    "mtime": 1789883386.058577,
+    "seen": 1789883599.0833054,
+    "ast_hash": "b30002005be345def5473c4b7b426740",
     "semantic_hash": ""
   }
 }

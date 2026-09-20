@@ -10,7 +10,10 @@ import {
   IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch,
   IconArrowRight, IconHome, IconBell, IconHistory, IconBookmark,
   IconImage, IconLink, IconAward, IconVideo, IconMonitor, IconFlame,
+  IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
+  IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon,
 } from "@/utils/icons";
+import { Language, getT } from "@/utils/i18n";
 
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
@@ -22,6 +25,10 @@ interface Profile {
   avatarColor: string;
   avatarUrl?: string; // Custom uploaded PFP image (DataURL or URL)
   bio: string;
+  bannerUrl?: string; // Custom uploaded banner image
+  bannerPattern?: "none" | "stripes" | "dots" | "grid" | "gradient";
+  bannerColor?: string;
+  accentColor?: string;
 }
 interface Comment {
   id: string; author: string; text: string; created_at: string;
@@ -52,6 +59,33 @@ interface BookmarkItem {
   title: string;
   subtitle?: string;
   created_at: string;
+}
+
+interface SupportTicket {
+  id: string;
+  sender: string;
+  contact?: string;
+  category: "bug" | "teacher" | "content" | "account" | "other";
+  subject: string;
+  message: string;
+  status: "open" | "resolved";
+  created_at: string;
+}
+
+function getSupportTickets(): SupportTicket[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("iq_support_tickets_v1") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function setSupportTicketsStorage(tickets: SupportTicket[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("iq_support_tickets_v1", JSON.stringify(tickets));
+  } catch {}
 }
 
 interface NotificationItem {
@@ -239,13 +273,30 @@ export default function Home() {
   const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
   const [showHonorBoard, setShowHonorBoard] = useState(false);
 
+  // Settings, Theme & Language
+  const [siteTheme, setSiteTheme] = useState<"light" | "dark" | "pink" | "plants" | "purple">("light");
+  const [siteLang, setSiteLang] = useState<Language>("ar");
+  const [settingsModal, setSettingsModal] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"theme" | "lang" | "faq" | "support">("theme");
+  const [faqExpanded, setFaqExpanded] = useState<number | null>(null);
 
+  // Support Form State
+  const [supportCategory, setSupportCategory] = useState<"bug" | "teacher" | "content" | "account" | "other">("bug");
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [supportContact, setSupportContact] = useState("");
+  const [supportSuccess, setSupportSuccess] = useState(false);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
 
   // Profile Edit
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [editBio, setEditBio] = useState("");
   const [editColor, setEditColor] = useState("#0d9488");
   const [editPfpUrl, setEditPfpUrl] = useState("");
+  const [editBannerUrl, setEditBannerUrl] = useState("");
+  const [editBannerPattern, setEditBannerPattern] = useState<"none" | "stripes" | "dots" | "grid" | "gradient">("none");
+  const [editBannerColor, setEditBannerColor] = useState("#0d9488");
+  const [editAccentColor, setEditAccentColor] = useState("#0d9488");
 
 
   // Turnstile & Lockout State
@@ -349,9 +400,14 @@ export default function Home() {
     setSession(currUser);
     setPostsList(getPosts());
     setTeachersList(getTeachers());
-    setProfilesMap(getProfiles());
     setAllNotifications(getNotifications());
     setReportRecordsList(getReportRecords());
+    setSupportTickets(getSupportTickets());
+
+    const savedTheme = (localStorage.getItem("iq_site_theme") as any) || "light";
+    const savedLang = (localStorage.getItem("iq_site_lang") as any) || "ar";
+    setSiteTheme(savedTheme);
+    setSiteLang(savedLang);
 
     // Fetch live data immediately
     fetchSupabaseData();
@@ -1278,7 +1334,15 @@ export default function Home() {
   function saveProfile() {
     if (!session) return;
     const p = getProfiles();
-    p[session.username] = { avatarColor: editColor, bio: editBio, avatarUrl: editPfpUrl };
+    p[session.username] = {
+      avatarColor: editColor,
+      bio: editBio,
+      avatarUrl: editPfpUrl,
+      bannerUrl: editBannerUrl,
+      bannerPattern: editBannerPattern,
+      bannerColor: editBannerColor,
+      accentColor: editAccentColor,
+    };
     setProfiles(p);
     setProfilesMap(p);
     setProfileModal(false); rerender();
@@ -1287,9 +1351,13 @@ export default function Home() {
   function openProfileEditor() {
     if (!session) return;
     const p = getProfile(session.username);
-    setEditBio(p.bio);
-    setEditColor(p.avatarColor);
+    setEditBio(p.bio || "");
+    setEditColor(p.avatarColor || "#0d9488");
     setEditPfpUrl(p.avatarUrl || "");
+    setEditBannerUrl(p.bannerUrl || "");
+    setEditBannerPattern(p.bannerPattern || "none");
+    setEditBannerColor(p.bannerColor || "#0d9488");
+    setEditAccentColor(p.accentColor || "#0d9488");
     setProfileModal(true);
   }
 
@@ -1303,6 +1371,116 @@ export default function Home() {
     };
     reader.readAsDataURL(file);
   }
+
+  function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const result = uploadEvent.target?.result as string;
+      if (result) setEditBannerUrl(result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ─── Support Inquiries Handlers ──────────────────────────────────
+  function submitSupportTicket() {
+    if (!supportSubject.trim() || !supportMessage.trim()) {
+      alert(siteLang === "en" ? "Please fill in the subject and message." : "يرجى كتابة عنوان ورسالة الاستفسار.");
+      return;
+    }
+    const newTicket: SupportTicket = {
+      id: "ticket_" + Date.now(),
+      sender: session ? session.username : (supportContact.trim() || (siteLang === "en" ? "Guest Student" : "طالب زائر")),
+      contact: supportContact.trim(),
+      category: supportCategory,
+      subject: supportSubject.trim(),
+      message: supportMessage.trim(),
+      status: "open",
+      created_at: new Date().toISOString(),
+    };
+
+    const existing = getSupportTickets();
+    const updated = [newTicket, ...existing];
+    setSupportTicketsStorage(updated);
+    setSupportTickets(updated);
+
+    setSupportSubject("");
+    setSupportMessage("");
+    setSupportContact("");
+    setSupportSuccess(true);
+    setTimeout(() => setSupportSuccess(false), 5000);
+  }
+
+  function resolveSupportTicket(id: string) {
+    const existing = getSupportTickets();
+    const updated = existing.map(t => t.id === id ? { ...t, status: (t.status === "open" ? "resolved" : "open") as any } : t);
+    setSupportTicketsStorage(updated);
+    setSupportTickets(updated);
+    rerender();
+  }
+
+  function deleteSupportTicket(id: string) {
+    if (!confirm(siteLang === "en" ? "Delete this support ticket?" : "هل أنت متأكد من حذف تذكرة الدعم هذه؟")) return;
+    const existing = getSupportTickets();
+    const updated = existing.filter(t => t.id !== id);
+    setSupportTicketsStorage(updated);
+    setSupportTickets(updated);
+    rerender();
+  }
+
+  const faqList = [
+    {
+      q: {
+        ar: "كيف يتم احتساب نسبة قبول المدرس وتقييماته؟",
+        en: "How are teacher approval percentages and ratings calculated?",
+      },
+      a: {
+        ar: "يتم احتساب نسبة القبول من خلال قياس نسبة الطلاب الذين اختاروا (أعجبني) مقارنة بإجمالي عدد المصوتين مع استبعاد التكرارات العشوائية. كما تظهر مراجعات الطلاب التفصيلية لتوضح مميزات وطريقة تدريس كل أستاذ بحيادية تامة.",
+        en: "The approval percentage is calculated by dividing positive votes (thumbs up) by total votes. Detailed written reviews provide students with honest insight into teaching methods.",
+      },
+    },
+    {
+      q: {
+        ar: "كيف أقوم باقتراح مدرس جديد لإضافته إلى المنصة؟",
+        en: "How do I propose a new teacher to be added?",
+      },
+      a: {
+        ar: "اضغط على زر (إضافة مدرس) في قسم المدرسين، ثم املأ اسم المدرس، محافظته، المادة الدراسية، المراحل، وطريقة تدريسه (حضوري أو إلكتروني أو كلاهما)، ثم ارفع ملف صورة المدرس. ينتقل الطلب مباشرة إلى قائمة الانتظار للمراجعة من قبل المشرفين.",
+        en: "Click 'Add Teacher' in the directory tab, fill in the teacher's name, governorate, subject, grades, and teaching mode (in-person, online, or both), and upload an image file. The request is submitted to the admin waiting list for verification.",
+      },
+    },
+    {
+      q: {
+        ar: "ما هي شروط كتابة مراجعة وتقييم للمدرس؟",
+        en: "What are the rules for writing a review on a teacher?",
+      },
+      a: {
+        ar: "يشترط أولاً تسجيل الدخول واختيار (أعجبني أو لم يعجبني) كشرط إلزامي قبل كتابة التقييم. يجب أن تكون المراجعة موضوعية ومحترمة وخالية من أي ألفاظ مسيئة أو تجريح شخصي وفق معايير مجتمع طلاب العراق.",
+        en: "You must be logged in and explicitly select your recommendation verdict (Recommend / Dislike). Reviews must remain respectful, objective, and constructive without personal insults.",
+      },
+    },
+    {
+      q: {
+        ar: "كيف تعمل لوحة شرف الطلاب وما هي معايير الترتيب؟",
+        en: "How does the Student Honor Board work and how are ranks decided?",
+      },
+      a: {
+        ar: "تُكرّم لوحة الشرف أفضل ١٠ طلاب في المنصة اعتماداً على مجموع الإعجابات التي حصلوا عليها على منشوراتهم ومراجعاتهم وردودهم المفيدة ومساهماتهم الفعالة في مساعدة زملائهم الطلاب في عموم العراق.",
+        en: "The Honor Board recognizes the top 10 most helpful students based on total positive feedback, likes received on study advice, and verified teacher reviews.",
+      },
+    },
+    {
+      q: {
+        ar: "كيف أتحكم في مظهر وثيم ولغة الموقع؟",
+        en: "How do I change the website theme and language?",
+      },
+      a: {
+        ar: "يمكنك في أي وقت الضغط على زر (الإعدادات) في الشريط العلوي للاختيار بين 5 ثيمات متنوعة (الكلاسيكي، الوضع الليلي، النمر الوردي، الطبيعة الخضراء، والأرجواني التقني)، بالإضافة للتبديل الفوري بين العربية والإنجليزية.",
+        en: "Click on the Settings button in the top navigation at any time to switch between 5 visual Neo-brutalist themes or toggle between Arabic and English with full directional layout support.",
+      },
+    },
+  ];
 
   // ─── Grade onboarding ─────────────────────────────────────────────
   function completeGrades() { localStorage.setItem("gradesDone", JSON.stringify(selectedGrades)); setGradeModal(false); }
@@ -1576,8 +1754,10 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════════
+  const t = getT(siteLang);
+
   return (
-    <div className="min-h-screen bg-page-bg text-slate-900 selection:bg-teal-500 selection:text-white pb-20 md:pb-0">
+    <div data-theme={siteTheme} dir={siteLang === "ar" ? "rtl" : "ltr"} className="min-h-screen bg-page-bg text-slate-900 selection:bg-teal-500 selection:text-white pb-20 md:pb-0">
 
       {/* ═══════ TOP NAV (DESKTOP) ═══════ */}
       <header className="sticky top-0 z-50 bg-white border-b-2 border-border-subtle shadow-sm">
@@ -1587,25 +1767,25 @@ export default function Home() {
               <IconBook size={20} />
             </div>
             <div>
-              <h1 className="font-black text-base tracking-tight text-slate-900">منصة طلاب العراق</h1>
-              <p className="text-[11px] text-slate-600 font-semibold">مراجعات وتقييمات المدرسين</p>
+              <h1 className="font-black text-base tracking-tight text-slate-900">{t("appName")}</h1>
+              <p className="text-[11px] text-slate-600 font-semibold">{t("appTagline")}</p>
             </div>
           </div>
 
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-2">
             <button onClick={() => setTab("feed")}
-              className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "feed" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-              <IconHome size={14} /> الرئيسية
+              className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "feed" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+              <IconHome size={14} /> {t("navHome")}
             </button>
             <button onClick={() => setTab("directory")}
-              className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "directory" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-              <IconBook size={14} /> المدرسين
+              className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "directory" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+              <IconBook size={14} /> {t("navTeachers")}
             </button>
             {session && (
               <button onClick={() => setTab("notifications")}
-                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 relative ${tab === "notifications" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-                <IconBell size={14} /> الإشعارات
+                className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 relative ${tab === "notifications" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+                <IconBell size={14} /> {t("navNotifications")}
                 {unreadCount > 0 && (
                   <span className="bg-red-600 text-white font-black text-[9px] px-1.5 py-0.2 rounded-full border border-slate-900">
                     {unreadCount}
@@ -1615,35 +1795,58 @@ export default function Home() {
             )}
             {session && (
               <button onClick={() => { setViewedUser(session.username); setTab("profile"); }}
-                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "profile" && targetProfileUser === session.username ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-                <IconUser size={14} /> حسابي
+                className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "profile" && targetProfileUser === session.username ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+                <IconUser size={14} /> {t("navProfile")}
               </button>
             )}
             {canAdmin && (
               <button onClick={() => setTab("admin")}
-                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1 ${tab === "admin" ? "border-slate-900 bg-red-600 text-white shadow-[2px_2px_0px_#7f1d1d]" : "border-red-600 bg-red-50 text-red-700"}`}>
-                لوحة الإدارة <IconBolt size={12} />
+                className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1 ${tab === "admin" ? "border-slate-900 bg-red-600 text-white shadow-[2px_2px_0px_#7f1d1d]" : "border-red-600 bg-red-50 text-red-700"}`}>
+                {t("navAdmin")} <IconBolt size={12} />
               </button>
             )}
           </nav>
 
-          {/* User Auth Profile Widget */}
+          {/* User Auth & Settings / Language Widget */}
           <div className="flex items-center gap-2">
+            {/* Language Quick Toggle */}
+            <button
+              onClick={() => {
+                const nextLang = siteLang === "ar" ? "en" : "ar";
+                setSiteLang(nextLang);
+                localStorage.setItem("iq_site_lang", nextLang);
+              }}
+              className="px-2.5 py-1.5 text-xs font-black border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000] flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all"
+              title={siteLang === "ar" ? "Switch to English" : "التبديل إلى العربية"}
+            >
+              <IconGlobe size={13} />
+              <span>{siteLang === "ar" ? "EN" : "عربي"}</span>
+            </button>
+
+            {/* Settings Button */}
+            <button
+              onClick={() => setSettingsModal(true)}
+              className="p-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000] flex items-center justify-center text-slate-900 active:translate-x-px active:translate-y-px transition-all"
+              title={t("navSettings")}
+            >
+              <IconSettings size={16} />
+            </button>
+
             {!session ? (
               <>
                 <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); setTurnstileToken(null); }}
-                  className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000]">دخول</button>
+                  className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000]">{t("login")}</button>
                 <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); setTurnstileToken(null); }}
-                  className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]">حساب جديد</button>
+                  className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]">{t("register")}</button>
               </>
             ) : (
-              <div className="flex items-center gap-2 bg-white border-2 border-slate-900 px-3 py-1 shadow-[2px_2px_0px_#000]">
+              <div className="flex items-center gap-2 bg-white border-2 border-slate-900 px-2.5 py-1 shadow-[2px_2px_0px_#000]">
                 <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="hover:opacity-70"><Avatar username={session.username} /></button>
                 <div className="text-right">
                   <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="text-xs font-black hover:underline block">{session.username}</button>
                   <div className="text-[9px]"><RoleIcon role={session.role} /></div>
                 </div>
-                <button onClick={logout} title="تسجيل الخروج" className="text-red-600 mr-1 p-1 hover:bg-red-50 rounded"><IconX size={14} /></button>
+                <button onClick={logout} title={t("logout")} className="text-red-600 mr-1 p-1 hover:bg-red-50 rounded"><IconX size={14} /></button>
               </div>
             )}
           </div>
@@ -2795,24 +2998,80 @@ export default function Home() {
                 <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 space-y-5">
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
                     <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-                      <IconUser size={18} /> {isOwnProfile ? "ملفي الشخصي" : `الملف الشخصي للطالب: ${targetProfileUser}`}
+                      <IconUser size={18} /> {isOwnProfile ? t("myProfile") : `${t("studentProfile")} ${targetProfileUser}`}
                     </h2>
                     {isOwnProfile ? (
                       <button
                         onClick={logout}
                         className="px-4 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 transition-all"
                       >
-                        <IconX size={14} /> تسجيل الخروج
+                        <IconX size={14} /> {t("logout")}
                       </button>
                     ) : session ? (
                       <button
                         onClick={() => setViewedUser(session.username)}
                         className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border-2 border-slate-900 flex items-center gap-1"
                       >
-                        ← العودة إلى ملفي الشخصي
+                        {siteLang === "ar" ? "← العودة إلى ملفي الشخصي" : "← Back to My Profile"}
                       </button>
                     ) : null}
                   </div>
+
+                  {/* Profile Banner */}
+                  {(() => {
+                    const prof = getProfile(targetProfileUser);
+                    const bColor = prof.bannerColor || "#0d9488";
+                    const bPattern = prof.bannerPattern || "none";
+                    let bStyle: React.CSSProperties = { backgroundColor: bColor };
+
+                    if (prof.bannerUrl) {
+                      bStyle = {
+                        backgroundImage: `url(${prof.bannerUrl})`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      };
+                    } else if (bPattern === "stripes") {
+                      bStyle = {
+                        backgroundColor: bColor,
+                        backgroundImage: `repeating-linear-gradient(45deg, rgba(0,0,0,0.15) 0, rgba(0,0,0,0.15) 12px, transparent 12px, transparent 24px)`,
+                      };
+                    } else if (bPattern === "dots") {
+                      bStyle = {
+                        backgroundColor: bColor,
+                        backgroundImage: `radial-gradient(rgba(0,0,0,0.2) 2px, transparent 2px)`,
+                        backgroundSize: "16px 16px",
+                      };
+                    } else if (bPattern === "grid") {
+                      bStyle = {
+                        backgroundColor: bColor,
+                        backgroundImage: `linear-gradient(to right, rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.15) 1px, transparent 1px)`,
+                        backgroundSize: "20px 20px",
+                      };
+                    } else if (bPattern === "gradient") {
+                      bStyle = {
+                        background: `linear-gradient(135deg, ${bColor} 0%, #0f172a 100%)`,
+                      };
+                    }
+
+                    return (
+                      <div
+                        className="w-full h-28 sm:h-40 border-2 border-slate-900 shadow-[3px_3px_0px_#000] relative overflow-hidden flex items-end justify-between p-3"
+                        style={bStyle}
+                      >
+                        <div className="bg-white/90 backdrop-blur-xs border border-slate-900 px-2.5 py-1 text-[11px] font-black text-slate-900 shadow-[1px_1px_0px_#000]">
+                          @{targetProfileUser}
+                        </div>
+                        {isOwnProfile && (
+                          <button
+                            onClick={openProfileEditor}
+                            className="bg-white hover:bg-slate-100 text-slate-900 border-2 border-slate-900 px-3 py-1 text-xs font-black shadow-[2px_2px_0px_#000] flex items-center gap-1.5 active:translate-x-px active:translate-y-px transition-all"
+                          >
+                            <IconPalette size={13} /> {t("customizeProfile")}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Profile Info Row */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -2846,7 +3105,7 @@ export default function Home() {
                           onClick={openProfileEditor}
                           className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
                         >
-                          <IconCamera size={14} /> تعديل الحساب والصورة
+                          <IconPalette size={14} /> {t("editProfile")}
                         </button>
 
                         {/* History Button (Only for user or owner) */}
@@ -2865,27 +3124,27 @@ export default function Home() {
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 border-t-2 border-slate-100 pt-4 text-center">
                     <div className="bg-slate-50 border border-slate-200 p-2.5">
                       <div className="text-lg font-black text-slate-900">{userRegularPosts.length}</div>
-                      <div className="text-[10px] font-bold text-slate-500">المنشورات</div>
+                      <div className="text-[10px] font-bold text-slate-500">{t("posts")}</div>
                     </div>
                     <div className="bg-amber-50 border border-amber-200 p-2.5">
                       <div className="text-lg font-black text-amber-900">{userTeacherReviews.length}</div>
-                      <div className="text-[10px] font-bold text-amber-700">تقييمات المدرسين</div>
+                      <div className="text-[10px] font-bold text-amber-700">{t("teacherReviews")}</div>
                     </div>
                     <div className="bg-slate-50 border border-slate-200 p-2.5">
                       <div className="text-lg font-black text-slate-900">{userComments.length}</div>
-                      <div className="text-[10px] font-bold text-slate-500">التعليقات</div>
+                      <div className="text-[10px] font-bold text-slate-500">{t("comments")}</div>
                     </div>
                     <div className="bg-emerald-50 border border-emerald-200 p-2.5">
                       <div className="text-lg font-black text-emerald-800 flex items-center justify-center gap-1">
                         <IconThumbUp size={15} /> {totalLikesReceived}
                       </div>
-                      <div className="text-[10px] font-bold text-emerald-700">إعجابات مستلمة</div>
+                      <div className="text-[10px] font-bold text-emerald-700">{t("likesReceived")}</div>
                     </div>
                     <div className="bg-red-50 border border-red-200 p-2.5">
                       <div className="text-lg font-black text-red-700 flex items-center justify-center gap-1">
                         <IconThumbDown size={15} /> {totalDislikesReceived}
                       </div>
-                      <div className="text-[10px] font-bold text-red-600">عدم إعجاب</div>
+                      <div className="text-[10px] font-bold text-red-600">{t("dislikesReceived")}</div>
                     </div>
                   </div>
                 </div>
@@ -2901,7 +3160,7 @@ export default function Home() {
                     }`}
                   >
                     <IconPen size={13} />
-                    <span>{isOwnProfile ? "نشاطاتي ومشاركاتي" : "مشاركات الطالب"}</span>
+                    <span>{isOwnProfile ? t("tabActivities") : (siteLang === "ar" ? "مشاركات الطالب" : "Student Posts")}</span>
                   </button>
                   {isOwnProfile && (
                     <button
@@ -2913,7 +3172,7 @@ export default function Home() {
                       }`}
                     >
                       <IconBookmark size={13} />
-                      <span>المحفوظات ({userBookmarks.length})</span>
+                      <span>{t("tabBookmarks")} ({userBookmarks.length})</span>
                     </button>
                   )}
                 </div>
@@ -3467,6 +3726,65 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            {/* Support Inquiries Management */}
+            <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
+              <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
+                <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
+                  <IconLifeBuoy size={16} className="text-blue-600" />
+                  <span>تذاكر الدعم الفني واستفسارات الطلاب</span>
+                </h3>
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-900 font-bold text-xs border border-slate-900">
+                  {supportTickets.length} تذكرة
+                </span>
+              </div>
+
+              {supportTickets.length === 0 ? (
+                <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
+                  لا توجد تذاكر دعم فني واردة حالياً.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {supportTickets.map(ticket => (
+                    <div key={ticket.id} className="p-3 border-2 border-slate-900 bg-slate-50 space-y-2 shadow-[2px_2px_0px_#000]">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-xs text-slate-900">{ticket.subject}</span>
+                            <span className={`px-2 py-0.5 text-[9px] font-black border border-slate-900 ${ticket.status === "resolved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                              {ticket.status === "resolved" ? "تمت المعالجة" : "قيد المتابعة"}
+                            </span>
+                            <span className="px-2 py-0.5 text-[9px] font-bold bg-slate-200 text-slate-700 border border-slate-400">
+                              {ticket.category}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-semibold mt-1">
+                            المرسل: <strong className="text-slate-800">{ticket.sender}</strong> {ticket.contact && `• للتواصل: ${ticket.contact}`} • {new Date(ticket.created_at).toLocaleDateString("ar-IQ")}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 self-end sm:self-start">
+                          <button
+                            onClick={() => resolveSupportTicket(ticket.id)}
+                            className={`px-2.5 py-1 text-xs font-bold border border-slate-900 transition-all ${ticket.status === "resolved" ? "bg-slate-200 text-slate-700" : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-[1px_1px_0px_#000]"}`}
+                          >
+                            {ticket.status === "resolved" ? "إعادة الفتح" : "معالجة التذكرة"}
+                          </button>
+                          <button
+                            onClick={() => deleteSupportTicket(ticket.id)}
+                            className="px-2 py-1 text-xs font-bold border border-red-600 bg-red-100 text-red-700 hover:bg-red-200"
+                          >
+                            حذف
+                          </button>
+                        </div>
+                      </div>
+                      <div className="bg-white p-2.5 border border-slate-300 text-xs text-slate-700 font-medium whitespace-pre-wrap">
+                        {ticket.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -3475,13 +3793,13 @@ export default function Home() {
       {/* ═══════ MOBILE BOTTOM NAVIGATION BAR ═══════ */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-border-subtle z-50 flex justify-around py-2 shadow-lg">
         <button onClick={() => setTab("feed")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "feed" ? "text-emerald-primary" : "text-slate-400"}`}>
-          <IconHome size={20} />الرئيسية
+          <IconHome size={20} />{t("navHome")}
         </button>
         <button onClick={() => setTab("directory")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "directory" ? "text-emerald-primary" : "text-slate-400"}`}>
-          <IconBook size={20} />المدرسين
+          <IconBook size={20} />{t("navTeachers")}
         </button>
         <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("notifications"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 relative ${tab === "notifications" ? "text-emerald-primary" : "text-slate-400"}`}>
-          <IconBell size={20} />الإشعارات
+          <IconBell size={20} />{t("navNotifications")}
           {unreadCount > 0 && (
             <span className="absolute top-0.5 right-2 bg-red-600 text-white font-black text-[8px] px-1 rounded-full border border-slate-900">
               {unreadCount}
@@ -3489,11 +3807,14 @@ export default function Home() {
           )}
         </button>
         <button onClick={() => { if (!session) { setAuthModal(true); return; } setViewedUser(session.username); setTab("profile"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "profile" && targetProfileUser === session?.username ? "text-emerald-primary" : "text-slate-400"}`}>
-          <IconUser size={20} />حسابي
+          <IconUser size={20} />{t("navProfile")}
+        </button>
+        <button onClick={() => setSettingsModal(true)} className="flex flex-col items-center text-[10px] font-bold py-1 px-2 text-slate-400 hover:text-emerald-primary">
+          <IconSettings size={20} />{t("navSettings")}
         </button>
         {canAdmin && (
           <button onClick={() => setTab("admin")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "admin" ? "text-red-600" : "text-slate-400"}`}>
-            <IconShield size={20} />الإدارة
+            <IconShield size={20} />{t("navAdmin")}
           </button>
         )}
 
@@ -3511,7 +3832,7 @@ export default function Home() {
             
             {!isRegister && lockoutRemaining > 0 && (
               <div className="p-2.5 bg-amber-100 border-2 border-amber-600 text-amber-900 text-xs font-bold text-center">
-                ⏳ تم قفل تسجيل الدخول مؤقتاً! يرجى الانتظار: <span className="font-black text-sm">{lockoutRemaining} ثانية</span>
+                تم قفل تسجيل الدخول مؤقتاً! يرجى الانتظار: <span className="font-black text-sm">{lockoutRemaining} ثانية</span>
               </div>
             )}
 
@@ -4111,6 +4432,116 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Profile Banner & Custom Styling */}
+              <div className="bg-slate-50 border-2 border-slate-900 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-slate-800">
+                    {t("customizeProfile")}
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 border border-emerald-500">
+                    Neo-Brutalist Banner
+                  </span>
+                </div>
+
+                {/* Real-time Banner Preview */}
+                <div
+                  className="w-full h-20 border-2 border-slate-900 relative overflow-hidden flex items-end justify-between p-2 shadow-[2px_2px_0px_#000]"
+                  style={
+                    editBannerUrl
+                      ? { backgroundImage: `url(${editBannerUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+                      : editBannerPattern === "stripes"
+                      ? { backgroundColor: editBannerColor, backgroundImage: `repeating-linear-gradient(45deg, rgba(0,0,0,0.15) 0, rgba(0,0,0,0.15) 10px, transparent 10px, transparent 20px)` }
+                      : editBannerPattern === "dots"
+                      ? { backgroundColor: editBannerColor, backgroundImage: `radial-gradient(rgba(0,0,0,0.2) 2px, transparent 2px)`, backgroundSize: "14px 14px" }
+                      : editBannerPattern === "grid"
+                      ? { backgroundColor: editBannerColor, backgroundImage: `linear-gradient(to right, rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.15) 1px, transparent 1px)`, backgroundSize: "16px 16px" }
+                      : editBannerPattern === "gradient"
+                      ? { background: `linear-gradient(135deg, ${editBannerColor} 0%, #0f172a 100%)` }
+                      : { backgroundColor: editBannerColor }
+                  }
+                >
+                  <span className="text-[10px] font-black bg-white/90 px-1.5 py-0.5 border border-slate-900">
+                    {siteLang === "ar" ? "معاينة البانر" : "Banner Preview"}
+                  </span>
+                </div>
+
+                {/* Pattern Selector */}
+                <div>
+                  <label className="block font-bold text-slate-700 text-[11px] mb-1.5">
+                    {t("bannerPattern")}
+                  </label>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                    {[
+                      { id: "none", label: t("patternNone") },
+                      { id: "stripes", label: t("patternStripes") },
+                      { id: "dots", label: t("patternDots") },
+                      { id: "grid", label: t("patternGrid") },
+                      { id: "gradient", label: t("patternGradient") },
+                    ].map(p => (
+                      <button
+                        type="button"
+                        key={p.id}
+                        onClick={() => { setEditBannerPattern(p.id as any); setEditBannerUrl(""); }}
+                        className={`py-1.5 px-1 text-[10px] font-bold border-2 transition-all ${
+                          editBannerPattern === p.id && !editBannerUrl
+                            ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]"
+                            : "border-slate-300 bg-white text-slate-700 hover:border-slate-800"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Banner Background Color presets */}
+                <div>
+                  <label className="block font-bold text-slate-700 text-[11px] mb-1.5">
+                    {t("bannerColor")}
+                  </label>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {["#0d9488", "#0284c7", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#16a34a", "#1e293b"].map(col => (
+                      <button
+                        type="button"
+                        key={col}
+                        onClick={() => setEditBannerColor(col)}
+                        className={`w-7 h-7 border-2 transition-all ${editBannerColor === col ? "border-slate-950 scale-110 shadow-[2px_2px_0px_#000]" : "border-slate-300"}`}
+                        style={{ backgroundColor: col }}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={editBannerColor}
+                      onChange={e => setEditBannerColor(e.target.value)}
+                      className="w-7 h-7 border-2 border-slate-900 cursor-pointer p-0 bg-transparent"
+                      title={siteLang === "ar" ? "اختر لوناً مخصصاً" : "Pick custom color"}
+                    />
+                  </div>
+                </div>
+
+                {/* Banner Upload */}
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700 text-[11px]">
+                    {t("uploadBanner")}
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBannerUpload}
+                    className="block w-full text-xs text-slate-500 file:mr-0 file:py-1 file:px-2.5 file:border-2 file:border-slate-900 file:text-xs file:font-black file:bg-slate-900 file:text-white hover:file:bg-slate-800 cursor-pointer"
+                  />
+                  {editBannerUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setEditBannerUrl("")}
+                      className="text-[10px] text-red-600 font-bold hover:underline block pt-1"
+                    >
+                      {t("removeBanner")}
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Bio */}
               <div>
                 <label className="block font-bold mb-1">النبذة التعريفية (Bio):</label>
@@ -4128,7 +4559,7 @@ export default function Home() {
                 onClick={saveProfile}
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
               >
-                حفظ التغييرات
+                {t("saveChanges")}
               </button>
             </div>
           </div>
@@ -4233,6 +4664,443 @@ export default function Home() {
               alt="معاينة الصورة بالحجم الكامل"
               className="max-h-[80vh] w-auto object-contain border border-slate-200"
             />
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ SETTINGS & THEMES & FAQ & SUPPORT MODAL ═══════ */}
+      {settingsModal && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white border-2 border-slate-900 shadow-[8px_8px_0px_#000] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 border-b-2 border-slate-900 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-slate-900 text-white flex items-center justify-center border border-slate-900 shadow-[1px_1px_0px_#000]">
+                  <IconSettings size={18} />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-slate-900">{t("settingsTitle")}</h3>
+                  <p className="text-[10px] text-slate-500 font-semibold">{t("settingsSub")}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSettingsModal(false)}
+                className="w-7 h-7 border-2 border-slate-900 bg-white hover:bg-slate-100 flex items-center justify-center font-black text-slate-900 shadow-[1px_1px_0px_#000]"
+                title={t("close")}
+              >
+                <IconX size={14} />
+              </button>
+            </div>
+
+            {/* Modal Navigation Tabs */}
+            <div className="flex items-center border-b-2 border-slate-900 bg-slate-100 p-1 gap-1 overflow-x-auto">
+              <button
+                onClick={() => setSettingsTab("theme")}
+                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all shrink-0 ${
+                  settingsTab === "theme"
+                    ? "border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0px_#000]"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <IconPalette size={14} />
+                <span>{t("tabTheme")}</span>
+              </button>
+              <button
+                onClick={() => setSettingsTab("lang")}
+                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all shrink-0 ${
+                  settingsTab === "lang"
+                    ? "border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0px_#000]"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <IconGlobe size={14} />
+                <span>{t("tabLang")}</span>
+              </button>
+              <button
+                onClick={() => setSettingsTab("faq")}
+                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all shrink-0 ${
+                  settingsTab === "faq"
+                    ? "border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0px_#000]"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <IconHelpCircle size={14} />
+                <span>{t("tabFaq")}</span>
+              </button>
+              <button
+                onClick={() => setSettingsTab("support")}
+                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all shrink-0 ${
+                  settingsTab === "support"
+                    ? "border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0px_#000]"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <IconLifeBuoy size={14} />
+                <span>{t("tabSupport")}</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+              {/* TAB 1: THEMES */}
+              {settingsTab === "theme" && (
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-slate-700">{t("themeSection")}</p>
+                  
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {/* 1. Classic Light Mode */}
+                    <div
+                      onClick={() => {
+                        setSiteTheme("light");
+                        localStorage.setItem("iq_site_theme", "light");
+                      }}
+                      className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
+                        siteTheme === "light"
+                          ? "border-slate-900 bg-emerald-50 shadow-[3px_3px_0px_#000]"
+                          : "border-slate-300 bg-white hover:border-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 border-2 border-slate-900 bg-emerald-600 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                          <IconSun size={20} />
+                        </div>
+                        <div>
+                          <div className="font-black text-xs sm:text-sm text-slate-900 flex items-center gap-2">
+                            <span>{t("themeLight")}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-400">
+                              الافتراضي
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-semibold">{t("themeLightDesc")}</p>
+                        </div>
+                      </div>
+                      {siteTheme === "light" && (
+                        <div className="w-6 h-6 bg-slate-900 text-white flex items-center justify-center border border-slate-900">
+                          <IconCheck size={14} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. Dark Mode */}
+                    <div
+                      onClick={() => {
+                        setSiteTheme("dark");
+                        localStorage.setItem("iq_site_theme", "dark");
+                      }}
+                      className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
+                        siteTheme === "dark"
+                          ? "border-slate-900 bg-slate-900 text-white shadow-[3px_3px_0px_#000]"
+                          : "border-slate-300 bg-white hover:border-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 border-2 border-white bg-slate-800 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                          <IconMoon size={20} />
+                        </div>
+                        <div>
+                          <div className={`font-black text-xs sm:text-sm ${siteTheme === "dark" ? "text-white" : "text-slate-900"}`}>
+                            {t("themeDark")}
+                          </div>
+                          <p className={`text-[11px] font-semibold ${siteTheme === "dark" ? "text-slate-300" : "text-slate-500"}`}>
+                            {t("themeDarkDesc")}
+                          </p>
+                        </div>
+                      </div>
+                      {siteTheme === "dark" && (
+                        <div className="w-6 h-6 bg-white text-slate-900 flex items-center justify-center border border-white">
+                          <IconCheck size={14} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 3. Pink Panther Mode */}
+                    <div
+                      onClick={() => {
+                        setSiteTheme("pink");
+                        localStorage.setItem("iq_site_theme", "pink");
+                      }}
+                      className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
+                        siteTheme === "pink"
+                          ? "border-pink-900 bg-pink-50 shadow-[3px_3px_0px_#db2777]"
+                          : "border-slate-300 bg-white hover:border-pink-500"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 border-2 border-slate-900 bg-pink-500 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                          <IconPalette size={20} />
+                        </div>
+                        <div>
+                          <div className="font-black text-xs sm:text-sm text-pink-900 flex items-center gap-2">
+                            <span>{t("themePink")}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-pink-200 text-pink-900 border border-pink-400">
+                              Cute Pink
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-pink-700 font-semibold">{t("themePinkDesc")}</p>
+                        </div>
+                      </div>
+                      {siteTheme === "pink" && (
+                        <div className="w-6 h-6 bg-pink-600 text-white flex items-center justify-center border border-pink-900">
+                          <IconCheck size={14} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 4. Plants & Nature Mode */}
+                    <div
+                      onClick={() => {
+                        setSiteTheme("plants");
+                        localStorage.setItem("iq_site_theme", "plants");
+                      }}
+                      className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
+                        siteTheme === "plants"
+                          ? "border-emerald-950 bg-emerald-50 shadow-[3px_3px_0px_#15803d]"
+                          : "border-slate-300 bg-white hover:border-emerald-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 border-2 border-slate-900 bg-emerald-700 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                          <IconBook size={20} />
+                        </div>
+                        <div>
+                          <div className="font-black text-xs sm:text-sm text-emerald-950 flex items-center gap-2">
+                            <span>{t("themePlants")}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-emerald-200 text-emerald-900 border border-emerald-600">
+                              Green Botany
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-800 font-semibold">{t("themePlantsDesc")}</p>
+                        </div>
+                      </div>
+                      {siteTheme === "plants" && (
+                        <div className="w-6 h-6 bg-emerald-800 text-white flex items-center justify-center border border-emerald-950">
+                          <IconCheck size={14} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 5. Cyber Purple & Blue Mode */}
+                    <div
+                      onClick={() => {
+                        setSiteTheme("purple");
+                        localStorage.setItem("iq_site_theme", "purple");
+                      }}
+                      className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
+                        siteTheme === "purple"
+                          ? "border-indigo-950 bg-indigo-50 shadow-[3px_3px_0px_#4338ca]"
+                          : "border-slate-300 bg-white hover:border-indigo-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 border-2 border-slate-900 bg-indigo-600 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                          <IconBolt size={20} />
+                        </div>
+                        <div>
+                          <div className="font-black text-xs sm:text-sm text-indigo-950 flex items-center gap-2">
+                            <span>{t("themePurple")}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-indigo-200 text-indigo-950 border border-indigo-500">
+                              Cyber Mode
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-indigo-800 font-semibold">{t("themePurpleDesc")}</p>
+                        </div>
+                      </div>
+                      {siteTheme === "purple" && (
+                        <div className="w-6 h-6 bg-indigo-700 text-white flex items-center justify-center border border-indigo-950">
+                          <IconCheck size={14} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: LANGUAGE */}
+              {settingsTab === "lang" && (
+                <div className="space-y-3">
+                  <p className="text-xs font-bold text-slate-700">{t("langSection")}</p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Arabic Option */}
+                    <div
+                      onClick={() => {
+                        setSiteLang("ar");
+                        localStorage.setItem("iq_site_lang", "ar");
+                      }}
+                      className={`p-4 border-2 cursor-pointer transition-all space-y-2 ${
+                        siteLang === "ar"
+                          ? "border-slate-900 bg-emerald-50 shadow-[3px_3px_0px_#000]"
+                          : "border-slate-300 bg-white hover:border-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-sm text-slate-900">العربية (Arabic)</span>
+                        {siteLang === "ar" && (
+                          <span className="w-5 h-5 bg-slate-900 text-white flex items-center justify-center text-[10px]">
+                            <IconCheck size={12} />
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-semibold">
+                        الاتجاه من اليمين إلى اليسار (RTL). اللغة الرسمية والافتراضية للمنصة ومجتمع الطلاب.
+                      </p>
+                    </div>
+
+                    {/* English Option */}
+                    <div
+                      onClick={() => {
+                        setSiteLang("en");
+                        localStorage.setItem("iq_site_lang", "en");
+                      }}
+                      className={`p-4 border-2 cursor-pointer transition-all space-y-2 ${
+                        siteLang === "en"
+                          ? "border-slate-900 bg-emerald-50 shadow-[3px_3px_0px_#000]"
+                          : "border-slate-300 bg-white hover:border-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-sm text-slate-900">English (الإنجليزية)</span>
+                        {siteLang === "en" && (
+                          <span className="w-5 h-5 bg-slate-900 text-white flex items-center justify-center text-[10px]">
+                            <IconCheck size={12} />
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-semibold">
+                        Left-to-Right layout (LTR). Complete English translation for all platform menus and tabs.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: FAQ ACCORDION */}
+              {settingsTab === "faq" && (
+                <div className="space-y-3">
+                  <div className="border-b border-slate-200 pb-2">
+                    <h4 className="font-black text-sm text-slate-900">{t("faqTitle")}</h4>
+                    <p className="text-[11px] text-slate-500 font-semibold">{t("faqSub")}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {faqList.map((item, idx) => {
+                      const isExp = faqExpanded === idx;
+                      return (
+                        <div
+                          key={idx}
+                          className="border-2 border-slate-900 bg-white shadow-[2px_2px_0px_#000] overflow-hidden transition-all"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setFaqExpanded(isExp ? null : idx)}
+                            className="w-full p-3 text-start flex items-center justify-between gap-3 bg-slate-50 hover:bg-slate-100 transition-colors"
+                          >
+                            <span className="font-black text-xs text-slate-900 leading-snug">
+                              {item.q[siteLang]}
+                            </span>
+                            <span className="shrink-0 text-slate-600">
+                              {isExp ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
+                            </span>
+                          </button>
+
+                          {isExp && (
+                            <div className="p-3 bg-white border-t-2 border-slate-900 text-xs text-slate-700 font-medium leading-relaxed">
+                              {item.a[siteLang]}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: SUPPORT INQUIRIES */}
+              {settingsTab === "support" && (
+                <div className="space-y-3">
+                  <div className="border-b border-slate-200 pb-2">
+                    <h4 className="font-black text-sm text-slate-900">{t("supportTitle")}</h4>
+                    <p className="text-[11px] text-slate-500 font-semibold">{t("supportSub")}</p>
+                  </div>
+
+                  {supportSuccess && (
+                    <div className="p-3 bg-emerald-100 border-2 border-emerald-600 text-emerald-950 text-xs font-bold shadow-[2px_2px_0px_#000]">
+                      {t("supportSuccessAlert")}
+                    </div>
+                  )}
+
+                  <div className="space-y-3 text-xs">
+                    {/* Inquiry Category */}
+                    <div>
+                      <label className="block font-bold mb-1 text-slate-800">{t("supportCategory")}:</label>
+                      <select
+                        value={supportCategory}
+                        onChange={e => setSupportCategory(e.target.value as any)}
+                        className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-bold focus:outline-none focus:bg-white"
+                      >
+                        <option value="other">{t("supportCatGeneral")}</option>
+                        <option value="bug">{t("supportCatTechnical")}</option>
+                        <option value="teacher">{t("supportCatTeacher")}</option>
+                        <option value="content">{t("supportCatSuggestion")}</option>
+                      </select>
+                    </div>
+
+                    {/* Inquiry Subject */}
+                    <div>
+                      <label className="block font-bold mb-1 text-slate-800">{t("supportSubject")}:</label>
+                      <input
+                        type="text"
+                        value={supportSubject}
+                        onChange={e => setSupportSubject(e.target.value)}
+                        placeholder={t("supportSubjectPlaceholder")}
+                        className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white"
+                      />
+                    </div>
+
+                    {/* Inquiry Message */}
+                    <div>
+                      <label className="block font-bold mb-1 text-slate-800">{t("supportMessage")}:</label>
+                      <textarea
+                        value={supportMessage}
+                        onChange={e => setSupportMessage(e.target.value)}
+                        placeholder={t("supportMessagePlaceholder")}
+                        className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[90px] resize-none focus:outline-none focus:bg-white"
+                      />
+                    </div>
+
+                    {/* Sender Contact info */}
+                    <div>
+                      <label className="block font-bold mb-1 text-slate-800">{t("supportContact")}:</label>
+                      <input
+                        type="text"
+                        value={supportContact}
+                        onChange={e => setSupportContact(e.target.value)}
+                        placeholder={t("supportContactPlaceholder")}
+                        className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={submitSupportTicket}
+                      className="w-full py-3 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+                    >
+                      {t("sendSupportTicket")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 border-t-2 border-slate-900 bg-slate-50 flex items-center justify-end">
+              <button
+                onClick={() => setSettingsModal(false)}
+                className="px-4 py-1.5 bg-slate-900 text-white font-black text-xs border-2 border-slate-900 hover:bg-slate-800 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+              >
+                {t("close")}
+              </button>
+            </div>
           </div>
         </div>
       )}

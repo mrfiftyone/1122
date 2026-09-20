@@ -5,7 +5,7 @@
   "3": "compilerOptions",
   "4": "next",
   "5": "dependencies",
-  "6": "devDependencies",
+  "6": "icons.tsx",
   "7": "handleAuth",
   "8": "toggleBookmark",
   "9": "README.md",
@@ -16,5 +16,8 @@
   "14": "image.ts",
   "15": "vercel.json",
   "16": "CLAUDE.md",
-  "18": "Turnstile.tsx"
+  "17": "not-found.tsx",
+  "18": "Turnstile.tsx",
+  "19": "i18n.ts",
+  "20": "time.ts"
 }

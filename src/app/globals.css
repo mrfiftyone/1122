@@ -10,6 +10,155 @@
   --font-sans: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* ══════════════════════════════════════════════════════════
+   CUSTOM THEMES STYLES & OVERRIDES (NEO-BRUTALIST)
+   ══════════════════════════════════════════════════════════ */
+
+/* 1. DARK MODE */
+[data-theme="dark"] {
+  --color-page-bg: #090d16;
+  --color-panel-bg: #111827;
+  --color-border-subtle: #374151;
+  --color-emerald-primary: #facc15;
+  --color-emerald-dark: #eab308;
+  --color-accent-green-bg: #1f2937;
+  color-scheme: dark;
+}
+
+[data-theme="dark"] body, [data-theme="dark"] .theme-root {
+  background-color: #090d16 !important;
+  color: #f1f5f9 !important;
+}
+
+[data-theme="dark"] .bg-white {
+  background-color: #111827 !important;
+  color: #f9fafb !important;
+}
+
+[data-theme="dark"] .bg-slate-50 {
+  background-color: #1a2234 !important;
+  color: #f3f4f6 !important;
+}
+
+[data-theme="dark"] .text-slate-900 {
+  color: #f9fafb !important;
+}
+
+[data-theme="dark"] .text-slate-800 {
+  color: #f3f4f6 !important;
+}
+
+[data-theme="dark"] .text-slate-700 {
+  color: #e5e7eb !important;
+}
+
+[data-theme="dark"] .text-slate-600 {
+  color: #9ca3af !important;
+}
+
+[data-theme="dark"] .border-slate-900 {
+  border-color: #f1f5f9 !important;
+}
+
+[data-theme="dark"] .border-border-subtle {
+  border-color: #374151 !important;
+}
+
+[data-theme="dark"] .border-slate-200, [data-theme="dark"] .border-slate-300 {
+  border-color: #374151 !important;
+}
+
+/* 2. PINK PANTHER MODE (CUTE & BOLD NEO-BRUTALIST PINK) */
+[data-theme="pink"] {
+  --color-page-bg: #fff1f2;
+  --color-panel-bg: #ffffff;
+  --color-border-subtle: #fbcfe8;
+  --color-emerald-primary: #f43f5e;
+  --color-emerald-dark: #be123c;
+  --color-accent-green-bg: #fdf2f8;
+}
+
+[data-theme="pink"] body, [data-theme="pink"] .theme-root {
+  background-color: #fff1f2 !important;
+}
+
+[data-theme="pink"] .bg-page-bg {
+  background-color: #fff1f2 !important;
+}
+
+[data-theme="pink"] .bg-emerald-primary {
+  background-color: #f43f5e !important;
+}
+
+[data-theme="pink"] .hover\:bg-emerald-dark:hover {
+  background-color: #be123c !important;
+}
+
+[data-theme="pink"] .text-emerald-primary, [data-theme="pink"] .text-emerald-800, [data-theme="pink"] .text-emerald-700 {
+  color: #be123c !important;
+}
+
+[data-theme="pink"] .bg-emerald-100 {
+  background-color: #ffe4e6 !important;
+  color: #881337 !important;
+}
+
+/* 3. PLANTS & NATURE MODE (BOTANICAL LUSH GREEN) */
+[data-theme="plants"] {
+  --color-page-bg: #f0fdf4;
+  --color-panel-bg: #ffffff;
+  --color-border-subtle: #bbf7d0;
+  --color-emerald-primary: #15803d;
+  --color-emerald-dark: #166534;
+  --color-accent-green-bg: #dcfce7;
+}
+
+[data-theme="plants"] body, [data-theme="plants"] .theme-root {
+  background-color: #f0fdf4 !important;
+}
+
+[data-theme="plants"] .bg-page-bg {
+  background-color: #f0fdf4 !important;
+}
+
+[data-theme="plants"] .bg-emerald-primary {
+  background-color: #15803d !important;
+}
+
+[data-theme="plants"] .hover\:bg-emerald-dark:hover {
+  background-color: #166534 !important;
+}
+
+/* 4. CYBER PURPLE & BLUE MODE */
+[data-theme="purple"] {
+  --color-page-bg: #f5f3ff;
+  --color-panel-bg: #ffffff;
+  --color-border-subtle: #ddd6fe;
+  --color-emerald-primary: #7c3aed;
+  --color-emerald-dark: #6d28d9;
+  --color-accent-green-bg: #ede9fe;
+}
+
+[data-theme="purple"] body, [data-theme="purple"] .theme-root {
+  background-color: #f5f3ff !important;
+}
+
+[data-theme="purple"] .bg-page-bg {
+  background-color: #f5f3ff !important;
+}
+
+[data-theme="purple"] .bg-emerald-primary {
+  background-color: #7c3aed !important;
+}
+
+[data-theme="purple"] .hover\:bg-emerald-dark:hover {
+  background-color: #6d28d9 !important;
+}
+
+[data-theme="purple"] .text-emerald-primary, [data-theme="purple"] .text-emerald-800, [data-theme="purple"] .text-emerald-700 {
+  color: #6d28d9 !important;
+}
+
 @layer base {
   body {
     @apply bg-page-bg text-slate-900 min-h-screen font-sans;
