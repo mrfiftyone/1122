@@ -148,5 +148,11 @@
     "seen": 1789869697.3294268,
     "ast_hash": "a2760511c65806022ad20adf74370ff3",
     "semantic_hash": ""
+  },
+  "src/app/not-found.tsx": {
+    "mtime": 1789870009.712454,
+    "seen": 1789870027.2669287,
+    "ast_hash": "266fc3f5d9a7347bf3b70e9ab75c5892",
+    "semantic_hash": ""
   }
 }

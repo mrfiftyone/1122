@@ -176,6 +176,13 @@ export default function Home() {
   // Profile Viewing state (view self or another student)
   const [viewedUser, setViewedUser] = useState<string | null>(null);
 
+  // Profile Comments Expansion State
+  const [expandedProfileComments, setExpandedProfileComments] = useState<Record<string, boolean>>({});
+
+  // Report Modal State
+  const [reportTarget, setReportTarget] = useState<{ id: string; type: "post" | "comment"; title?: string; parentPostId?: string } | null>(null);
+  const [reportReason, setReportReason] = useState<"inappropriate" | "wrong_info" | "other">("inappropriate");
+  const [reportNote, setReportNote] = useState("");
 
   // Profile Edit
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
@@ -291,6 +298,20 @@ export default function Home() {
     // Fetch live data immediately
     fetchSupabaseData();
     if (currUser) fetchVotesFromSupabase(currUser.username);
+
+    // Read profile or user query parameter if present
+    try {
+      if (typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetProfile = urlParams.get("profile") || urlParams.get("user");
+        if (targetProfile) {
+          setViewedUser(targetProfile);
+          setTab("profile");
+        }
+      }
+    } catch {
+      // ignore
+    }
 
     // Listen to Supabase Realtime updates from any user
     const channel = supabase
@@ -540,30 +561,131 @@ export default function Home() {
     });
   }
 
-  async function reportPost(postId: string) {
+  // ─── Report Records Local Storage ─────────────────────────────────
+  interface ReportRecord {
+    id: string;
+    targetId: string;
+    targetType: "post" | "comment";
+    targetTitle?: string;
+    reporter: string;
+    reason: "inappropriate" | "wrong_info" | "other";
+    note?: string;
+    created_at: string;
+  }
+
+  function getReportRecords(): ReportRecord[] {
+    if (typeof window === "undefined") return [];
+    try {
+      const s = localStorage.getItem("report_records_v1");
+      return s ? JSON.parse(s) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveReportRecord(r: ReportRecord) {
+    if (typeof window === "undefined") return;
+    try {
+      const list = getReportRecords();
+      list.unshift(r);
+      localStorage.setItem("report_records_v1", JSON.stringify(list.slice(0, 200)));
+    } catch {}
+  }
+
+  function getWordCount(str: string): number {
+    const trimmed = str.trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).length;
+  }
+
+  function openReportModal(target: { id: string; type: "post" | "comment"; title?: string; parentPostId?: string }) {
+    if (!session) { setAuthModal(true); return; }
+    setReportTarget(target);
+    setReportReason("inappropriate");
+    setReportNote("");
+  }
+
+  function toggleProfileComments(postId: string) {
+    setExpandedProfileComments(prev => ({ ...prev, [postId]: !prev[postId] }));
+  }
+
+  function reportPost(postId: string) {
     if (!session) { setAuthModal(true); return; }
     const p = posts.find(x => x.id === postId);
     if (!p) return;
-    const newReports = (p.reports || 0) + 1;
-    const newStatus = newReports >= 20 ? "hidden" : p.status;
-
-    setPostsList(prev => prev.map(item => item.id === postId ? { ...item, reports: newReports, status: newStatus as any } : item));
-
-    try {
-      await supabase.from('posts').update({ reports: newReports, status: newStatus }).eq('id', postId);
-    } catch (e) {}
-
-    rerender();
-    alert("تم إرسال البلاغ.");
+    openReportModal({ id: postId, type: "post", title: p.title });
   }
 
-  async function addComment(postId: string) {
+  async function submitReport() {
     if (!session) { setAuthModal(true); return; }
-    const input = document.getElementById(`comment-${postId}`) as HTMLInputElement;
-    if (!input || !input.value.trim()) return;
-    if (containsProfanity(input.value)) { alert("التعليق يحتوي على كلمات غير مسموح بها."); return; }
+    if (!reportTarget) return;
+    if (getWordCount(reportNote) > 50) {
+      alert("الملاحظة يجب ألا تتجاوز 50 كلمة.");
+      return;
+    }
 
-    const commentText = input.value.trim();
+    if (reportTarget.type === "post") {
+      const p = posts.find(x => x.id === reportTarget.id);
+      if (p) {
+        const newReports = (p.reports || 0) + 1;
+        const newStatus = newReports >= 20 ? "hidden" : p.status;
+        setPostsList(prev => prev.map(item => item.id === reportTarget.id ? { ...item, reports: newReports, status: newStatus as any } : item));
+        try {
+          await supabase.from('posts').update({ reports: newReports, status: newStatus }).eq('id', reportTarget.id);
+        } catch (e) {
+          console.error("Error updating report in Supabase:", e);
+        }
+      }
+    } else {
+      const parentPostId = reportTarget.parentPostId;
+      if (parentPostId) {
+        setPostsList(prev => prev.map(p => {
+          if (p.id === parentPostId) {
+            return {
+              ...p,
+              comments: p.comments.map(c => c.id === reportTarget.id ? { ...c, reports: (c.reports || 0) + 1 } : c),
+            };
+          }
+          return p;
+        }));
+        try {
+          const targetPost = posts.find(p => p.id === parentPostId);
+          const targetComment = targetPost?.comments.find(c => c.id === reportTarget.id);
+          if (targetComment) {
+            await supabase.from('comments').update({ reports: (targetComment.reports || 0) + 1 }).eq('id', reportTarget.id);
+          }
+        } catch (e) {
+          console.error("Error updating comment report in Supabase:", e);
+        }
+      }
+    }
+
+    saveReportRecord({
+      id: "rep_" + Date.now(),
+      targetId: reportTarget.id,
+      targetType: reportTarget.type,
+      targetTitle: reportTarget.title,
+      reporter: session.username,
+      reason: reportReason,
+      note: reportNote.trim(),
+      created_at: new Date().toISOString(),
+    });
+
+    setReportTarget(null);
+    setReportNote("");
+    setReportReason("inappropriate");
+    rerender();
+    alert("تم تسجيل بلاغك بنجاح وسيقوم المشرفون بمراجعته.");
+  }
+
+  async function addComment(postId: string, textOverride?: string) {
+    if (!session) { setAuthModal(true); return; }
+    const input = (document.getElementById(`comment-${postId}`) || document.getElementById(`profile-comment-${postId}`)) as HTMLInputElement;
+    const rawText = textOverride || input?.value || "";
+    if (!rawText.trim()) return;
+    if (containsProfanity(rawText)) { alert("التعليق يحتوي على كلمات غير مسموح بها."); return; }
+
+    const commentText = rawText.trim();
 
     // Optimistic UI update
     const tempComment: Comment = {
@@ -602,7 +724,7 @@ export default function Home() {
       setAllNotifications(notifs);
     }
 
-    input.value = "";
+    if (input) input.value = "";
 
     // Send to Supabase Central Database
     try {
@@ -636,26 +758,11 @@ export default function Home() {
     });
   }
 
-  async function reportComment(postId: string, commentId: string) {
+  function reportComment(postId: string, commentId: string) {
     if (!session) { setAuthModal(true); return; }
-    setPostsList(prev => prev.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          comments: p.comments.map(c => c.id === commentId ? { ...c, reports: (c.reports || 0) + 1 } : c),
-        };
-      }
-      return p;
-    }));
-    try {
-      const targetPost = posts.find(p => p.id === postId);
-      const targetComment = targetPost?.comments.find(c => c.id === commentId);
-      if (targetComment) {
-        await supabase.from('comments').update({ reports: (targetComment.reports || 0) + 1 }).eq('id', commentId);
-      }
-    } catch (e) {}
-    rerender();
-    alert("تم إرسال بلاغ التعليق.");
+    const targetPost = posts.find(p => p.id === postId);
+    const targetComment = targetPost?.comments.find(c => c.id === commentId);
+    openReportModal({ id: commentId, type: "comment", title: targetComment?.text || "تعليق", parentPostId: postId });
   }
 
   async function deletePost(postId: string) {
@@ -813,7 +920,7 @@ export default function Home() {
     setTImg("");
     setTeacherModal(false);
     rerender();
-    alert("تم إرسال الأستاذ بنجاح وهو الآن في قائمة الانتظار للمراجعة من قبل المشرفين! ⏳");
+    alert("تم إرسال الأستاذ بنجاح وهو الآن في قائمة الانتظار للمراجعة من قبل المشرفين!");
   }
 
   function voteTeacher(teacherId: string, type: "like" | "dislike") {
@@ -830,7 +937,7 @@ export default function Home() {
     if (!session) { setAuthModal(true); return; }
     if (!selectedTeacher) return;
     if (!reviewVerdict) {
-      alert("يرجى تحديد هل المدرس أعجبك 👍 أو لم يعجبك 👎 للمتابعة.");
+      alert("يرجى تحديد هل المدرس أعجبك أو لم يعجبك للمتابعة.");
       return;
     }
     if (!reviewBody.trim()) { alert("يرجى كتابة نص التقييم أو المراجعة."); return; }
@@ -840,7 +947,7 @@ export default function Home() {
     }
 
     const titleText = reviewTitle.trim() || `تقييم للأستاذ ${selectedTeacher.name}`;
-    const verdictText = reviewVerdict === "like" ? "[أعجبني 👍]" : "[لم يعجبني 👎]";
+    const verdictText = reviewVerdict === "like" ? "[أعجبني]" : "[لم يعجبني]";
     const fullBody = `${verdictText}\n\n${reviewBody.trim()}`;
     const gradeLevel = reviewVerdict === "like" ? "تقييم أستاذ: أعجبني" : "تقييم أستاذ: لم يعجبني";
 
@@ -917,7 +1024,7 @@ export default function Home() {
         type: "teacher_approved",
         postId: target?.id || "",
         targetTitle: target?.name || "المدرس",
-        commentText: `🎉 تمت الموافقة على طلبك لإضافة المدرس "${target?.name}" بنجاح! أصبح الآن متاحاً للجميع في قسم المدرسين.`,
+        commentText: `تمت الموافقة على طلبك لإضافة المدرس "${target?.name}" بنجاح! أصبح الآن متاحاً للجميع في قسم المدرسين.`,
         read: false,
         created_at: new Date().toISOString(),
       });
@@ -1078,12 +1185,12 @@ export default function Home() {
   // Profile data calculations for targetProfileUser
   const userRegularPosts = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && (!p.grade_level || !p.grade_level.includes("تقييم أستاذ"))) : [];
   const userTeacherReviews = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && (p.grade_level && p.grade_level.includes("تقييم أستاذ"))) : [];
-  const userComments: { postTitle: string; comment: Comment }[] = [];
+  const userComments: { postTitle: string; postId: string; comment: Comment }[] = [];
   if (targetProfileUser) {
     posts.forEach(p => {
       p.comments.forEach(c => {
         if (c.author === targetProfileUser) {
-          userComments.push({ postTitle: p.title, comment: c });
+          userComments.push({ postTitle: p.title, postId: p.id, comment: c });
         }
       });
     });
@@ -1102,6 +1209,7 @@ export default function Home() {
     ...userRegularPosts.map(p => ({
       id: p.id,
       kind: "post" as const,
+      postId: p.id,
       grade_level: p.grade_level,
       teacherId: p.teacher_id || p.teacherId,
       title: p.title,
@@ -1109,10 +1217,12 @@ export default function Home() {
       created_at: p.created_at,
       likes: p.likes,
       dislikes: p.dislikes,
+      reports: p.reports || 0,
     })),
     ...userTeacherReviews.map(r => ({
       id: r.id,
       kind: "review" as const,
+      postId: r.id,
       grade_level: r.grade_level,
       teacherId: r.teacher_id || r.teacherId,
       title: r.title,
@@ -1120,10 +1230,12 @@ export default function Home() {
       created_at: r.created_at,
       likes: r.likes,
       dislikes: r.dislikes,
+      reports: r.reports || 0,
     })),
     ...userComments.map(c => ({
       id: c.comment.id,
       kind: "comment" as const,
+      postId: c.postId,
       grade_level: undefined,
       teacherId: undefined,
       title: `رد على: "${c.postTitle}"`,
@@ -1131,6 +1243,7 @@ export default function Home() {
       created_at: c.comment.created_at,
       likes: c.comment.likes,
       dislikes: c.comment.dislikes,
+      reports: c.comment.reports || 0,
     })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -1662,7 +1775,7 @@ export default function Home() {
                                 : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
                             }`}
                           >
-                            <IconThumbUp size={16} /> أعجبني 👍 (أنصح به)
+                            <IconThumbUp size={16} /> أعجبني (أنصح به)
                           </button>
                           <button
                             type="button"
@@ -1673,7 +1786,7 @@ export default function Home() {
                                 : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
                             }`}
                           >
-                            <IconThumbDown size={16} /> لم يعجبني 👎 (لا أنصح به)
+                            <IconThumbDown size={16} /> لم يعجبني (لا أنصح به)
                           </button>
                         </div>
                       </div>
@@ -1763,17 +1876,17 @@ export default function Home() {
                                   <span className="text-xs font-black text-slate-800">{postItem.author}</span>
                                   {isReview ? (
                                     isDislikeReview ? (
-                                      <span className="px-2 py-0.5 bg-red-100 border border-red-500 text-[10px] font-black text-red-900">
-                                        تقييم: لم يعجبني 👎
+                                      <span className="px-2 py-0.5 bg-red-100 border border-red-500 text-[10px] font-black text-red-900 flex items-center gap-1">
+                                        <IconThumbDown size={10} /> تقييم: لم يعجبني
                                       </span>
                                     ) : (
-                                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-600 text-[10px] font-black text-emerald-900">
-                                        تقييم: أعجبني 👍
+                                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-600 text-[10px] font-black text-emerald-900 flex items-center gap-1">
+                                        <IconThumbUp size={10} /> تقييم: أعجبني
                                       </span>
                                     )
                                   ) : (
-                                    <span className="px-2 py-0.5 bg-blue-100 border border-blue-600 text-[10px] font-black text-blue-900">
-                                      منشور نقاش 💬
+                                    <span className="px-2 py-0.5 bg-blue-100 border border-blue-600 text-[10px] font-black text-blue-900 flex items-center gap-1">
+                                      <IconComment size={10} /> منشور نقاش
                                     </span>
                                   )}
                                 </button>
@@ -1913,7 +2026,7 @@ export default function Home() {
                       <div className="flex items-center gap-2">
                         {n.type === "teacher_approved" ? (
                           <div className="w-7 h-7 bg-emerald-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
-                            🎉
+                            <IconBook size={14} />
                           </div>
                         ) : (
                           <Avatar username={n.actor} size="w-7 h-7 text-xs" />
@@ -2021,14 +2134,14 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Stats Grid */}
+                  {/* Stats Grid (No emojis, SVG icons only) */}
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 border-t-2 border-slate-100 pt-4 text-center">
                     <div className="bg-slate-50 border border-slate-200 p-2.5">
                       <div className="text-lg font-black text-slate-900">{userRegularPosts.length}</div>
                       <div className="text-[10px] font-bold text-slate-500">المنشورات</div>
                     </div>
                     <div className="bg-amber-50 border border-amber-200 p-2.5">
-                      <div className="text-lg font-black text-amber-900">{userTeacherReviews.length} 📝</div>
+                      <div className="text-lg font-black text-amber-900">{userTeacherReviews.length}</div>
                       <div className="text-[10px] font-bold text-amber-700">تقييمات المدرسين</div>
                     </div>
                     <div className="bg-slate-50 border border-slate-200 p-2.5">
@@ -2036,11 +2149,15 @@ export default function Home() {
                       <div className="text-[10px] font-bold text-slate-500">التعليقات</div>
                     </div>
                     <div className="bg-emerald-50 border border-emerald-200 p-2.5">
-                      <div className="text-lg font-black text-emerald-800">{totalLikesReceived} 👍</div>
+                      <div className="text-lg font-black text-emerald-800 flex items-center justify-center gap-1">
+                        <IconThumbUp size={15} /> {totalLikesReceived}
+                      </div>
                       <div className="text-[10px] font-bold text-emerald-700">إعجابات مستلمة</div>
                     </div>
                     <div className="bg-red-50 border border-red-200 p-2.5">
-                      <div className="text-lg font-black text-red-700">{totalDislikesReceived} 👎</div>
+                      <div className="text-lg font-black text-red-700 flex items-center justify-center gap-1">
+                        <IconThumbDown size={15} /> {totalDislikesReceived}
+                      </div>
                       <div className="text-[10px] font-bold text-red-600">عدم إعجاب</div>
                     </div>
                   </div>
@@ -2049,7 +2166,7 @@ export default function Home() {
                 {/* Mixed Activity Feed (Posts, Teacher Reviews, Comments) */}
                 <div className="space-y-4">
                   <h3 className="font-black text-sm text-slate-800 border-b-2 border-slate-200 pb-2">
-                    {isOwnProfile ? "📋 سجل نشاطاتي ومشاركاتي:" : `📋 نشاطات ومشاركات الطالب (${targetProfileUser}):`}
+                    {isOwnProfile ? "سجل نشاطاتي ومشاركاتي:" : `نشاطات ومشاركات الطالب (${targetProfileUser}):`}
                   </h3>
 
                   {combinedActivities.length === 0 ? (
@@ -2061,18 +2178,43 @@ export default function Home() {
                       const teacher = item.teacherId ? teachers.find(t => t.id === item.teacherId) : null;
                       const isDislikeReview = item.kind === "review" && (item.grade_level?.includes("لم يعجبني") || item.content?.startsWith("[لم يعجبني"));
                       const isLikeReview = item.kind === "review" && (item.grade_level?.includes("أعجبني") || item.content?.startsWith("[أعجبني"));
+                      const isPostOrReview = item.kind === "post" || item.kind === "review";
+                      const fullPost = isPostOrReview ? posts.find(p => p.id === item.id) : null;
+                      const isCommentsOpen = !!expandedProfileComments[item.id];
+                      const postVote = isPostOrReview ? getUserVote(`post_${item.id}`) : null;
+                      const commentVote = item.kind === "comment" ? getUserVote(`comment_${item.id}`) : null;
+
                       return (
-                        <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-2 relative">
-                          <div className="flex items-center justify-between">
+                        <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-3 relative">
+                          {/* Item Header */}
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                             <div className="flex items-center gap-2">
-                              <span className={`px-2.5 py-0.5 text-[10px] font-black border border-slate-900 uppercase tracking-widest ${
+                              <span className={`px-2.5 py-0.5 text-[10px] font-black border uppercase tracking-widest flex items-center gap-1 ${
                                 item.kind === "post"
-                                  ? "bg-emerald-100 text-emerald-900"
+                                  ? "border-slate-900 bg-emerald-100 text-emerald-900"
                                   : item.kind === "review"
-                                  ? (isDislikeReview ? "bg-red-100 text-red-900 border-red-600" : "bg-emerald-100 text-emerald-900 border-emerald-600")
-                                  : "bg-blue-100 text-blue-900"
+                                  ? (isDislikeReview ? "border-red-600 bg-red-100 text-red-900" : "border-emerald-600 bg-emerald-100 text-emerald-900")
+                                  : "border-blue-600 bg-blue-100 text-blue-900"
                               }`}>
-                                {item.kind === "post" ? "منشور ✍️" : item.kind === "review" ? (isDislikeReview ? "تقييم: لم يعجبني 👎" : "تقييم: أعجبني 👍") : "تعليق 💬"}
+                                {item.kind === "post" ? (
+                                  <>
+                                    <IconPen size={10} /> منشور
+                                  </>
+                                ) : item.kind === "review" ? (
+                                  isDislikeReview ? (
+                                    <>
+                                      <IconThumbDown size={10} /> تقييم: لم يعجبني
+                                    </>
+                                  ) : (
+                                    <>
+                                      <IconThumbUp size={10} /> تقييم: أعجبني
+                                    </>
+                                  )
+                                ) : (
+                                  <>
+                                    <IconComment size={10} /> تعليق
+                                  </>
+                                )}
                               </span>
                               {teacher && (
                                 <button
@@ -2086,20 +2228,165 @@ export default function Home() {
                             <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(item.created_at)}</span>
                           </div>
 
-                          <h4 className="font-black text-sm text-slate-900">{item.title}</h4>
-                          <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                          {/* Content */}
+                          <div>
+                            <h4 className="font-black text-sm text-slate-900">{item.title}</h4>
+                            <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                          </div>
 
-                          <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-100 text-slate-500">
-                            <div className="flex items-center gap-4">
-                              <span>👍 {item.likes}</span>
-                              <span>👎 {item.dislikes}</span>
+                          {/* Interactive Actions Row */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                            <div className="flex items-center gap-2">
+                              {isPostOrReview ? (
+                                <>
+                                  <button
+                                    onClick={() => votePost(item.id, "like")}
+                                    className={vbtn(postVote === "like", "like")}
+                                    title="إعجاب"
+                                  >
+                                    <IconThumbUp size={12} /> {item.likes}
+                                  </button>
+                                  <button
+                                    onClick={() => votePost(item.id, "dislike")}
+                                    className={vbtn(postVote === "dislike", "dislike")}
+                                    title="عدم إعجاب"
+                                  >
+                                    <IconThumbDown size={12} /> {item.dislikes}
+                                  </button>
+                                  <button
+                                    onClick={() => toggleProfileComments(item.id)}
+                                    className={`px-2.5 py-1 border text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px transition-all ${
+                                      isCommentsOpen
+                                        ? "border-slate-900 bg-slate-900 text-white"
+                                        : "border-slate-900 bg-white hover:bg-slate-100 text-slate-800"
+                                    }`}
+                                  >
+                                    <IconComment size={12} />
+                                    <span>التعليقات ({fullPost?.comments?.length || 0})</span>
+                                  </button>
+                                  <button
+                                    onClick={() => openReportModal({ id: item.id, type: "post", title: item.title })}
+                                    className="text-[11px] text-slate-500 hover:text-red-600 font-bold flex items-center gap-1 px-1.5 py-1"
+                                    title="إبلاغ عن محتوى"
+                                  >
+                                    <IconFlag size={12} />
+                                    <span>بلاغ ({item.reports || 0})</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => item.postId && voteComment(item.postId, item.id, "like")}
+                                    className={`${vbtn(commentVote === "like", "like")} py-0.5 px-2 text-[10px]`}
+                                    title="إعجاب"
+                                  >
+                                    <IconThumbUp size={10} /> {item.likes}
+                                  </button>
+                                  <button
+                                    onClick={() => item.postId && voteComment(item.postId, item.id, "dislike")}
+                                    className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-2 text-[10px]`}
+                                    title="عدم إعجاب"
+                                  >
+                                    <IconThumbDown size={10} /> {item.dislikes}
+                                  </button>
+                                  <button
+                                    onClick={() => item.postId && openReportModal({ id: item.id, type: "comment", title: item.content, parentPostId: item.postId })}
+                                    className="text-[10px] text-slate-500 hover:text-red-600 font-bold flex items-center gap-0.5 px-1.5 py-1"
+                                    title="إبلاغ عن هذا التعليق"
+                                  >
+                                    <IconFlag size={10} />
+                                    <span>بلاغ ({item.reports || 0})</span>
+                                  </button>
+                                </>
+                              )}
                             </div>
+
                             {(item.kind === "post" || item.kind === "review") && session && (session.username === targetProfileUser || session.role === "owner" || session.role === "mod") && (
-                              <button onClick={() => deletePost(item.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
+                              <button
+                                onClick={() => deletePost(item.id)}
+                                className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1"
+                              >
                                 <IconTrash size={12} /> {session.username === targetProfileUser ? "حذف" : "حذف (إدارة)"}
                               </button>
                             )}
                           </div>
+
+                          {/* Expandable Comments Section for Posts / Reviews in Profile */}
+                          {isPostOrReview && isCommentsOpen && (
+                            <div className="bg-slate-50 p-3 border-2 border-slate-900 space-y-2.5 text-xs mt-2">
+                              <div className="font-bold text-[11px] text-slate-600 flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
+                                <IconComment size={12} className="text-emerald-primary" />
+                                <span>الردود والتعليقات ({fullPost?.comments?.length || 0}):</span>
+                              </div>
+
+                              {(fullPost?.comments || []).length === 0 ? (
+                                <div className="text-[11px] text-slate-400 py-1 font-semibold">
+                                  لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!
+                                </div>
+                              ) : (
+                                (fullPost?.comments || []).map(c => {
+                                  const cVote = getUserVote(`comment_${c.id}`);
+                                  return (
+                                    <div key={c.id} className="bg-white p-2.5 border border-slate-200 space-y-1.5 shadow-[1px_1px_0px_#000]">
+                                      <div className="flex items-center justify-between">
+                                        <button
+                                          onClick={() => { setViewedUser(c.author); setTab("profile"); }}
+                                          className="flex items-center gap-1.5 hover:opacity-80 text-right"
+                                        >
+                                          <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
+                                          <span className="font-bold text-teal-800">{c.author}</span>
+                                        </button>
+                                        <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(c.created_at)}</span>
+                                      </div>
+                                      <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">{c.text}</p>
+                                      <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                        <button
+                                          onClick={() => voteComment(item.id, c.id, "like")}
+                                          className={`${vbtn(cVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}
+                                          title="إعجاب"
+                                        >
+                                          <IconThumbUp size={10} /> {c.likes}
+                                        </button>
+                                        <button
+                                          onClick={() => voteComment(item.id, c.id, "dislike")}
+                                          className={`${vbtn(cVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}
+                                          title="عدم إعجاب"
+                                        >
+                                          <IconThumbDown size={10} /> {c.dislikes}
+                                        </button>
+                                        <button
+                                          onClick={() => openReportModal({ id: c.id, type: "comment", title: c.text, parentPostId: item.id })}
+                                          className="text-[10px] text-slate-400 hover:text-red-500 font-bold flex items-center gap-0.5"
+                                          title="بلاغ"
+                                        >
+                                          <IconFlag size={9} /> ({c.reports || 0})
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+
+                              {/* Comment Input */}
+                              <div className="flex gap-2 pt-1">
+                                <input
+                                  type="text"
+                                  id={`profile-comment-${item.id}`}
+                                  placeholder="اكتب تعليقك هنا..."
+                                  className="flex-1 p-2 bg-white border-2 border-slate-900 text-xs font-semibold focus:outline-none"
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter") addComment(item.id);
+                                  }}
+                                />
+                                <button
+                                  onClick={() => addComment(item.id)}
+                                  className="px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all shrink-0"
+                                >
+                                  إرسال
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })
@@ -2481,15 +2768,159 @@ export default function Home() {
                 }
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
               >
-                إرسال للمراجعة (قائمة الانتظار) ⏳
+                إرسال للمراجعة (قائمة الانتظار)
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ═══════ REPORT MODAL (بلاغ عن محتوى) ═══════ */}
+      {reportTarget && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
+              <h3 className="font-black text-base flex items-center gap-2 text-slate-900">
+                <IconFlag size={18} className="text-red-600" />
+                <span>إرسال بلاغ عن محتوى</span>
+              </h3>
+              <button
+                onClick={() => { setReportTarget(null); setReportNote(""); }}
+                className="p-1 hover:bg-slate-100 border border-transparent hover:border-slate-900"
+              >
+                <IconX size={16} />
+              </button>
+            </div>
 
+            {reportTarget.title && (
+              <div className="p-3 bg-slate-50 border-2 border-slate-200 space-y-1 text-xs">
+                <span className="text-[10px] font-bold text-slate-500 block">
+                  {reportTarget.type === "post" ? "المحتوى المبلّغ عنه:" : "التعليق المبلّغ عنه:"}
+                </span>
+                <p className="font-bold text-slate-800 line-clamp-2">{reportTarget.title}</p>
+              </div>
+            )}
 
+            <div className="space-y-3 text-xs">
+              <label className="block font-bold text-slate-900">
+                حدد سبب البلاغ: <span className="text-red-500">*</span>
+              </label>
+
+              {/* Option 1: Inappropriate */}
+              <label
+                onClick={() => setReportReason("inappropriate")}
+                className={`p-3 border-2 flex items-start gap-3 cursor-pointer transition-all ${
+                  reportReason === "inappropriate"
+                    ? "border-slate-900 bg-red-50 shadow-[2px_2px_0px_#dc2626]"
+                    : "border-slate-300 bg-white hover:border-slate-900"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="reportReason"
+                  checked={reportReason === "inappropriate"}
+                  onChange={() => setReportReason("inappropriate")}
+                  className="mt-0.5 accent-red-600"
+                />
+                <div className="space-y-0.5">
+                  <div className="font-black text-slate-900 text-xs">محتوى غير لائق أو مسيء</div>
+                  <div className="text-[11px] text-slate-500 font-semibold">ألفاظ غير مقبولة، تنمر، أو إساءة شخصية</div>
+                </div>
+              </label>
+
+              {/* Option 2: Wrong Info */}
+              <label
+                onClick={() => setReportReason("wrong_info")}
+                className={`p-3 border-2 flex items-start gap-3 cursor-pointer transition-all ${
+                  reportReason === "wrong_info"
+                    ? "border-slate-900 bg-amber-50 shadow-[2px_2px_0px_#d97706]"
+                    : "border-slate-300 bg-white hover:border-slate-900"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="reportReason"
+                  checked={reportReason === "wrong_info"}
+                  onChange={() => setReportReason("wrong_info")}
+                  className="mt-0.5 accent-amber-600"
+                />
+                <div className="space-y-0.5">
+                  <div className="font-black text-slate-900 text-xs">معلومات خاطئة أو مضللة</div>
+                  <div className="text-[11px] text-slate-500 font-semibold">بيانات غير صحيحة، تقييم كاذب أو مضلل للطلاب</div>
+                </div>
+              </label>
+
+              {/* Option 3: Other */}
+              <label
+                onClick={() => setReportReason("other")}
+                className={`p-3 border-2 flex items-start gap-3 cursor-pointer transition-all ${
+                  reportReason === "other"
+                    ? "border-slate-900 bg-slate-100 shadow-[2px_2px_0px_#000]"
+                    : "border-slate-300 bg-white hover:border-slate-900"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="reportReason"
+                  checked={reportReason === "other"}
+                  onChange={() => setReportReason("other")}
+                  className="mt-0.5 accent-slate-900"
+                />
+                <div className="space-y-0.5">
+                  <div className="font-black text-slate-900 text-xs">سبب آخر</div>
+                  <div className="text-[11px] text-slate-500 font-semibold">مخالفة أخرى لسياسات المنصة وقواعد السلوك</div>
+                </div>
+              </label>
+
+              {/* Note input (up to 50 words) */}
+              <div className="pt-2 space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-slate-800 text-xs">
+                    ملاحظة إضافية للمشرفين (اختياري - حتى 50 كلمة):
+                  </label>
+                  <span className={`text-[10px] font-bold ${getWordCount(reportNote) > 50 ? "text-red-600 font-black" : "text-slate-500"}`}>
+                    {getWordCount(reportNote)} / 50 كلمة
+                  </span>
+                </div>
+                <textarea
+                  value={reportNote}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const words = getWordCount(val);
+                    if (words <= 50 || val.length < reportNote.length) {
+                      setReportNote(val);
+                    }
+                  }}
+                  placeholder="اكتب توضيحاً إضافياً للمشرفين (بحد أقصى 50 كلمة)..."
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-semibold min-h-[75px] resize-none focus:outline-none focus:bg-white"
+                />
+                {getWordCount(reportNote) > 50 && (
+                  <p className="text-[10px] text-red-600 font-bold">لا يمكن تجاوز الحد الأقصى (50 كلمة).</p>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setReportTarget(null); setReportNote(""); }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold border-2 border-slate-900 transition-all"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={submitReport}
+                  disabled={getWordCount(reportNote) > 50}
+                  className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#7f1d1d] disabled:bg-slate-300 disabled:shadow-none transition-all active:translate-x-0.5 active:translate-y-0.5"
+                >
+                  إرسال البلاغ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════ PROFILE EDIT MODAL ═══════ */}
       {profileModal && session && (
@@ -2605,10 +3036,18 @@ export default function Home() {
                       <div className="font-bold text-slate-800">{item.label}</div>
                       {item.sub && <div className="text-[10px] text-slate-500 truncate max-w-xs">{item.sub}</div>}
                     </div>
-                    <span className={`px-2.5 py-1 font-black text-xs border border-slate-900 ${
+                    <span className={`px-2.5 py-1 font-black text-xs border border-slate-900 flex items-center gap-1 ${
                       item.voteType === "like" ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-900"
                     }`}>
-                      {item.voteType === "like" ? "أعجبك 👍" : "لم يعجبك 👎"}
+                      {item.voteType === "like" ? (
+                        <>
+                          <IconThumbUp size={12} /> أعجبك
+                        </>
+                      ) : (
+                        <>
+                          <IconThumbDown size={12} /> لم يعجبك
+                        </>
+                      )}
                     </span>
                   </div>
                 ))}

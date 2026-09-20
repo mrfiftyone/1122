@@ -43,9 +43,10 @@ export default function NotFound() {
             <div className="font-black text-7xl sm:text-8xl tracking-tighter text-slate-900 select-none drop-shadow-[4px_4px_0px_#0d9488]">
               ٤٠٤
             </div>
-            <div className="text-xs sm:text-sm font-black text-emerald-800 bg-emerald-50 border border-slate-900 px-3 py-1 inline-block mt-2 shadow-[2px_2px_0px_#000]">
-              درس محذوف من المنهج! 📚
+            <div className="text-xs sm:text-sm font-black text-emerald-800 bg-emerald-50 border border-slate-900 px-3 py-1 inline-flex items-center gap-1.5 mt-2 shadow-[2px_2px_0px_#000]">
+              <IconBook size={14} /> درس محذوف من المنهج!
             </div>
+
           </div>
 
           {/* Descriptive Content */}

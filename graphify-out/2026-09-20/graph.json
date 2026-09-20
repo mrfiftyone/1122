@@ -160,6 +160,18 @@
       "source_location": "L13"
     },
     {
+      "id": "src_app_not_found_notfound",
+      "label": "NotFound()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "app/page.tsx",
+      "file_type": "code",
+      "norm_label": "notfound()",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L6"
+    },
+    {
       "id": "src_utils_icons_iconarrowright",
       "label": "IconArrowRight()",
       "_callable": true,
@@ -1046,6 +1058,17 @@
       "norm_label": "turnstile()",
       "source_file": "src/components/Turnstile.tsx",
       "source_location": "L33"
+    },
+    {
+      "id": "src_app_not_found",
+      "label": "not-found.tsx",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "app/page.tsx",
+      "file_type": "code",
+      "norm_label": "not-found.tsx",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L1"
     },
     {
       "id": "src_app_page",
@@ -2135,6 +2158,7 @@
     {
       "id": "src_app_globals",
       "label": "src_app_globals",
+      "_origin": "semantic",
       "community": 4,
       "community_name": "next",
       "external": true,
@@ -3010,6 +3034,54 @@
       "weight": 1.0
     },
     {
+      "source": "src_app_not_found",
+      "target": "src_utils_icons_iconarrowright",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_app_not_found",
+      "target": "src_utils_icons_iconbook",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_app_not_found",
+      "target": "src_utils_icons_iconhome",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_app_not_found",
+      "target": "src_utils_icons_iconshield",
+      "relation": "imports",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
       "source": "src_app_page",
       "target": "src_components_turnstile_turnstile",
       "relation": "imports",
@@ -3405,6 +3477,30 @@
       "context": "import",
       "source_file": "src/app/layout.tsx",
       "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_app_not_found",
+      "target": "ref_next",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_app_not_found",
+      "target": "src_utils_icons",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L4",
       "weight": 1.0
     },
     {
@@ -3933,6 +4029,17 @@
       "confidence_score": 1.0,
       "source_file": "src/app/layout.tsx",
       "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_app_not_found",
+      "target": "src_app_not_found_notfound",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/app/not-found.tsx",
+      "source_location": "L6",
       "weight": 1.0
     },
     {

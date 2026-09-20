@@ -1,12 +1,12 @@
 # Graph Report - 1122  (2026-09-20)
 
 ## Corpus Check
-- 21 files · ~14,889 words
+- 22 files · ~15,342 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 3 file(s) not represented in the graph (top: (none) 1, .ico 1, .css 1)
 
 ## Summary
-- 185 nodes · 251 edges · 17 communities (11 shown, 6 thin omitted)
+- 187 nodes · 258 edges · 17 communities (11 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
@@ -30,11 +30,11 @@
 ## God Nodes (most connected - your core abstractions)
 1. `Home()` - 43 edges
 2. `compilerOptions` - 16 edges
-3. `setNotifications()` - 6 edges
-4. `castVote()` - 6 edges
-5. `containsProfanity()` - 6 edges
-6. `scripts` - 5 edges
-7. `next` - 5 edges
+3. `next` - 6 edges
+4. `setNotifications()` - 6 edges
+5. `castVote()` - 6 edges
+6. `containsProfanity()` - 6 edges
+7. `scripts` - 5 edges
 8. `getNotifications()` - 5 edges
 9. `handleAuth()` - 5 edges
 10. `normalizeTeacherName()` - 5 edges
@@ -102,22 +102,22 @@ Nodes (3): submitTeacher(), checkIsDuplicate(), normalizeTeacherName()
 
 ## Knowledge Gaps
 - **80 isolated node(s):** `eslintConfig`, `nextConfig`, `name`, `version`, `private` (+75 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 101 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 102 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `next` connect `next` to `app/page.tsx`, `package.json`?**
-  _High betweenness centrality (0.204) - this node is a cross-community bridge._
+  _High betweenness centrality (0.210) - this node is a cross-community bridge._
 - **Why does `Home()` connect `Home` to `app/page.tsx`, `normalizeTeacherName`, `handleAuth`?**
-  _High betweenness centrality (0.169) - this node is a cross-community bridge._
+  _High betweenness centrality (0.167) - this node is a cross-community bridge._
 - **Why does `react` connect `Turnstile.tsx` to `app/page.tsx`, `package.json`?**
-  _High betweenness centrality (0.120) - this node is a cross-community bridge._
+  _High betweenness centrality (0.114) - this node is a cross-community bridge._
 - **What connects `eslintConfig`, `nextConfig`, `name` to the rest of the system?**
   _80 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app/page.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.07804878048780488 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07751937984496124 - nodes in this community are weakly interconnected._
 - **Should `Home` be split into smaller, more focused modules?**
   _Cohesion score 0.08258258258258258 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
