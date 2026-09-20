@@ -310,27 +310,66 @@ function initStorage() {
   }
 }
 
-function getUsers(): User[] { return JSON.parse(localStorage.getItem("users") || "[]"); }
-function getProfiles(): Record<string, Profile> { return JSON.parse(localStorage.getItem("profiles") || "{}"); }
-function getTeachers(): Teacher[] { return JSON.parse(localStorage.getItem("teachers") || "[]"); }
-function getPosts(): Post[] { return JSON.parse(localStorage.getItem("posts") || "[]"); }
-function getVotes(): VoteMap { return JSON.parse(localStorage.getItem("votes") || "{}"); }
-function getNotifications(): NotificationItem[] { return JSON.parse(localStorage.getItem("notifications") || "[]"); }
+function getUsers(): User[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem("users") || "[]"); } catch { return []; }
+}
+function getProfiles(): Record<string, Profile> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem("profiles") || "{}"); } catch { return {}; }
+}
+function getTeachers(): Teacher[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem("teachers") || "[]"); } catch { return []; }
+}
+function getPosts(): Post[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem("posts") || "[]"); } catch { return []; }
+}
+function getVotes(): VoteMap {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem("votes") || "{}"); } catch { return {}; }
+}
+function getNotifications(): NotificationItem[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem("notifications") || "[]"); } catch { return []; }
+}
 function getBookmarks(u: string): BookmarkItem[] {
   if (typeof window === "undefined" || !u) return [];
   try { return JSON.parse(localStorage.getItem(`bookmarks_${u}`) || "[]"); } catch { return []; }
 }
-function setUsers(u: User[]) { localStorage.setItem("users", JSON.stringify(u)); }
-function setProfiles(p: Record<string, Profile>) { localStorage.setItem("profiles", JSON.stringify(p)); }
-function setTeachers(t: Teacher[]) { localStorage.setItem("teachers", JSON.stringify(t)); }
-function setPosts(p: Post[]) { localStorage.setItem("posts", JSON.stringify(p)); }
-function setVotes(v: VoteMap) { localStorage.setItem("votes", JSON.stringify(v)); }
-function setNotifications(n: NotificationItem[]) { localStorage.setItem("notifications", JSON.stringify(n)); }
+function setUsers(u: User[]) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("users", JSON.stringify(u)); } catch {}
+}
+function setProfiles(p: Record<string, Profile>) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("profiles", JSON.stringify(p)); } catch {}
+}
+function setTeachers(t: Teacher[]) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("teachers", JSON.stringify(t)); } catch {}
+}
+function setPosts(p: Post[]) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("posts", JSON.stringify(p)); } catch {}
+}
+function setVotes(v: VoteMap) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("votes", JSON.stringify(v)); } catch {}
+}
+function setNotifications(n: NotificationItem[]) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("notifications", JSON.stringify(n)); } catch {}
+}
 function setBookmarks(u: string, b: BookmarkItem[]) {
   if (typeof window === "undefined" || !u) return;
   try { localStorage.setItem(`bookmarks_${u}`, JSON.stringify(b)); } catch {}
 }
-function getSession(): User | null { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; }
+function getSession(): User | null {
+  if (typeof window === "undefined") return null;
+  try { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; } catch { return null; }
+}
 
 function getPlatformSettings(): PlatformSettings {
   if (typeof window === "undefined") return { maintenanceMode: false, allowRegistration: true, allowPosting: true, allowTeacherSubmissions: true, allowReviews: true };
@@ -1118,6 +1157,22 @@ export default function Home() {
     });
   }
 
+  function safeSessionGet(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    try {
+      return sessionStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function safeSessionSet(key: string, value: string): void {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(key, value);
+    } catch {}
+  }
+
   // Track and register post & comment views in current browser session
   const viewedPostKeysRef = useRef<Set<string>>(new Set());
   const viewedCommentKeysRef = useRef<Set<string>>(new Set());
@@ -1125,14 +1180,12 @@ export default function Home() {
   const recordPostView = useCallback((postId: string) => {
     if (!postId || viewedPostKeysRef.current.has(postId)) return;
     const sessionKey = `viewed_p_${postId}`;
-    if (typeof window !== "undefined" && sessionStorage.getItem(sessionKey)) {
+    if (safeSessionGet(sessionKey)) {
       viewedPostKeysRef.current.add(postId);
       return;
     }
     viewedPostKeysRef.current.add(postId);
-    if (typeof window !== "undefined") {
-      try { sessionStorage.setItem(sessionKey, "1"); } catch {}
-    }
+    safeSessionSet(sessionKey, "1");
 
     setPostsList(prev => {
       let nextViews = 1;
@@ -1145,7 +1198,7 @@ export default function Home() {
       });
       setPosts(updated);
       try {
-        supabase.from('posts').update({ views: nextViews }).eq('id', postId).then();
+        supabase.from('posts').update({ views: nextViews }).eq('id', postId).then(() => {}, () => {});
       } catch {}
       return updated;
     });
@@ -1154,14 +1207,12 @@ export default function Home() {
   const recordCommentView = useCallback((postId: string, commentId: string) => {
     if (!commentId || viewedCommentKeysRef.current.has(commentId)) return;
     const sessionKey = `viewed_c_${commentId}`;
-    if (typeof window !== "undefined" && sessionStorage.getItem(sessionKey)) {
+    if (safeSessionGet(sessionKey)) {
       viewedCommentKeysRef.current.add(commentId);
       return;
     }
     viewedCommentKeysRef.current.add(commentId);
-    if (typeof window !== "undefined") {
-      try { sessionStorage.setItem(sessionKey, "1"); } catch {}
-    }
+    safeSessionSet(sessionKey, "1");
 
     setPostsList(prev => {
       let nextViews = 1;
@@ -1180,22 +1231,72 @@ export default function Home() {
       });
       setPosts(updated);
       try {
-        supabase.from('comments').update({ views: nextViews }).eq('id', commentId).then();
+        supabase.from('comments').update({ views: nextViews }).eq('id', commentId).then(() => {}, () => {});
       } catch {}
       return updated;
     });
   }, []);
 
-  // Automatically record views for loaded posts and comments in current session
+  // Automatically batch-record views on mount in current session without multiple state dispatches
   useEffect(() => {
     if (!posts.length) return;
+
+    const postsToInc = new Set<string>();
+    const commentsToInc = new Set<string>();
+
     posts.forEach(p => {
-      recordPostView(p.id);
+      if (!viewedPostKeysRef.current.has(p.id)) {
+        const sKey = `viewed_p_${p.id}`;
+        if (!safeSessionGet(sKey)) {
+          safeSessionSet(sKey, "1");
+          postsToInc.add(p.id);
+        }
+        viewedPostKeysRef.current.add(p.id);
+      }
+
       (p.comments || []).forEach(c => {
-        recordCommentView(p.id, c.id);
+        if (!viewedCommentKeysRef.current.has(c.id)) {
+          const cKey = `viewed_c_${c.id}`;
+          if (!safeSessionGet(cKey)) {
+            safeSessionSet(cKey, "1");
+            commentsToInc.add(c.id);
+          }
+          viewedCommentKeysRef.current.add(c.id);
+        }
       });
     });
-  }, [posts.length, recordPostView, recordCommentView]);
+
+    if (postsToInc.size === 0 && commentsToInc.size === 0) return;
+
+    // Single atomic state update to prevent cascading re-renders
+    setPostsList(prev => {
+      const updated = prev.map(p => {
+        const shouldIncPost = postsToInc.has(p.id);
+        const postViews = shouldIncPost ? (p.views || 0) + 1 : (p.views || 0);
+        const updatedComments = (p.comments || []).map(c => {
+          const shouldIncC = commentsToInc.has(c.id);
+          return shouldIncC ? { ...c, views: (c.views || 0) + 1 } : c;
+        });
+        return { ...p, views: postViews, comments: updatedComments };
+      });
+      setPosts(updated);
+      return updated;
+    });
+
+    postsToInc.forEach(pid => {
+      try {
+        const target = posts.find(p => p.id === pid);
+        const nextV = (target?.views || 0) + 1;
+        supabase.from('posts').update({ views: nextV }).eq('id', pid).then(() => {}, () => {});
+      } catch {}
+    });
+
+    commentsToInc.forEach(cid => {
+      try {
+        supabase.from('comments').update({ views: 1 }).eq('id', cid).then(() => {}, () => {});
+      } catch {}
+    });
+  }, [posts.length]);
 
   // ─── Report Records & Moderation Functions ─────────────────────────
   function getReportRecords(): ReportRecord[] {
