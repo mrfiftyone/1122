@@ -1,12 +1,12 @@
 # Graph Report - 1122  (2026-09-20)
 
 ## Corpus Check
-- 23 files · ~37,232 words
+- 23 files · ~37,602 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 3 file(s) not represented in the graph (top: (none) 1, .ico 1, .css 1)
 
 ## Summary
-- 288 nodes · 501 edges · 20 communities (13 shown, 7 thin omitted)
+- 290 nodes · 503 edges · 20 communities (13 shown, 7 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
@@ -16,7 +16,7 @@
 - package.json
 - compilerOptions
 - next
-- dependencies
+- Turnstile.tsx
 - icons.tsx
 - addAuditLog
 - toggleBookmark
@@ -31,7 +31,7 @@
 - time.ts
 
 ## God Nodes (most connected - your core abstractions)
-1. `Home()` - 91 edges
+1. `Home()` - 93 edges
 2. `addAuditLog()` - 19 edges
 3. `compilerOptions` - 16 edges
 4. `exportPlatformBackup()` - 12 edges
@@ -64,12 +64,12 @@ Cohesion: 0.05
 Nodes (36): AuditLogItem, AVATAR_COLORS, BookmarkItem, Comment, DEFAULT_MOD_PERMISSIONS, FULL_OWNER_PERMISSIONS, GOVERNORATES, GRADE_OPTIONS (+28 more)
 
 ### Community 1 - "Home"
-Cohesion: 0.06
-Nodes (45): getNotifications(), getPinnedPostIds(), getSession(), getSupportTickets(), getVotes(), Home(), addComment(), adminDeleteReportedItem() (+37 more)
+Cohesion: 0.05
+Nodes (49): getNotifications(), getPinnedPostIds(), getProfiles(), getSession(), getSupportTickets(), getVotes(), Home(), addComment() (+41 more)
 
 ### Community 2 - "package.json"
 Cohesion: 0.05
-Nodes (36): eslintConfig, devDependencies, eslint, eslint-config-next, tailwindcss, @tailwindcss/postcss, @types/node, @types/react (+28 more)
+Nodes (42): eslintConfig, dependencies, clsx, lucide-react, next, react, react-dom, @supabase/ssr (+34 more)
 
 ### Community 3 - "compilerOptions"
 Cohesion: 0.11
@@ -79,17 +79,17 @@ Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModu
 Cohesion: 0.18
 Nodes (6): nextConfig, next, src_app_globals, cairo, metadata, ProfileProps
 
-### Community 5 - "dependencies"
-Cohesion: 0.22
-Nodes (9): dependencies, clsx, lucide-react, next, react, react-dom, @supabase/ssr, @supabase/supabase-js (+1 more)
+### Community 5 - "Turnstile.tsx"
+Cohesion: 0.40
+Nodes (3): react, TurnstileProps, Window
 
 ### Community 6 - "icons.tsx"
 Cohesion: 0.05
 Nodes (36): IconActivity(), IconBell(), IconBolt(), IconBookmark(), IconCamera(), IconCheck(), IconChevronDown(), IconChevronUp() (+28 more)
 
 ### Community 7 - "addAuditLog"
-Cohesion: 0.09
-Nodes (40): getAuditLogs(), getCustomBannedWords(), getModPermissions(), getMutedUsers(), getPlatformSettings(), getPosts(), getProfiles(), getSiteAnnouncement() (+32 more)
+Cohesion: 0.10
+Nodes (36): getAuditLogs(), getCustomBannedWords(), getModPermissions(), getMutedUsers(), getPlatformSettings(), getPosts(), getSiteAnnouncement(), getTeachers() (+28 more)
 
 ### Community 8 - "toggleBookmark"
 Cohesion: 0.67
@@ -113,23 +113,23 @@ Nodes (4): getT(), Language, T_DICT, TranslationDict
 
 ## Knowledge Gaps
 - **93 isolated node(s):** `eslintConfig`, `nextConfig`, `name`, `version`, `private` (+88 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 116 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 118 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Home()` connect `Home` to `app/page.tsx`, `addAuditLog`, `toggleBookmark`, `normalizeTeacherName`, `i18n.ts`, `time.ts`?**
-  _High betweenness centrality (0.241) - this node is a cross-community bridge._
+  _High betweenness centrality (0.250) - this node is a cross-community bridge._
 - **Why does `next` connect `next` to `app/page.tsx`, `not-found.tsx`, `package.json`?**
-  _High betweenness centrality (0.162) - this node is a cross-community bridge._
-- **Why does `react` connect `package.json` to `app/page.tsx`?**
-  _High betweenness centrality (0.101) - this node is a cross-community bridge._
+  _High betweenness centrality (0.161) - this node is a cross-community bridge._
+- **Why does `react` connect `Turnstile.tsx` to `app/page.tsx`, `package.json`?**
+  _High betweenness centrality (0.100) - this node is a cross-community bridge._
 - **What connects `eslintConfig`, `nextConfig`, `name` to the rest of the system?**
   _93 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app/page.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.05405405405405406 - nodes in this community are weakly interconnected._
 - **Should `Home` be split into smaller, more focused modules?**
-  _Cohesion score 0.06077694235588972 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05478750640040963 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
-  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._

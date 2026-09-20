@@ -13,7 +13,7 @@ import {
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
-  IconKey, IconClock, IconStar, IconEye,
+  IconKey, IconClock, IconStar,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -43,7 +43,6 @@ interface Profile {
 interface Comment {
   id: string; author: string; text: string; created_at: string;
   likes: number; dislikes: number; reports: number;
-  views?: number;
 }
 export type PostTag = "question" | "discussion" | "news" | "tips" | "booklet" | "other";
 
@@ -53,7 +52,6 @@ interface Post {
   tag?: PostTag;
   pinned?: boolean;
   likes: number; dislikes: number; reports: number;
-  views?: number;
   status: "active" | "hidden"; comments: Comment[];
   images?: string[]; // Multiple image DataURLs (screenshots, summaries)
   youtubeUrl?: string; // YouTube video/playlist URL
@@ -660,32 +658,19 @@ export default function Home() {
             likes: p.likes || 0,
             dislikes: p.dislikes || 0,
             reports: p.reports || 0,
-            views: p.views !== undefined ? p.views : (meta.views || 0),
             status: p.status || "active",
             images: meta.images || [],
             youtubeUrl: meta.youtubeUrl || p.youtube_url || "",
             telegramUrl: meta.telegramUrl || p.telegram_url || "",
-            comments: (p.comments || []).map((c: any) => {
-              let cText = c.text || "";
-              let cMeta: any = {};
-              const cMetaMatch = cText.match(/<!--meta:(.*?)-->/);
-              if (cMetaMatch) {
-                try {
-                  cMeta = JSON.parse(cMetaMatch[1]);
-                  cText = cText.replace(/<!--meta:.*?-->/, "").trim();
-                } catch {}
-              }
-              return {
-                id: c.id,
-                author: c.author,
-                text: cText,
-                created_at: c.created_at,
-                likes: c.likes || 0,
-                dislikes: c.dislikes || 0,
-                reports: c.reports || 0,
-                views: c.views !== undefined ? c.views : (cMeta.views || 0),
-              };
-            }).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+            comments: (p.comments || []).map((c: any) => ({
+              id: c.id,
+              author: c.author,
+              text: c.text,
+              created_at: c.created_at,
+              likes: c.likes || 0,
+              dislikes: c.dislikes || 0,
+              reports: c.reports || 0,
+            })).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
             created_at: p.created_at,
           };
         });
@@ -1069,7 +1054,6 @@ export default function Home() {
       likes: 0,
       dislikes: 0,
       reports: 0,
-      views: 0,
       status: "active",
       images: postImages,
       youtubeUrl: postYoutube.trim(),
@@ -1156,147 +1140,6 @@ export default function Home() {
       }
     });
   }
-
-  function safeSessionGet(key: string): string | null {
-    if (typeof window === "undefined") return null;
-    try {
-      return sessionStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  }
-
-  function safeSessionSet(key: string, value: string): void {
-    if (typeof window === "undefined") return;
-    try {
-      sessionStorage.setItem(key, value);
-    } catch {}
-  }
-
-  // Track and register post & comment views in current browser session
-  const viewedPostKeysRef = useRef<Set<string>>(new Set());
-  const viewedCommentKeysRef = useRef<Set<string>>(new Set());
-
-  const recordPostView = useCallback((postId: string) => {
-    if (!postId || viewedPostKeysRef.current.has(postId)) return;
-    const sessionKey = `viewed_p_${postId}`;
-    if (safeSessionGet(sessionKey)) {
-      viewedPostKeysRef.current.add(postId);
-      return;
-    }
-    viewedPostKeysRef.current.add(postId);
-    safeSessionSet(sessionKey, "1");
-
-    setPostsList(prev => {
-      let nextViews = 1;
-      const updated = prev.map(p => {
-        if (p.id === postId) {
-          nextViews = (p.views || 0) + 1;
-          return { ...p, views: nextViews };
-        }
-        return p;
-      });
-      setPosts(updated);
-      try {
-        supabase.from('posts').update({ views: nextViews }).eq('id', postId).then(() => {}, () => {});
-      } catch {}
-      return updated;
-    });
-  }, []);
-
-  const recordCommentView = useCallback((postId: string, commentId: string) => {
-    if (!commentId || viewedCommentKeysRef.current.has(commentId)) return;
-    const sessionKey = `viewed_c_${commentId}`;
-    if (safeSessionGet(sessionKey)) {
-      viewedCommentKeysRef.current.add(commentId);
-      return;
-    }
-    viewedCommentKeysRef.current.add(commentId);
-    safeSessionSet(sessionKey, "1");
-
-    setPostsList(prev => {
-      let nextViews = 1;
-      const updated = prev.map(p => {
-        if (p.id === postId) {
-          const updatedComments = (p.comments || []).map(c => {
-            if (c.id === commentId) {
-              nextViews = (c.views || 0) + 1;
-              return { ...c, views: nextViews };
-            }
-            return c;
-          });
-          return { ...p, comments: updatedComments };
-        }
-        return p;
-      });
-      setPosts(updated);
-      try {
-        supabase.from('comments').update({ views: nextViews }).eq('id', commentId).then(() => {}, () => {});
-      } catch {}
-      return updated;
-    });
-  }, []);
-
-  // Automatically batch-record views on mount in current session without multiple state dispatches
-  useEffect(() => {
-    if (!posts.length) return;
-
-    const postsToInc = new Set<string>();
-    const commentsToInc = new Set<string>();
-
-    posts.forEach(p => {
-      if (!viewedPostKeysRef.current.has(p.id)) {
-        const sKey = `viewed_p_${p.id}`;
-        if (!safeSessionGet(sKey)) {
-          safeSessionSet(sKey, "1");
-          postsToInc.add(p.id);
-        }
-        viewedPostKeysRef.current.add(p.id);
-      }
-
-      (p.comments || []).forEach(c => {
-        if (!viewedCommentKeysRef.current.has(c.id)) {
-          const cKey = `viewed_c_${c.id}`;
-          if (!safeSessionGet(cKey)) {
-            safeSessionSet(cKey, "1");
-            commentsToInc.add(c.id);
-          }
-          viewedCommentKeysRef.current.add(c.id);
-        }
-      });
-    });
-
-    if (postsToInc.size === 0 && commentsToInc.size === 0) return;
-
-    // Single atomic state update to prevent cascading re-renders
-    setPostsList(prev => {
-      const updated = prev.map(p => {
-        const shouldIncPost = postsToInc.has(p.id);
-        const postViews = shouldIncPost ? (p.views || 0) + 1 : (p.views || 0);
-        const updatedComments = (p.comments || []).map(c => {
-          const shouldIncC = commentsToInc.has(c.id);
-          return shouldIncC ? { ...c, views: (c.views || 0) + 1 } : c;
-        });
-        return { ...p, views: postViews, comments: updatedComments };
-      });
-      setPosts(updated);
-      return updated;
-    });
-
-    postsToInc.forEach(pid => {
-      try {
-        const target = posts.find(p => p.id === pid);
-        const nextV = (target?.views || 0) + 1;
-        supabase.from('posts').update({ views: nextV }).eq('id', pid).then(() => {}, () => {});
-      } catch {}
-    });
-
-    commentsToInc.forEach(cid => {
-      try {
-        supabase.from('comments').update({ views: 1 }).eq('id', cid).then(() => {}, () => {});
-      } catch {}
-    });
-  }, [posts.length]);
 
   // ─── Report Records & Moderation Functions ─────────────────────────
   function getReportRecords(): ReportRecord[] {
@@ -1524,7 +1367,6 @@ export default function Home() {
       likes: 0,
       dislikes: 0,
       reports: 0,
-      views: 0,
     };
 
     setPostsList(prev => prev.map(p => {
@@ -1833,7 +1675,6 @@ export default function Home() {
       likes: 0,
       dislikes: 0,
       reports: 0,
-      views: 0,
       status: "active",
       comments: [],
       created_at: new Date().toISOString(),
@@ -2694,7 +2535,6 @@ export default function Home() {
       likes: p.likes,
       dislikes: p.dislikes,
       reports: p.reports || 0,
-      views: p.views || 0,
     })),
     ...userTeacherReviews.map(r => ({
       id: r.id,
@@ -2708,7 +2548,6 @@ export default function Home() {
       likes: r.likes,
       dislikes: r.dislikes,
       reports: r.reports || 0,
-      views: r.views || 0,
     })),
     ...userComments.map(c => ({
       id: c.comment.id,
@@ -2722,7 +2561,6 @@ export default function Home() {
       likes: c.comment.likes,
       dislikes: c.comment.dislikes,
       reports: c.comment.reports || 0,
-      views: c.comment.views || 0,
     })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
@@ -3315,14 +3153,6 @@ export default function Home() {
                             <button onClick={() => votePost(p.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
                               <IconThumbDown size={13} /> {p.dislikes}
                             </button>
-                            <span
-                              className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1.5"
-                              title={siteLang === "en" ? `${p.views || 0} views` : `${p.views || 0} مشاهدة`}
-                            >
-                              <IconEye size={13} className="text-slate-600" />
-                              <span>{p.views || 0}</span>
-                              <span className="text-[10px] text-slate-500 font-semibold">{t("views")}</span>
-                            </span>
                             <button
                               onClick={() => toggleBookmark(p.id, "post", p.title, p.author)}
                               className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
@@ -3384,14 +3214,6 @@ export default function Home() {
                                   <button onClick={() => voteComment(p.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
                                     <IconThumbDown size={10} /> {c.dislikes}
                                   </button>
-                                  <span
-                                    className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-[10px] font-bold text-slate-600 flex items-center gap-1"
-                                    title={siteLang === "en" ? `${c.views || 0} views` : `${c.views || 0} مشاهدة`}
-                                  >
-                                    <IconEye size={10} className="text-slate-500" />
-                                    <span>{c.views || 0}</span>
-                                    <span className="text-[9px] text-slate-400 font-normal">{t("views")}</span>
-                                  </span>
                                   <button onClick={() => reportComment(p.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
                                     <IconFlag size={9} /> ({c.reports || 0})
                                   </button>
@@ -4027,14 +3849,6 @@ export default function Home() {
                                   <button onClick={() => votePost(postItem.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
                                     <IconThumbDown size={12} /> {postItem.dislikes}
                                   </button>
-                                  <span
-                                    className="px-2 py-1 bg-slate-100 text-slate-700 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1.5"
-                                    title={siteLang === "en" ? `${postItem.views || 0} views` : `${postItem.views || 0} مشاهدة`}
-                                  >
-                                    <IconEye size={12} className="text-slate-600" />
-                                    <span>{postItem.views || 0}</span>
-                                    <span className="text-[10px] text-slate-500 font-semibold">{t("views")}</span>
-                                  </span>
                                   <button
                                     onClick={() => toggleBookmark(postItem.id, "post", postItem.title, postItem.author)}
                                     className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
@@ -4083,14 +3897,6 @@ export default function Home() {
                                         <button onClick={() => voteComment(postItem.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
                                           <IconThumbDown size={10} /> {c.dislikes}
                                         </button>
-                                        <span
-                                          className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-[10px] font-bold text-slate-600 flex items-center gap-1"
-                                          title={siteLang === "en" ? `${c.views || 0} views` : `${c.views || 0} مشاهدة`}
-                                        >
-                                          <IconEye size={10} className="text-slate-500" />
-                                          <span>{c.views || 0}</span>
-                                          <span className="text-[9px] text-slate-400 font-normal">{t("views")}</span>
-                                        </span>
                                         <button onClick={() => reportComment(postItem.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
                                           <IconFlag size={9} /> ({c.reports || 0})
                                         </button>
@@ -4630,14 +4436,6 @@ export default function Home() {
                                   >
                                     <IconThumbDown size={12} /> {item.dislikes}
                                   </button>
-                                  <span
-                                    className="px-2 py-1 bg-slate-100 text-slate-700 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1.5"
-                                    title={siteLang === "en" ? `${fullPost?.views || item.views || 0} views` : `${fullPost?.views || item.views || 0} مشاهدة`}
-                                  >
-                                    <IconEye size={12} className="text-slate-600" />
-                                    <span>{fullPost?.views || item.views || 0}</span>
-                                    <span className="text-[10px] text-slate-500 font-semibold">{t("views")}</span>
-                                  </span>
                                   <button
                                     onClick={() => toggleProfileComments(item.id)}
                                     className={`px-2.5 py-1 border text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px transition-all ${
@@ -4674,14 +4472,6 @@ export default function Home() {
                                   >
                                     <IconThumbDown size={10} /> {item.dislikes}
                                   </button>
-                                  <span
-                                    className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-[10px] font-bold text-slate-600 flex items-center gap-1"
-                                    title={siteLang === "en" ? `${item.views || 0} views` : `${item.views || 0} مشاهدة`}
-                                  >
-                                    <IconEye size={10} className="text-slate-500" />
-                                    <span>{item.views || 0}</span>
-                                    <span className="text-[9px] text-slate-400 font-normal">{t("views")}</span>
-                                  </span>
                                   <button
                                     onClick={() => item.postId && openReportModal({ id: item.id, type: "comment", title: item.content, parentPostId: item.postId })}
                                     className="text-[10px] text-slate-500 hover:text-red-600 font-bold flex items-center gap-0.5 px-1.5 py-1"
@@ -4747,14 +4537,6 @@ export default function Home() {
                                         >
                                           <IconThumbDown size={10} /> {c.dislikes}
                                         </button>
-                                        <span
-                                          className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-[10px] font-bold text-slate-600 flex items-center gap-1"
-                                          title={siteLang === "en" ? `${c.views || 0} views` : `${c.views || 0} مشاهدة`}
-                                        >
-                                          <IconEye size={10} className="text-slate-500" />
-                                          <span>{c.views || 0}</span>
-                                          <span className="text-[9px] text-slate-400 font-normal">{t("views")}</span>
-                                        </span>
                                         <button
                                           onClick={() => openReportModal({ id: c.id, type: "comment", title: c.text, parentPostId: item.id })}
                                           className="text-[10px] text-slate-400 hover:text-red-500 font-bold flex items-center gap-0.5"
