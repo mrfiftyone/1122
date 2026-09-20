@@ -45,6 +45,7 @@ interface Profile {
   bannerPattern?: "none" | "stripes" | "dots" | "grid" | "gradient";
   bannerColor?: string;
   accentColor?: string;
+  role?: "student" | "mod" | "owner";
 }
 interface Comment {
   id: string; author: string; text: string; created_at: string;
@@ -669,11 +670,12 @@ export default function Home() {
   // ─── Fetch from Supabase (Central Shared Database) ─────────────────
   const fetchSupabaseData = useCallback(async () => {
     try {
-      const [pRes, tRes, prRes, nRes] = await Promise.all([
+      const [pRes, tRes, prRes, nRes, repRes] = await Promise.all([
         supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }),
         supabase.from('teachers').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*'),
         supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+        supabase.from('reports').select('*').order('created_at', { ascending: false }),
       ]);
 
       if (pRes.data) {
@@ -746,6 +748,7 @@ export default function Home() {
             avatarColor: p.avatar_color || "#0d9488",
             avatarUrl: currentProfiles[p.username]?.avatarUrl || "",
             bio: p.bio || currentProfiles[p.username]?.bio || "",
+            role: p.role || "student",
           };
         });
         setProfilesMap(currentProfiles);
@@ -757,6 +760,7 @@ export default function Home() {
         const map = new Map<string, NotificationItem>();
         localNotifs.forEach(n => map.set(n.id, n));
         nRes.data.forEach((n: any) => {
+          const localItem = localNotifs.find(x => x.id === n.id);
           map.set(n.id, {
             id: n.id,
             recipient: n.recipient,
@@ -765,13 +769,35 @@ export default function Home() {
             postId: n.post_id || "",
             targetTitle: n.target_title || "",
             commentText: n.comment_text || "",
-            read: !!n.read,
+            read: !!n.read || !!localItem?.read,
             created_at: n.created_at,
           });
         });
         const mergedNotifs = Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setNotifications(mergedNotifs);
         setAllNotifications(mergedNotifs);
+      }
+
+      if (repRes && repRes.data && repRes.data.length > 0) {
+        const localReps = getReportRecords();
+        const repMap = new Map<string, ReportRecord>();
+        localReps.forEach(r => repMap.set(r.id, r));
+        repRes.data.forEach((r: any) => {
+          repMap.set(r.id, {
+            id: r.id,
+            targetId: r.target_id,
+            targetType: r.target_type as any,
+            targetTitle: r.target_title,
+            reporter: r.reporter,
+            reason: r.reason as any,
+            note: r.note,
+            status: r.status as any,
+            created_at: r.created_at,
+          });
+        });
+        const mergedReps = Array.from(repMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        localStorage.setItem("report_records_v1", JSON.stringify(mergedReps.slice(0, 200)));
+        setReportRecordsList(mergedReps);
       }
     } catch (err) {
       console.error("Supabase load error:", err);
@@ -1323,6 +1349,18 @@ export default function Home() {
       list.unshift(r);
       localStorage.setItem("report_records_v1", JSON.stringify(list.slice(0, 200)));
       setReportRecordsList(list);
+
+      // Persist to Supabase reports table
+      supabase.from('reports').insert([{
+        id: r.id,
+        target_id: r.targetId,
+        target_type: r.targetType,
+        target_title: r.targetTitle || "",
+        reporter: r.reporter,
+        reason: r.reason,
+        note: r.note || "",
+        status: r.status || "pending",
+      }]).then(() => {});
     } catch {}
   }
 
@@ -1345,6 +1383,7 @@ export default function Home() {
     try {
       await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
       await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
+      await supabase.from('reports').update({ status: "dismissed" }).eq('id', reportId);
     } catch (e) {
       console.error("Error dismissing report in Supabase:", e);
     }
@@ -1358,6 +1397,10 @@ export default function Home() {
     const list = getReportRecords().filter(r => r.id !== reportId);
     localStorage.setItem("report_records_v1", JSON.stringify(list));
     setReportRecordsList(list);
+
+    try {
+      await supabase.from('reports').delete().eq('id', reportId);
+    } catch (e) {}
 
     if (targetType === "post") {
       setPostsList(prev => prev.map(p => p.id === targetId ? { ...p, reports: 0, status: "active" } : p));
@@ -1515,24 +1558,21 @@ export default function Home() {
     saveReportRecord(record);
 
     // Notify all moderators and owners of this incoming report
-    const adminUsers = getUsers().filter(u => u.role === "owner" || u.role === "mod");
-    const notifs = getNotifications();
+    let adminUsernames: string[] = ["hh"];
+    const profilesAdmins = Object.entries(profiles)
+      .filter(([_, p]) => (p as Profile).role === "owner" || (p as Profile).role === "mod")
+      .map(([uname]) => uname);
+    const localAdmins = getUsers().filter(u => u.role === "owner" || u.role === "mod").map(u => u.username);
+    adminUsernames = Array.from(new Set([...adminUsernames, ...profilesAdmins, ...localAdmins]));
+
     const reasonArabic = reportReason === "inappropriate" ? "محتوى غير لائق ومسيء" : reportReason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
-    adminUsers.forEach(adm => {
-      notifs.unshift({
-        id: "notif_rep_" + Date.now() + "_" + adm.username,
-        recipient: adm.username,
-        actor: session.username,
+    adminUsernames.forEach(admName => {
+      sendNotificationToUser(admName, {
         type: "report_alert",
-        postId: reportTarget.id,
-        targetTitle: reportTarget.title || "محتوى",
-        commentText: `بلاغ جديد [${reasonArabic}]: ${reportNote.trim() || "بدون ملاحظة إضافية"}`,
-        read: false,
-        created_at: new Date().toISOString(),
+        title: `بلاغ عن: "${reportTarget.title || "محتوى"}"`,
+        message: `بلاغ جديد [${reasonArabic}]: ${reportNote.trim() || "بدون ملاحظة إضافية"} (من قِبل: ${session.username})`,
       });
     });
-    setNotifications(notifs);
-    setAllNotifications(notifs);
 
     setReportTarget(null);
     setReportNote("");
@@ -2623,6 +2663,12 @@ export default function Home() {
     setNotifications(updated);
     setAllNotifications(updated);
     rerender();
+
+    try {
+      supabase.from('notifications').update({ read: true }).eq('recipient', session.username).then(() => {});
+    } catch (e) {
+      console.error("Error updating notifications in Supabase:", e);
+    }
   }
 
   const activePosts = posts.filter(p => p.status === "active");
@@ -4296,6 +4342,9 @@ export default function Home() {
                         const updated = allNotifications.map(item => item.id === n.id ? { ...item, read: true } : item);
                         setNotifications(updated);
                         setAllNotifications(updated);
+                        try {
+                          supabase.from('notifications').update({ read: true }).eq('id', n.id).then(() => {});
+                        } catch (e) {}
                         if (n.type === "report_alert") {
                           setTab("admin");
                         } else if (n.type === "support_reply") {

@@ -4,9 +4,9 @@
   "2": "package.json",
   "3": "compilerOptions",
   "4": "next",
-  "5": "dependencies",
+  "5": "normalizeTeacherName",
   "6": "icons.tsx",
-  "7": "addAuditLog",
+  "7": "sendNotificationToUser",
   "8": "toggleBookmark",
   "9": "README.md",
   "10": "getSupportTickets",
@@ -20,5 +20,6 @@
   "18": "security.ts",
   "19": "i18n.ts",
   "20": "time.ts",
-  "21": "devDependencies"
+  "21": "devDependencies",
+  "22": "getPinnedPostIds"
 }

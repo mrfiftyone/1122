@@ -1,5 +1,5 @@
 -- ==============================================================================
--- IQ ACADEMY: NOTIFICATIONS, REPORTING & PERMISSIONS SQL MIGRATION
+-- IQ ACADEMY: NOTIFICATIONS, REPORTS & PERMISSIONS MIGRATION
 -- ==============================================================================
 
 -- 1. Create Notifications Table for Real-Time Sync Across All Users
@@ -21,7 +21,26 @@ DROP POLICY IF EXISTS "notifications_all" ON public.notifications;
 CREATE POLICY "notifications_all" ON public.notifications
   FOR ALL USING (true) WITH CHECK (true);
 
--- 2. Allow any user to update reports count & votes on posts and comments
+-- 2. Create Reports Table for Central Moderation Center
+CREATE TABLE IF NOT EXISTS public.reports (
+    id TEXT PRIMARY KEY,
+    target_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_title TEXT DEFAULT '',
+    reporter TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "reports_all" ON public.reports;
+CREATE POLICY "reports_all" ON public.reports
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- 3. Allow any user to update reports count & votes on posts and comments
 DROP POLICY IF EXISTS "posts_update_auth" ON public.posts;
 CREATE POLICY "posts_update_auth" ON public.posts
   FOR UPDATE USING (true) WITH CHECK (true);
@@ -30,12 +49,12 @@ DROP POLICY IF EXISTS "comments_update_auth" ON public.comments;
 CREATE POLICY "comments_update_auth" ON public.comments
   FOR UPDATE USING (true) WITH CHECK (true);
 
--- 3. Allow Owner / Mods to update user roles in profiles table
+-- 4. Allow Owner / Mods to update user roles in profiles table
 DROP POLICY IF EXISTS "profiles_update_role" ON public.profiles;
 CREATE POLICY "profiles_update_role" ON public.profiles
   FOR UPDATE USING (true) WITH CHECK (true);
 
--- 4. Automatically assign 'owner' to 'hh' upon signup
+-- 5. Automatically assign 'owner' to 'hh' upon signup
 CREATE OR REPLACE FUNCTION public.handle_new_user() 
 RETURNS TRIGGER AS $$
 BEGIN
@@ -60,5 +79,5 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 5. Auto-confirm all emails
+-- 6. Auto-confirm all emails
 UPDATE auth.users SET email_confirmed_at = now() WHERE email_confirmed_at IS NULL;
