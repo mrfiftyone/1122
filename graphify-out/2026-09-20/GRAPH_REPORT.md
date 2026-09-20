@@ -1,12 +1,12 @@
 # Graph Report - 1122  (2026-09-20)
 
 ## Corpus Check
-- 28 files · ~39,428 words
+- 28 files · ~39,954 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 3 file(s) not represented in the graph (top: (none) 1, .ico 1, .css 1)
 
 ## Summary
-- 305 nodes · 535 edges · 22 communities (15 shown, 7 thin omitted)
+- 308 nodes · 542 edges · 21 communities (14 shown, 7 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
@@ -16,9 +16,8 @@
 - package.json
 - compilerOptions
 - next
-- castVote
 - icons.tsx
-- getUsers
+- addAuditLog
 - toggleBookmark
 - README.md
 - normalizeTeacherName
@@ -33,7 +32,7 @@
 - devDependencies
 
 ## God Nodes (most connected - your core abstractions)
-1. `Home()` - 96 edges
+1. `Home()` - 98 edges
 2. `addAuditLog()` - 19 edges
 3. `compilerOptions` - 16 edges
 4. `exportPlatformBackup()` - 12 edges
@@ -47,27 +46,27 @@
 ## Surprising Connections (you probably didn't know these)
 - `Home()` --calls--> `getT()`  [EXTRACTED]
   src/app/page.tsx → src/utils/i18n.ts
-- `Home()` --calls--> `containsProfanity()`  [EXTRACTED]
-  src/app/page.tsx → src/utils/moderation.ts
-- `Home()` --calls--> `getBlockedWordsList()`  [EXTRACTED]
-  src/app/page.tsx → src/utils/moderation.ts
 - `Home()` --calls--> `normalizeTeacherName()`  [EXTRACTED]
   src/app/page.tsx → src/utils/normalization.ts
 - `Home()` --calls--> `isAllowedTelegramUrl()`  [EXTRACTED]
+  src/app/page.tsx → src/utils/security.ts
+- `Home()` --calls--> `isAllowedYoutubeUrl()`  [EXTRACTED]
+  src/app/page.tsx → src/utils/security.ts
+- `Home()` --calls--> `sanitizeText()`  [EXTRACTED]
   src/app/page.tsx → src/utils/security.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (22 total, 7 thin omitted)
+## Communities (21 total, 7 thin omitted)
 
 ### Community 0 - "app/page.tsx"
-Cohesion: 0.06
-Nodes (35): AuditLogItem, AVATAR_COLORS, BookmarkItem, Comment, DEFAULT_MOD_PERMISSIONS, FULL_OWNER_PERMISSIONS, GOVERNORATES, GRADE_OPTIONS (+27 more)
+Cohesion: 0.05
+Nodes (36): AuditLogItem, AVATAR_COLORS, BookmarkItem, Comment, DEFAULT_MOD_PERMISSIONS, FULL_OWNER_PERMISSIONS, GOVERNORATES, GRADE_OPTIONS (+28 more)
 
 ### Community 1 - "Home"
-Cohesion: 0.05
-Nodes (59): getAuditLogs(), getCustomBannedWords(), getNotifications(), getPinnedPostIds(), getPlatformSettings(), getPosts(), getProfiles(), getSession() (+51 more)
+Cohesion: 0.06
+Nodes (48): getNotifications(), getPinnedPostIds(), getProfiles(), getSession(), getSupportTickets(), getVotes(), Home(), adminDeleteReportedItem() (+40 more)
 
 ### Community 2 - "package.json"
 Cohesion: 0.05
@@ -81,17 +80,13 @@ Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModu
 Cohesion: 0.11
 Nodes (8): nextConfig, next, @supabase/supabase-js, src_app_globals, cairo, metadata, ProfileProps, supabase
 
-### Community 5 - "castVote"
-Cohesion: 0.33
-Nodes (7): getVotes(), castVote(), getUserVote(), submitTeacherReview(), voteComment(), voteTeacher(), setVotes()
-
 ### Community 6 - "icons.tsx"
 Cohesion: 0.05
-Nodes (36): IconActivity(), IconAward(), IconBell(), IconBolt(), IconCamera(), IconChevronDown(), IconChevronUp(), IconClock (+28 more)
+Nodes (36): IconAlertTriangle(), IconAward(), IconBell(), IconBolt(), IconBookmark(), IconChevronDown(), IconChevronUp(), IconClock (+28 more)
 
-### Community 7 - "getUsers"
-Cohesion: 0.23
-Nodes (15): getModPermissions(), getMutedUsers(), getUsers(), getUserStrikes(), handleDemoteToStudent(), handleIssueWarning(), handleMuteUser(), handleSaveModPermissions() (+7 more)
+### Community 7 - "addAuditLog"
+Cohesion: 0.09
+Nodes (38): getAuditLogs(), getCustomBannedWords(), getModPermissions(), getMutedUsers(), getPlatformSettings(), getPosts(), getSiteAnnouncement(), getTeachers() (+30 more)
 
 ### Community 8 - "toggleBookmark"
 Cohesion: 0.67
@@ -110,8 +105,8 @@ Cohesion: 0.33
 Nodes (4): IconArrowRight(), IconBook(), IconHome(), IconShield()
 
 ### Community 18 - "security.ts"
-Cohesion: 0.13
-Nodes (16): addComment(), submitPost(), BLOCKED_WORDS, containsProfanity(), getBlockedWordsList(), ALLOWED_TELEGRAM_PATTERNS, ALLOWED_YOUTUBE_PATTERNS, generateSalt() (+8 more)
+Cohesion: 0.17
+Nodes (13): addComment(), submitPost(), ALLOWED_TELEGRAM_PATTERNS, ALLOWED_YOUTUBE_PATTERNS, generateSalt(), hashPassword(), isAllowedTelegramUrl(), isAllowedYoutubeUrl() (+5 more)
 
 ### Community 19 - "i18n.ts"
 Cohesion: 0.40
@@ -122,24 +117,24 @@ Cohesion: 0.22
 Nodes (9): devDependencies, eslint, eslint-config-next, tailwindcss, @tailwindcss/postcss, @types/node, @types/react, @types/react-dom (+1 more)
 
 ## Knowledge Gaps
-- **95 isolated node(s):** `eslintConfig`, `nextConfig`, `name`, `version`, `private` (+90 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 122 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **96 isolated node(s):** `eslintConfig`, `nextConfig`, `name`, `version`, `private` (+91 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 123 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Home()` connect `Home` to `app/page.tsx`, `castVote`, `getUsers`, `toggleBookmark`, `normalizeTeacherName`, `security.ts`, `i18n.ts`, `time.ts`?**
-  _High betweenness centrality (0.234) - this node is a cross-community bridge._
+- **Why does `Home()` connect `Home` to `app/page.tsx`, `addAuditLog`, `toggleBookmark`, `normalizeTeacherName`, `security.ts`, `i18n.ts`, `time.ts`?**
+  _High betweenness centrality (0.237) - this node is a cross-community bridge._
 - **Why does `next` connect `next` to `app/page.tsx`, `not-found.tsx`, `package.json`?**
-  _High betweenness centrality (0.175) - this node is a cross-community bridge._
+  _High betweenness centrality (0.174) - this node is a cross-community bridge._
 - **Why does `react` connect `package.json` to `app/page.tsx`?**
-  _High betweenness centrality (0.096) - this node is a cross-community bridge._
+  _High betweenness centrality (0.095) - this node is a cross-community bridge._
 - **What connects `eslintConfig`, `nextConfig`, `name` to the rest of the system?**
-  _95 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _96 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app/page.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.05555555555555555 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05405405405405406 - nodes in this community are weakly interconnected._
 - **Should `Home` be split into smaller, more focused modules?**
-  _Cohesion score 0.05341614906832298 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05649717514124294 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
   _Cohesion score 0.05405405405405406 - nodes in this community are weakly interconnected._

@@ -775,23 +775,32 @@ export default function Home() {
   useEffect(() => {
     initStorage();
     const currUser = getSession();
-    // Phase 3: Cross-verify session role against stored users to prevent DevTools spoofing
     if (currUser) {
-      const verified = verifySessionRole(currUser, getUsers());
-      if (verified && verified.role !== currUser.role) {
-        const fixedUser = { ...currUser, role: verified.role as User["role"] };
-        localStorage.setItem("currentUser", JSON.stringify(fixedUser));
-        setSession(fixedUser);
-      } else if (!verified) {
-        // User not found in stored users list — clear the session
-        localStorage.removeItem("currentUser");
-        setSession(null);
-      } else {
-        setSession(currUser);
-      }
-    } else {
-      setSession(null);
+      setSession(currUser);
     }
+    // Cross-verify session asynchronously with Supabase Auth & DB profile
+    supabase.auth.getSession().then(async ({ data: { session: supaSession } }) => {
+      if (supaSession?.user) {
+        const cleanUsername = supaSession.user.user_metadata?.username || supaSession.user.email?.split('@')[0] || "";
+        let role = supaSession.user.user_metadata?.role || "student";
+        try {
+          const { data: profData } = await supabase.from('profiles').select('role').eq('id', supaSession.user.id).maybeSingle();
+          if (profData?.role) role = profData.role;
+        } catch (err) {
+          console.error("Error fetching profile role on load:", err);
+        }
+        const sessionUser: User = { username: cleanUsername, pass: "", role: role as User["role"] };
+        localStorage.setItem("currentUser", JSON.stringify(sessionUser));
+        
+        const curUsers = getUsers();
+        const idx = curUsers.findIndex(u => u.username === cleanUsername);
+        if (idx >= 0) curUsers[idx].role = role as User["role"];
+        else curUsers.push(sessionUser);
+        localStorage.setItem("users", JSON.stringify(curUsers));
+
+        setSession(sessionUser);
+      }
+    });
     setPostsList(getPosts());
     setTeachersList(getTeachers());
     setAllNotifications(getNotifications());
@@ -959,6 +968,13 @@ export default function Home() {
 
       const sessionUser: User = { username: cleanUsername, pass: "", role: "student" };
       localStorage.setItem("currentUser", JSON.stringify(sessionUser));
+      
+      const currentUsers = getUsers();
+      if (!currentUsers.some(u => u.username === cleanUsername)) {
+        currentUsers.push(sessionUser);
+        localStorage.setItem("users", JSON.stringify(currentUsers));
+      }
+
       setSession(sessionUser);
       setAuthModal(false);
       setAuthUser(""); setAuthPass(""); resetTurnstile();
@@ -982,7 +998,11 @@ export default function Home() {
           resetTurnstile();
           setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
         } else {
-          setAuthError(`خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`);
+          setAuthError(
+            error.message === "Invalid login credentials"
+              ? `خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`
+              : `${error.message} (المحاولة ${nextFails} من ٥)`
+          );
         }
         return;
       }
@@ -990,10 +1010,27 @@ export default function Home() {
       setFailedAttempts(0);
       localStorage.removeItem("login_lockout_until");
       
-      // Extract role from Supabase metadata (fallback to student)
-      const role = data.user?.user_metadata?.role || "student";
+      // Extract role from profiles table (source of truth), fallback to metadata
+      let role = data.user?.user_metadata?.role || "student";
+      try {
+        const { data: profData } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
+        if (profData?.role) role = profData.role;
+      } catch (err) {
+        console.error("Error fetching profile role:", err);
+      }
+
       const sessionUser: User = { username: cleanUsername, pass: "", role };
       
+      // Sync local users cache
+      const currentUsers = getUsers();
+      const existingIdx = currentUsers.findIndex(u => u.username === cleanUsername);
+      if (existingIdx >= 0) {
+        currentUsers[existingIdx].role = role;
+      } else {
+        currentUsers.push(sessionUser);
+      }
+      localStorage.setItem("users", JSON.stringify(currentUsers));
+
       // Store UI session
       localStorage.setItem("currentUser", JSON.stringify(sessionUser));
       setSession(sessionUser);
