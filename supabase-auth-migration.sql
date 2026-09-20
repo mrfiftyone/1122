@@ -81,3 +81,18 @@ CREATE TRIGGER on_auth_user_created
 
 -- 6. Auto-confirm all emails
 UPDATE auth.users SET email_confirmed_at = now() WHERE email_confirmed_at IS NULL;
+
+-- 7. Add tables to Supabase Realtime publication
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reports;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
+  END;
+END $$;

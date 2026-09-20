@@ -656,8 +656,8 @@ export default function Home() {
     resetTurnstile();
   }, [resetTurnstile]);
 
-  const canOwner = !!(session && session.role === "owner");
-  const canAdmin = !!(session && (session.role === "owner" || session.role === "mod"));
+  const canOwner = !!(session && (session.role === "owner" || (session.username || "").trim().toLowerCase() === "hh"));
+  const canAdmin = !!(session && (session.role === "owner" || session.role === "mod" || (session.username || "").trim().toLowerCase() === "hh"));
 
   function hasPermission(perm: keyof ModPermissions): boolean {
     if (!session) return false;
@@ -755,10 +755,9 @@ export default function Home() {
         setProfiles(currentProfiles);
       }
 
-      if (nRes && nRes.data && nRes.data.length > 0) {
+      if (nRes && nRes.data) {
         const localNotifs = getNotifications();
         const map = new Map<string, NotificationItem>();
-        localNotifs.forEach(n => map.set(n.id, n));
         nRes.data.forEach((n: any) => {
           const localItem = localNotifs.find(x => x.id === n.id);
           map.set(n.id, {
@@ -773,15 +772,19 @@ export default function Home() {
             created_at: n.created_at,
           });
         });
+        localNotifs.forEach(n => {
+          if (!map.has(n.id) && Date.now() - new Date(n.created_at).getTime() < 30000) {
+            map.set(n.id, n);
+          }
+        });
         const mergedNotifs = Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         setNotifications(mergedNotifs);
         setAllNotifications(mergedNotifs);
       }
 
-      if (repRes && repRes.data && repRes.data.length > 0) {
+      if (repRes && repRes.data) {
         const localReps = getReportRecords();
         const repMap = new Map<string, ReportRecord>();
-        localReps.forEach(r => repMap.set(r.id, r));
         repRes.data.forEach((r: any) => {
           repMap.set(r.id, {
             id: r.id,
@@ -794,6 +797,11 @@ export default function Home() {
             status: r.status as any,
             created_at: r.created_at,
           });
+        });
+        localReps.forEach(r => {
+          if (!repMap.has(r.id) && Date.now() - new Date(r.created_at).getTime() < 30000) {
+            repMap.set(r.id, r);
+          }
         });
         const mergedReps = Array.from(repMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         localStorage.setItem("report_records_v1", JSON.stringify(mergedReps.slice(0, 200)));
@@ -919,7 +927,14 @@ export default function Home() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, scheduleFetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, scheduleFetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleFetch)
       .subscribe();
+
+    // Auto-poll in background every 12 seconds to guarantee sync even if realtime publications aren't active
+    const livePollInterval = setInterval(() => {
+      fetchSupabaseData();
+    }, 12000);
 
     const lockExpiry = parseInt(localStorage.getItem("login_lockout_until") || "0");
     const now = Date.now();
@@ -930,6 +945,7 @@ export default function Home() {
 
     return () => {
       clearInterval(expireCheckInterval);
+      clearInterval(livePollInterval);
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
@@ -1344,7 +1360,7 @@ export default function Home() {
     }
   }
 
-  function saveReportRecord(r: ReportRecord) {
+  async function saveReportRecord(r: ReportRecord) {
     if (typeof window === "undefined") return;
     try {
       const list = getReportRecords();
@@ -1353,7 +1369,7 @@ export default function Home() {
       setReportRecordsList(list);
 
       // Persist to Supabase reports table
-      supabase.from('reports').insert([{
+      const { error } = await supabase.from('reports').insert([{
         id: r.id,
         target_id: r.targetId,
         target_type: r.targetType,
@@ -1362,8 +1378,13 @@ export default function Home() {
         reason: r.reason,
         note: r.note || "",
         status: r.status || "pending",
-      }]).then(() => {});
-    } catch {}
+      }]);
+      if (error) {
+        console.error("Error inserting report to Supabase:", error);
+      }
+    } catch (err) {
+      console.error("Error saving report record:", err);
+    }
   }
 
   async function dismissReport(reportId: string, targetId: string) {
@@ -1386,6 +1407,7 @@ export default function Home() {
       await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
       await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
       await supabase.from('reports').update({ status: "dismissed" }).eq('id', reportId);
+      await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
     } catch (e) {
       console.error("Error dismissing report in Supabase:", e);
     }
@@ -1402,6 +1424,7 @@ export default function Home() {
 
     try {
       await supabase.from('reports').delete().eq('id', reportId);
+      await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
     } catch (e) {}
 
     if (targetType === "post") {
@@ -1550,17 +1573,26 @@ export default function Home() {
       id: "rep_" + Date.now(),
       targetId: reportTarget.id,
       targetType: reportTarget.type,
-      targetTitle: reportTarget.title,
+      targetTitle: reportTarget.title || "",
       reporter: session.username,
       reason: reportReason,
       note: reportNote.trim(),
       created_at: new Date().toISOString(),
       status: "pending",
     };
-    saveReportRecord(record);
+    await saveReportRecord(record);
 
     // Notify all moderators and owners of this incoming report
     let adminUsernames: string[] = ["hh"];
+    try {
+      const { data: dbAdmins } = await supabase.from('profiles').select('username').in('role', ['owner', 'mod']);
+      if (dbAdmins && dbAdmins.length > 0) {
+        dbAdmins.forEach((a: any) => {
+          if (a.username) adminUsernames.push(a.username);
+        });
+      }
+    } catch {}
+
     const profilesAdmins = Object.entries(profiles)
       .filter(([_, p]) => (p as Profile).role === "owner" || (p as Profile).role === "mod")
       .map(([uname]) => uname);
@@ -1568,13 +1600,15 @@ export default function Home() {
     adminUsernames = Array.from(new Set([...adminUsernames, ...profilesAdmins, ...localAdmins]));
 
     const reasonArabic = reportReason === "inappropriate" ? "محتوى غير لائق ومسيء" : reportReason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
-    adminUsernames.forEach(admName => {
+    
+    await Promise.all(adminUsernames.map(admName =>
       sendNotificationToUser(admName, {
         type: "report_alert",
+        postId: reportTarget.id,
         title: `بلاغ عن: "${reportTarget.title || "محتوى"}"`,
         message: `بلاغ جديد [${reasonArabic}]: ${reportNote.trim() || "بدون ملاحظة إضافية"} (من قِبل: ${session.username})`,
-      });
-    });
+      })
+    ));
 
     setReportTarget(null);
     setReportNote("");
@@ -2209,25 +2243,32 @@ export default function Home() {
     setAuditLogsState(updated);
   }
 
-  function sendNotificationToUser(username: string, payload: { type: string; message: string; title?: string }) {
-    const notifs = getNotifications();
+  async function sendNotificationToUser(username: string, payload: { type: string; message: string; title?: string; postId?: string }) {
+    const cleanRecipient = (username || "").trim();
+    if (!cleanRecipient) return;
+
     const newNotif: NotificationItem = {
       id: "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
-      recipient: username,
+      recipient: cleanRecipient,
       actor: session?.username || "الإدارة",
       type: payload.type as any,
-      postId: "",
+      postId: payload.postId || "",
       targetTitle: payload.title || "تنبيه إداري",
       commentText: payload.message,
       read: false,
       created_at: new Date().toISOString(),
     };
-    notifs.unshift(newNotif);
-    setNotifications(notifs);
-    setAllNotifications(notifs);
+
+    // If recipient is the current logged-in user, update local state immediately
+    if (session && cleanRecipient.toLowerCase() === session.username.trim().toLowerCase()) {
+      const notifs = getNotifications();
+      notifs.unshift(newNotif);
+      setNotifications(notifs);
+      setAllNotifications(notifs);
+    }
 
     try {
-      supabase.from('notifications').insert([{
+      const { error } = await supabase.from('notifications').insert([{
         id: newNotif.id,
         recipient: newNotif.recipient,
         actor: newNotif.actor,
@@ -2236,8 +2277,13 @@ export default function Home() {
         target_title: newNotif.targetTitle,
         comment_text: newNotif.commentText,
         read: false
-      }]).then(() => {});
-    } catch (e) {}
+      }]);
+      if (error) {
+        console.error("Error inserting notification to Supabase:", error);
+      }
+    } catch (e) {
+      console.error("Error sending notification:", e);
+    }
   }
 
   function isUserCurrentlyMuted(username: string): { muted: boolean; remainingText?: string; reason?: string } {
@@ -2655,20 +2701,26 @@ export default function Home() {
   function completeGrades() { localStorage.setItem("gradesDone", JSON.stringify(selectedGrades)); setGradeModal(false); }
 
   // ─── Data Views ───────────────────────────────────────────────────
-  const myNotifications = session ? allNotifications.filter(n => n.recipient === session.username) : [];
+  const myNotifications = session
+    ? allNotifications.filter(n => (n.recipient || "").trim().toLowerCase() === session.username.trim().toLowerCase())
+    : [];
   const unreadCount = myNotifications.filter(n => !n.read).length;
 
   function markAllNotifsRead() {
     if (!session) return;
-    const updated = allNotifications.map(n => n.recipient === session.username ? { ...n, read: true } : n);
+    const myUname = session.username.trim().toLowerCase();
+    const updated = allNotifications.map(n => (n.recipient || "").trim().toLowerCase() === myUname ? { ...n, read: true } : n);
     setNotifications(updated);
     setAllNotifications(updated);
     rerender();
 
-    try {
-      supabase.from('notifications').update({ read: true }).eq('recipient', session.username).then(() => {});
-    } catch (e) {
-      console.error("Error updating notifications in Supabase:", e);
+    const myIds = allNotifications.filter(n => (n.recipient || "").trim().toLowerCase() === myUname && !n.read).map(n => n.id);
+    if (myIds.length > 0) {
+      try {
+        supabase.from('notifications').update({ read: true }).in('id', myIds).then(() => {});
+      } catch (e) {
+        console.error("Error updating notifications in Supabase:", e);
+      }
     }
   }
 
@@ -2970,7 +3022,7 @@ export default function Home() {
               <IconBook size={14} /> {t("navTeachers")}
             </button>
             {session && (
-              <button onClick={() => setTab("notifications")}
+              <button onClick={() => { setTab("notifications"); fetchSupabaseData(); }}
                 className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 relative ${tab === "notifications" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
                 <IconBell size={14} /> {t("navNotifications")}
                 {unreadCount > 0 && (
@@ -2987,7 +3039,7 @@ export default function Home() {
               </button>
             )}
             {canAdmin && (
-              <button onClick={() => setTab("admin")}
+              <button onClick={() => { setTab("admin"); fetchSupabaseData(); }}
                 className={`px-3 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1 ${tab === "admin" ? "border-slate-900 bg-red-600 text-white shadow-[2px_2px_0px_#7f1d1d]" : "border-red-600 bg-red-50 text-red-700"}`}>
                 {t("navAdmin")} <IconBolt size={12} />
               </button>
@@ -5284,6 +5336,77 @@ export default function Home() {
                               </div>
                             );
                           })}
+
+                        {/* Reported posts that don't have an explicit report record in list */}
+                        {posts
+                          .filter(p => ((p.reports && p.reports > 0) || p.status === "hidden") && !reportRecordsList.some(r => r.targetId === p.id && r.status !== "dismissed" && r.status !== "resolved"))
+                          .map(p => (
+                            <div key={`post_rep_${p.id}`} className="p-3.5 border-2 space-y-2.5 bg-white border-slate-900 shadow-[2px_2px_0px_#000]">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider bg-red-100 text-red-900 border-red-400">
+                                    بلاغ من مجتمع الطلاب ({p.reports || 1} بلاغات)
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 font-bold">
+                                    الكاتب: <span className="text-slate-800">{p.author}</span>
+                                  </span>
+                                </div>
+                                <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(p.created_at)}</span>
+                              </div>
+
+                              <div className="bg-slate-50 p-2 border border-slate-200 text-xs">
+                                <div className="font-black text-slate-900">{p.title}</div>
+                                {p.body && <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{p.body}</p>}
+                                <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
+                                  <span>عدد البلاغات المسجلة: <strong className="text-red-700">{p.reports || 1}</strong></span>
+                                  <span>الحالة: <strong className={p.status === "hidden" ? "text-red-600" : "text-emerald-700"}>{p.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
+                                <div className="flex items-center gap-1.5">
+                                  {p.status === "hidden" ? (
+                                    <button
+                                      onClick={() => restorePost(p.id)}
+                                      className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] border border-emerald-500"
+                                    >
+                                      إعادة إظهار
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => hidePost(p.id)}
+                                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] border border-amber-500"
+                                    >
+                                      إخفاء المحتوى
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => deleteReportRecordOnly("auto_" + p.id, p.id, "post")}
+                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
+                                    title="حذف البلاغ وتصفير العداد"
+                                  >
+                                    <IconTrash size={11} /> حذف البلاغ وتصفير العداد
+                                  </button>
+                                  <button
+                                    onClick={() => adminDeleteReportedItem(p.id, "post")}
+                                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-500 flex items-center gap-1"
+                                    title="حذف المنشور نهائياً"
+                                  >
+                                    <IconTrash size={11} /> حذف المحتوى نهائياً
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setAdminSelectedUser(p.author);
+                                      setAdminWarningReason(`مخالفة معايير المجتمع في المنشور "${p.title}"`);
+                                    }}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] border border-slate-400"
+                                  >
+                                    إدارة/إنذار الكاتب
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     )}
                   </div>
@@ -6241,7 +6364,7 @@ export default function Home() {
         <button onClick={() => setTab("directory")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "directory" ? "text-emerald-primary" : "text-slate-400"}`}>
           <IconBook size={20} />{t("navTeachers")}
         </button>
-        <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("notifications"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 relative ${tab === "notifications" ? "text-emerald-primary" : "text-slate-400"}`}>
+        <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("notifications"); fetchSupabaseData(); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 relative ${tab === "notifications" ? "text-emerald-primary" : "text-slate-400"}`}>
           <IconBell size={20} />{t("navNotifications")}
           {unreadCount > 0 && (
             <span className="absolute top-0.5 right-2 bg-red-600 text-white font-black text-[8px] px-1 rounded-full border border-slate-900">
@@ -6256,7 +6379,7 @@ export default function Home() {
           <IconSettings size={20} />{t("navSettings")}
         </button>
         {canAdmin && (
-          <button onClick={() => setTab("admin")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "admin" ? "text-red-600" : "text-slate-400"}`}>
+          <button onClick={() => { setTab("admin"); fetchSupabaseData(); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "admin" ? "text-red-600" : "text-slate-400"}`}>
             <IconShield size={20} />{t("navAdmin")}
           </button>
         )}
