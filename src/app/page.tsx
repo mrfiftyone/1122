@@ -8,8 +8,10 @@ import {
   IconBook, IconPen, IconUser, IconThumbUp, IconThumbDown, IconFlag,
   IconShield, IconCrown, IconGrad, IconTag, IconInbox, IconBolt,
   IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch,
-  IconArrowRight, IconHome, IconBell, IconHistory,
+  IconArrowRight, IconHome, IconBell, IconHistory, IconBookmark,
+  IconImage, IconLink, IconAward, IconVideo, IconMonitor, IconFlame,
 } from "@/utils/icons";
+
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
 import { supabase } from "@/utils/supabase";
@@ -30,14 +32,28 @@ interface Post {
   title: string; body: string; grade_level: string;
   likes: number; dislikes: number; reports: number;
   status: "active" | "hidden"; comments: Comment[];
+  images?: string[]; // Multiple image DataURLs (screenshots, summaries)
+  youtubeUrl?: string; // YouTube video/playlist URL
+  telegramUrl?: string; // Telegram channel / booklet URL
   created_at: string;
 }
 interface Teacher {
   id: string; createdBy?: string; created_by?: string; name: string;
   normalizedName?: string; normalized_name?: string;
   gov: string; subject: string; grades: string; img: string;
+  teachingMode?: string[]; // e.g. ["حضوري"], ["إلكتروني"], or ["حضوري", "إلكتروني"]
+  teaching_mode?: string[];
   likes: number; dislikes: number; status: "active" | "pending" | "pending_custom";
 }
+interface BookmarkItem {
+  id: string;
+  targetId: string;
+  type: "post" | "teacher";
+  title: string;
+  subtitle?: string;
+  created_at: string;
+}
+
 interface NotificationItem {
   id: string;
   recipient: string; // username of recipient
@@ -123,13 +139,22 @@ function getTeachers(): Teacher[] { return JSON.parse(localStorage.getItem("teac
 function getPosts(): Post[] { return JSON.parse(localStorage.getItem("posts") || "[]"); }
 function getVotes(): VoteMap { return JSON.parse(localStorage.getItem("votes") || "{}"); }
 function getNotifications(): NotificationItem[] { return JSON.parse(localStorage.getItem("notifications") || "[]"); }
+function getBookmarks(u: string): BookmarkItem[] {
+  if (typeof window === "undefined" || !u) return [];
+  try { return JSON.parse(localStorage.getItem(`bookmarks_${u}`) || "[]"); } catch { return []; }
+}
 function setUsers(u: User[]) { localStorage.setItem("users", JSON.stringify(u)); }
 function setProfiles(p: Record<string, Profile>) { localStorage.setItem("profiles", JSON.stringify(p)); }
 function setTeachers(t: Teacher[]) { localStorage.setItem("teachers", JSON.stringify(t)); }
 function setPosts(p: Post[]) { localStorage.setItem("posts", JSON.stringify(p)); }
 function setVotes(v: VoteMap) { localStorage.setItem("votes", JSON.stringify(v)); }
 function setNotifications(n: NotificationItem[]) { localStorage.setItem("notifications", JSON.stringify(n)); }
+function setBookmarks(u: string, b: BookmarkItem[]) {
+  if (typeof window === "undefined" || !u) return;
+  try { localStorage.setItem(`bookmarks_${u}`, JSON.stringify(b)); } catch {}
+}
 function getSession(): User | null { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; }
+
 
 // ─── Main Component ───────────────────────────────────────────────
 export default function Home() {
@@ -164,6 +189,9 @@ export default function Home() {
   const [postBody, setPostBody] = useState("");
   const [postGrade, setPostGrade] = useState("General");
   const [postTeacher, setPostTeacher] = useState("");
+  const [postImages, setPostImages] = useState<string[]>([]);
+  const [postYoutube, setPostYoutube] = useState("");
+  const [postTelegram, setPostTelegram] = useState("");
 
   // Teacher fields (Add teacher form)
   const [tName, setTName] = useState("");
@@ -171,6 +199,7 @@ export default function Home() {
   const [tSubjectChoice, setTSubjectChoice] = useState("رياضيات");
   const [tCustomSubject, setTCustomSubject] = useState("");
   const [tSelectedGrades, setTSelectedGrades] = useState<string[]>([]);
+  const [tTeachingModes, setTTeachingModes] = useState<string[]>(["حضوري"]);
   const [tImg, setTImg] = useState("");
 
   // Search, Filters & Sorting for Teachers section
@@ -178,6 +207,7 @@ export default function Home() {
   const [filterGov, setFilterGov] = useState("all");
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterGrade, setFilterGrade] = useState("all");
+  const [filterTeachingMode, setFilterTeachingMode] = useState<"all" | "حضوري" | "إلكتروني" | "both">("all");
   const [sortTeacherBy, setSortTeacherBy] = useState<"likes" | "rating" | "reviews" | "newest">("likes");
 
   // Selected Teacher Dedicated View & Review states
@@ -189,6 +219,8 @@ export default function Home() {
 
   // Profile Viewing state (view self or another student)
   const [viewedUser, setViewedUser] = useState<string | null>(null);
+  const [profileSubTab, setProfileSubTab] = useState<"activities" | "saved">("activities");
+  const [userBookmarks, setUserBookmarks] = useState<BookmarkItem[]>([]);
 
   // Profile Comments Expansion State
   const [expandedProfileComments, setExpandedProfileComments] = useState<Record<string, boolean>>({});
@@ -202,6 +234,11 @@ export default function Home() {
 
   // Notifications Filter
   const [notifFilter, setNotifFilter] = useState<"all" | "unread" | "reports">("all");
+
+  // Extra modals / views
+  const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
+  const [showHonorBoard, setShowHonorBoard] = useState(false);
+
 
 
   // Profile Edit
@@ -530,13 +567,18 @@ export default function Home() {
   async function submitPost() {
     if (!session || !postTitle.trim() || !postBody.trim() || !postTeacher) return;
     if (postTitle.length > 100 || postBody.length > 1500) return;
-    if (containsProfanity(postTitle) || containsProfanity(postBody)) { alert("المحتوى يحتوي على كلمات غير مسموح بها."); return; }
+    const meta: any = {};
+    if (postImages.length > 0) meta.images = postImages;
+    if (postYoutube.trim()) meta.youtubeUrl = postYoutube.trim();
+    if (postTelegram.trim()) meta.telegramUrl = postTelegram.trim();
+    const hasMeta = Object.keys(meta).length > 0;
+    const metaSuffix = hasMeta ? `\n\n<!--meta:${JSON.stringify(meta)}-->` : "";
 
     const newPostPayload = {
       author: session.username,
       teacher_id: postTeacher,
       title: postTitle.trim(),
-      body: postBody.trim(),
+      body: postBody.trim() + metaSuffix,
       grade_level: postGrade,
       likes: 0,
       dislikes: 0,
@@ -557,6 +599,9 @@ export default function Home() {
       dislikes: 0,
       reports: 0,
       status: "active",
+      images: postImages,
+      youtubeUrl: postYoutube.trim(),
+      telegramUrl: postTelegram.trim(),
       comments: [],
       created_at: new Date().toISOString(),
     };
@@ -573,8 +618,31 @@ export default function Home() {
     }
 
     setPostTitle(""); setPostBody(""); setPostGrade("General"); setPostTeacher("");
+    setPostImages([]); setPostYoutube(""); setPostTelegram("");
     setPostModal(false); rerender();
   }
+
+  function handlePostImagesUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+
+    fileList.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const res = ev.target?.result as string;
+        if (res) {
+          setPostImages(prev => [...prev, res]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function removePostImage(idx: number) {
+    setPostImages(prev => prev.filter((_, i) => i !== idx));
+  }
+
 
   function votePost(postId: string, type: "like" | "dislike") {
     castVote(`post_${postId}`, type, (delta) => {
@@ -982,6 +1050,7 @@ export default function Home() {
     if (!tName.trim()) { alert("يرجى كتابة اسم المدرس."); return; }
     if (!finalSubject) { alert("يرجى اختيار أو كتابة المادة الدراسية."); return; }
     if (tSelectedGrades.length === 0) { alert("يرجى اختيار مرحلة دراسية واحدة على الأقل."); return; }
+    if (tTeachingModes.length === 0) { alert("يرجى تحديد طريقة تدريس واحدة على الأقل (حضوري أو إلكتروني)."); return; }
     if (!tImg.trim()) { alert("يرجى رفع ملف صورة للمدرس (ملف صورة وليس رابط)."); return; }
 
     const normalized = normalizeTeacherName(tName.trim());
@@ -1017,6 +1086,8 @@ export default function Home() {
       subject: finalSubject,
       grades: finalGrades,
       img: tImg.trim(),
+      teachingMode: tTeachingModes,
+      teaching_mode: tTeachingModes,
       likes: 0,
       dislikes: 0,
       status: "pending" as any,
@@ -1035,6 +1106,7 @@ export default function Home() {
     setTSubjectChoice("رياضيات");
     setTCustomSubject("");
     setTSelectedGrades([]);
+    setTTeachingModes(["حضوري"]);
     setTImg("");
     setTeacherModal(false);
     rerender();
@@ -1259,7 +1331,14 @@ export default function Home() {
     const matchesGov = filterGov === "all" || t.gov === filterGov;
     const matchesSubject = filterSubject === "all" || t.subject === filterSubject;
     const matchesGrade = filterGrade === "all" || (t.grades && t.grades.includes(filterGrade));
-    return matchesSearch && matchesGov && matchesSubject && matchesGrade;
+    const tModes = t.teachingMode || t.teaching_mode || ["حضوري"];
+    const matchesTeachingMode =
+      filterTeachingMode === "all" ||
+      (filterTeachingMode === "both" && tModes.includes("حضوري") && tModes.includes("إلكتروني")) ||
+      (filterTeachingMode === "حضوري" && tModes.includes("حضوري")) ||
+      (filterTeachingMode === "إلكتروني" && tModes.includes("إلكتروني"));
+
+    return matchesSearch && matchesGov && matchesSubject && matchesGrade && matchesTeachingMode;
   }).sort((a, b) => {
     if (sortTeacherBy === "likes") {
       return (b.likes - b.dislikes) - (a.likes - a.dislikes);
@@ -1279,9 +1358,91 @@ export default function Home() {
     return 0; // newest / default order
   });
 
+  // Top trending teachers this week based on interactions (likes + dislikes + reviews)
+  const trendingTeachers = [...activeTeachers]
+    .map(t => {
+      const reviewCount = posts.filter(p => p.teacher_id === t.id || p.teacherId === t.id).length;
+      const score = t.likes * 2 + t.dislikes + reviewCount * 3;
+      return { ...t, trendScore: score, reviewCount };
+    })
+    .sort((a, b) => b.trendScore - a.trendScore)
+    .slice(0, 5);
+
+  // Top students ranked by total likes received on posts, reviews, and comments
+  const topHonorStudents = Object.keys(profiles).map(username => {
+    const userPosts = posts.filter(p => p.author === username);
+    const userLikes = userPosts.reduce((sum, p) => sum + p.likes, 0);
+    const userReviews = userPosts.filter(p => p.grade_level?.includes("تقييم أستاذ")).length;
+    return {
+      username,
+      profile: profiles[username] || { avatarColor: "#0d9488", bio: "" },
+      totalLikes: userLikes,
+      reviewsCount: userReviews,
+      postsCount: userPosts.length,
+    };
+  })
+  .filter(s => s.postsCount > 0 || s.totalLikes > 0)
+  .sort((a, b) => b.totalLikes - a.totalLikes || b.postsCount - a.postsCount)
+  .slice(0, 10);
+
+  // Teacher Badges & Milestones Helper
+  function getTeacherBadges(t: Teacher): { label: string; cls: string; type: "favorite" | "top_subject" | "active" }[] {
+    const badges: { label: string; cls: string; type: "favorite" | "top_subject" | "active" }[] = [];
+    const totalVotes = t.likes + t.dislikes;
+    const approvalRate = totalVotes > 0 ? (t.likes / totalVotes) * 100 : 0;
+    const reviewCount = posts.filter(p => p.teacher_id === t.id || p.teacherId === t.id).length;
+
+    if (totalVotes >= 5 && approvalRate >= 85) {
+      badges.push({ label: "مفضل لدى الطلاب", cls: "bg-emerald-100 text-emerald-950 border-emerald-600", type: "favorite" });
+    }
+
+    if (reviewCount >= 3) {
+      badges.push({ label: "الأكثر مراجعات ونشاطاً", cls: "bg-blue-100 text-blue-950 border-blue-600", type: "active" });
+    }
+
+    const sameSubjectTeachers = activeTeachers.filter(other => other.subject === t.subject && (other.likes + other.dislikes) >= 3);
+    if (sameSubjectTeachers.length > 1) {
+      const topTeacher = sameSubjectTeachers.reduce((max, curr) => (curr.likes - curr.dislikes) > (max.likes - max.dislikes) ? curr : max, sameSubjectTeachers[0]);
+      if (topTeacher.id === t.id && (t.likes - t.dislikes) > 0) {
+        badges.push({ label: `الأعلى تقييماً في ال${t.subject}`, cls: "bg-amber-100 text-amber-950 border-amber-600", type: "top_subject" });
+      }
+    }
+
+    return badges;
+  }
+
+  // Bookmarks Helper
+  function toggleBookmark(targetId: string, type: "post" | "teacher", title: string, subtitle?: string) {
+    if (!session) { setAuthModal(true); return; }
+    const current = getBookmarks(session.username);
+    const exists = current.some(b => b.targetId === targetId);
+    let updated: BookmarkItem[];
+    if (exists) {
+      updated = current.filter(b => b.targetId !== targetId);
+    } else {
+      updated = [{
+        id: "bm_" + Date.now(),
+        targetId,
+        type,
+        title,
+        subtitle,
+        created_at: new Date().toISOString(),
+      }, ...current];
+    }
+    setBookmarks(session.username, updated);
+    setUserBookmarks(updated);
+    rerender();
+  }
+
+  function isBookmarked(targetId: string): boolean {
+    if (!session) return false;
+    return userBookmarks.some(b => b.targetId === targetId);
+  }
+
   const pendingTeachers = teachers.filter(t => t.status === "pending" || t.status === "pending_custom");
   const reportedPosts = posts.filter(p => p.status === "hidden" || (p.reports && p.reports > 0));
   const canAdmin = session && (session.role === "owner" || session.role === "mod");
+
 
   // Helper: render avatar
   const Avatar = ({ username, size = "w-8 h-8 text-sm" }: { username: string; size?: string }) => {
@@ -1496,6 +1657,115 @@ export default function Home() {
         {/* ──── TAB 1: FEED (الرئيسية) ──── */}
         {tab === "feed" && (
           <section className="space-y-6">
+            {/* 1. Trending Teachers This Week */}
+            {trendingTeachers.length > 0 && (
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-4 space-y-3">
+                <div className="flex items-center justify-between border-b-2 border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-amber-100 border border-amber-500 text-amber-700 flex items-center justify-center font-bold">
+                      <IconFlame size={16} />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-xs sm:text-sm text-slate-900">المدرسين الأكثر رواجاً هذا الأسبوع</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold">بناءً على تفاعلات الطلاب والمراجعات النشطة</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setTab("directory")}
+                    className="text-[11px] font-bold text-emerald-800 hover:underline flex items-center gap-1"
+                  >
+                    عرض كل المدرسين ←
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                  {trendingTeachers.map((t, idx) => (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedTeacher(t);
+                        setTab("teacher");
+                        setShowReviewForm(false);
+                        setReviewVerdict(null);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                      className="group p-2.5 border-2 border-slate-900 bg-slate-50 hover:bg-white shadow-[2px_2px_0px_#000] cursor-pointer transition-all flex flex-col items-center text-center space-y-1.5"
+                    >
+                      <div className="relative">
+                        <img
+                          src={t.img}
+                          alt={t.name}
+                          className="w-12 h-12 border border-slate-900 object-cover shadow-[1px_1px_0px_#000] bg-white"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E";
+                          }}
+                        />
+                        <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-950 font-black text-[9px] px-1 border border-slate-900 shadow-[1px_1px_0px_#000]">
+                          #{idx + 1}
+                        </span>
+                      </div>
+                      <div className="w-full">
+                        <h4 className="font-black text-xs text-slate-900 truncate group-hover:text-emerald-700">{t.name}</h4>
+                        <p className="text-[10px] text-slate-600 font-bold truncate">{t.subject} - {t.gov}</p>
+                      </div>
+                      <div className="flex items-center gap-1 text-[9px] font-black text-emerald-800 bg-emerald-50 px-1.5 py-0.5 border border-emerald-300 w-full justify-center">
+                        <IconThumbUp size={9} /> {t.likes} • {t.reviewCount} تقييم
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Student Honor Board (لوحة شرف الطلاب) */}
+            <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 bg-amber-400 border border-slate-900 text-slate-900 flex items-center justify-center font-bold shadow-[1px_1px_0px_#000]">
+                    <IconAward size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900">لوحة شرف الطلاب الأكثر تفاعلاً ومساعدة</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold">تكريم أفضل الطلاب الذين ينشرون المراجعات الموثوقة والإجابات المفيدة</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHonorBoard(!showHonorBoard)}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold border border-slate-900 shadow-[1px_1px_0px_#000] transition-all"
+                >
+                  {showHonorBoard ? "إخفاء لوحة الشرف" : "عرض أفضل ١٠ طلاب"}
+                </button>
+              </div>
+
+              {showHonorBoard && (
+                <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+                  {topHonorStudents.map((s, idx) => (
+                    <div
+                      key={s.username}
+                      onClick={() => { setViewedUser(s.username); setTab("profile"); }}
+                      className="p-2 border border-slate-900 bg-slate-50 hover:bg-amber-50/60 shadow-[1px_1px_0px_#000] cursor-pointer transition-all flex items-center gap-2"
+                    >
+                      <div className={`font-black text-[10px] px-1 py-0.5 border border-slate-900 shrink-0 ${
+                        idx === 0 ? "bg-amber-300 text-slate-950" : idx === 1 ? "bg-slate-300 text-slate-900" : idx === 2 ? "bg-amber-700 text-white" : "bg-white text-slate-700"
+                      }`}>
+                        #{idx + 1}
+                      </div>
+                      <Avatar username={s.username} size="w-7 h-7 text-xs" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-black text-xs text-slate-900 truncate">{s.username}</div>
+                        <div className="text-[9px] text-slate-500 font-bold flex items-center gap-1">
+                          <span className="text-emerald-700 flex items-center gap-0.5"><IconThumbUp size={9} /> {s.totalLikes}</span>
+                          <span>•</span>
+                          <span>{s.postsCount} مشاركة</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* General Discussion Header */}
             <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3 w-full md:w-auto">
                 <IconPen size={24} className="text-emerald-primary" />
@@ -1553,6 +1823,56 @@ export default function Home() {
                         <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{p.body}</p>
                       </div>
 
+                      {/* Multi-Image Gallery */}
+                      {p.images && p.images.length > 0 && (
+                        <div className="pt-2">
+                          <div className={`grid gap-2 ${
+                            p.images.length === 1 ? "grid-cols-1" : p.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
+                          }`}>
+                            {p.images.map((img, i) => (
+                              <div
+                                key={i}
+                                onClick={() => setPreviewImageModal(img)}
+                                className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
+                              >
+                                <img src={img} alt={`مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
+                                  عرض بالحجم الكامل
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* External Study Links (YouTube & Telegram) */}
+                      {(p.youtubeUrl || p.telegramUrl) && (
+                        <div className="flex items-center gap-2 flex-wrap pt-1">
+                          {p.youtubeUrl && (
+                            <a
+                              href={p.youtubeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
+                            >
+                              <IconVideo size={13} className="text-red-700" />
+                              <span>شرح يوتيوب</span>
+                            </a>
+                          )}
+                          {p.telegramUrl && (
+                            <a
+                              href={p.telegramUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
+                            >
+                              <IconLink size={13} className="text-blue-700" />
+                              <span>ملزمة / ملف</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+
                       {/* Post Actions */}
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                         <div className="flex items-center gap-2">
@@ -1561,6 +1881,16 @@ export default function Home() {
                           </button>
                           <button onClick={() => votePost(p.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
                             <IconThumbDown size={13} /> {p.dislikes}
+                          </button>
+                          <button
+                            onClick={() => toggleBookmark(p.id, "post", p.title, p.author)}
+                            className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
+                              isBookmarked(p.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                            title={isBookmarked(p.id) ? "إزالة من المحفوظات" : "حفظ المنشور في المحفوظات"}
+                          >
+                            <IconBookmark size={12} fill={isBookmarked(p.id) ? "currentColor" : "none"} />
+                            <span>{isBookmarked(p.id) ? "محفوظ" : "حفظ"}</span>
                           </button>
                           <button onClick={() => reportPost(p.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
                             <IconFlag size={12} /> بلاغ ({p.reports || 0}/20)
@@ -1636,7 +1966,7 @@ export default function Home() {
 
             {/* Search & Filters Bar */}
             <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-3">
-              {/* Row 1: Search, Governorate, Subject, Grade */}
+              {/* Row 1: Search, Governorate, Subject, Grade, Teaching Mode */}
               <div className="flex flex-col md:flex-row items-center gap-3">
                 {/* Search text */}
                 <div className="w-full md:flex-1 relative">
@@ -1651,11 +1981,11 @@ export default function Home() {
                 </div>
 
                 {/* Filter by Governorate */}
-                <div className="w-full md:w-36">
+                <div className="w-full md:w-32">
                   <select
                     value={filterGov}
                     onChange={e => setFilterGov(e.target.value)}
-                    className="w-full py-2 px-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                    className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
                     <option value="all">كل المحافظات</option>
                     {GOVERNORATES.map(g => (
@@ -1665,11 +1995,11 @@ export default function Home() {
                 </div>
 
                 {/* Filter by Subject */}
-                <div className="w-full md:w-36">
+                <div className="w-full md:w-32">
                   <select
                     value={filterSubject}
                     onChange={e => setFilterSubject(e.target.value)}
-                    className="w-full py-2 px-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                    className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
                     <option value="all">كل المواد</option>
                     {SUBJECT_OPTIONS.filter(s => s !== "أخرى").map(s => (
@@ -1679,16 +2009,30 @@ export default function Home() {
                 </div>
 
                 {/* Filter by Grade */}
-                <div className="w-full md:w-36">
+                <div className="w-full md:w-32">
                   <select
                     value={filterGrade}
                     onChange={e => setFilterGrade(e.target.value)}
-                    className="w-full py-2 px-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                    className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
                     <option value="all">كل المراحل</option>
                     {GRADES.map(g => (
                       <option key={g} value={g}>{g}</option>
                     ))}
+                  </select>
+                </div>
+
+                {/* Filter by Teaching Mode (حضوري / إلكتروني / كلاهما) */}
+                <div className="w-full md:w-36">
+                  <select
+                    value={filterTeachingMode}
+                    onChange={e => setFilterTeachingMode(e.target.value as any)}
+                    className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">طرق التدريس: الكل</option>
+                    <option value="both">حضوري وإلكتروني</option>
+                    <option value="حضوري">حضوري فقط</option>
+                    <option value="إلكتروني">إلكتروني فقط</option>
                   </select>
                 </div>
               </div>
@@ -1723,9 +2067,9 @@ export default function Home() {
                   </button>
                 </div>
 
-                {(dirSearch || filterGov !== "all" || filterSubject !== "all" || filterGrade !== "all" || sortTeacherBy !== "likes") && (
+                {(dirSearch || filterGov !== "all" || filterSubject !== "all" || filterGrade !== "all" || filterTeachingMode !== "all" || sortTeacherBy !== "likes") && (
                   <button
-                    onClick={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); setFilterGrade("all"); setSortTeacherBy("likes"); }}
+                    onClick={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); setFilterGrade("all"); setFilterTeachingMode("all"); setSortTeacherBy("likes"); }}
                     className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] border border-slate-900"
                   >
                     إعادة ضبط الفلاتر
@@ -1745,6 +2089,10 @@ export default function Home() {
                 {filteredTeachers.map(t => {
                   const tVote = getUserVote(`teacher_${t.id}`);
                   const teacherPostsCount = posts.filter(p => p.teacher_id === t.id || p.teacherId === t.id).length;
+                  const badges = getTeacherBadges(t);
+                  const modes = t.teachingMode || t.teaching_mode || ["حضوري"];
+                  const isBoth = modes.includes("حضوري") && modes.includes("إلكتروني");
+
                   return (
                     <div
                       key={t.id}
@@ -1768,7 +2116,7 @@ export default function Home() {
                               (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E";
                             }}
                           />
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             <h3 className="font-black text-sm sm:text-base text-slate-900 group-hover:text-emerald-700 transition-colors">
                               {t.name}
                             </h3>
@@ -1778,6 +2126,10 @@ export default function Home() {
                               </span>
                               <span className="px-2 py-0.5 bg-blue-100 border border-slate-900 text-[10px] font-black text-blue-900">
                                 {t.gov}
+                              </span>
+                              <span className="px-2 py-0.5 bg-purple-100 border border-slate-900 text-[10px] font-black text-purple-900 flex items-center gap-1">
+                                <IconMonitor size={10} />
+                                {isBoth ? "حضوري + إلكتروني" : modes.includes("إلكتروني") ? "إلكتروني (أونلاين)" : "حضوري (قاعات)"}
                               </span>
                               {t.likes + t.dislikes > 0 && (
                                 <span className={`px-2 py-0.5 border border-slate-900 text-[10px] font-black ${
@@ -1791,14 +2143,34 @@ export default function Home() {
                                 </span>
                               )}
                             </div>
-                            {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
 
+                            {/* Dynamic Badges */}
+                            {badges.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                                {badges.map((b, bi) => (
+                                  <span key={bi} className={`px-1.5 py-0.2 border text-[9px] font-black flex items-center gap-1 ${b.cls}`}>
+                                    <IconAward size={10} /> {b.label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
                           </div>
                         </div>
 
-                        {/* Votes and Admin Controls */}
+                        {/* Votes, Bookmark, and Admin Controls */}
                         <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                          <div className="flex gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => toggleBookmark(t.id, "teacher", t.name, `${t.subject} - ${t.gov}`)}
+                              className={`p-1.5 border border-slate-900 text-xs transition-all ${
+                                isBookmarked(t.id) ? "bg-amber-300 text-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-500 hover:bg-slate-100"
+                              }`}
+                              title={isBookmarked(t.id) ? "إزالة من المحفوظات" : "حفظ المدرس في المحفوظات"}
+                            >
+                              <IconBookmark size={13} fill={isBookmarked(t.id) ? "currentColor" : "none"} />
+                            </button>
                             <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title="إعجاب">
                               <IconThumbUp size={12} /> {t.likes}
                             </button>
@@ -1891,7 +2263,29 @@ export default function Home() {
                           <span className="px-3 py-1 bg-blue-100 border border-slate-900 text-xs font-black text-blue-900">
                             محافظة {selectedTeacher.gov}
                           </span>
+                          {(() => {
+                            const modes = selectedTeacher.teachingMode || selectedTeacher.teaching_mode || ["حضوري"];
+                            const isBoth = modes.includes("حضوري") && modes.includes("إلكتروني");
+                            return (
+                              <span className="px-3 py-1 bg-purple-100 border border-slate-900 text-xs font-black text-purple-900 flex items-center gap-1.5">
+                                <IconMonitor size={12} />
+                                {isBoth ? "حضوري + إلكتروني" : modes.includes("إلكتروني") ? "إلكتروني (أونلاين)" : "حضوري (قاعات)"}
+                              </span>
+                            );
+                          })()}
                         </div>
+
+                        {/* Dynamic Badges */}
+                        {getTeacherBadges(selectedTeacher).length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {getTeacherBadges(selectedTeacher).map((b, bi) => (
+                              <span key={bi} className={`px-2 py-0.5 border text-[10px] font-black flex items-center gap-1 ${b.cls}`}>
+                                <IconAward size={11} /> {b.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
                         {selectedTeacher.grades && (
                           <p className="text-xs text-slate-600 font-bold">
                             المراحل الدراسية: <span className="text-slate-900 font-semibold">{selectedTeacher.grades}</span>
@@ -1900,7 +2294,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Teacher Rating: Like or Dislike buttons with live counts */}
+                    {/* Teacher Rating & Bookmark Card */}
                     <div className="bg-slate-50 border-2 border-slate-900 p-4 shadow-[3px_3px_0px_#000] flex flex-col items-center gap-2.5 w-full sm:w-auto shrink-0">
                       <span className="text-xs font-black text-slate-800">تقييم الطلاب للمدرس:</span>
                       <div className="flex items-center gap-3 w-full sm:w-auto justify-center">
@@ -1927,6 +2321,17 @@ export default function Home() {
                           <IconThumbDown size={16} /> {selectedTeacher.dislikes} لم يعجبني
                         </button>
                       </div>
+
+                      <button
+                        onClick={() => toggleBookmark(selectedTeacher.id, "teacher", selectedTeacher.name, `${selectedTeacher.subject} - ${selectedTeacher.gov}`)}
+                        className={`w-full py-2 px-3 border-2 border-slate-900 text-xs font-black flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all ${
+                          isBookmarked(selectedTeacher.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-100"
+                        }`}
+                        title={isBookmarked(selectedTeacher.id) ? "إزالة من المحفوظات" : "حفظ المدرس في المحفوظات"}
+                      >
+                        <IconBookmark size={13} fill={isBookmarked(selectedTeacher.id) ? "currentColor" : "none"} />
+                        <span>{isBookmarked(selectedTeacher.id) ? "محفوظ في المحفوظات ✓" : "حفظ المدرس في المحفوظات"}</span>
+                      </button>
                     </div>
                   </div>
 
@@ -2096,7 +2501,57 @@ export default function Home() {
                                 <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{postItem.body}</p>
                               </div>
 
-                              {/* Actions: Likes, Dislikes, Reports, Delete */}
+                              {/* Multi-Image Gallery */}
+                              {postItem.images && postItem.images.length > 0 && (
+                                <div className="pt-2">
+                                  <div className={`grid gap-2 ${
+                                    postItem.images.length === 1 ? "grid-cols-1" : postItem.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
+                                  }`}>
+                                    {postItem.images.map((img, i) => (
+                                      <div
+                                        key={i}
+                                        onClick={() => setPreviewImageModal(img)}
+                                        className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
+                                      >
+                                        <img src={img} alt={`مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
+                                          عرض بالحجم الكامل
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* External Study Links (YouTube & Telegram) */}
+                              {(postItem.youtubeUrl || postItem.telegramUrl) && (
+                                <div className="flex items-center gap-2 flex-wrap pt-1">
+                                  {postItem.youtubeUrl && (
+                                    <a
+                                      href={postItem.youtubeUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
+                                    >
+                                      <IconVideo size={13} className="text-red-700" />
+                                      <span>شرح يوتيوب</span>
+                                    </a>
+                                  )}
+                                  {postItem.telegramUrl && (
+                                    <a
+                                      href={postItem.telegramUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
+                                    >
+                                      <IconLink size={13} className="text-blue-700" />
+                                      <span>ملزمة / ملف</span>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Actions: Likes, Dislikes, Bookmark, Reports, Delete */}
                               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                                 <div className="flex items-center gap-2">
                                   <button onClick={() => votePost(postItem.id, "like")} className={vbtn(postVote === "like", "like")}>
@@ -2104,6 +2559,16 @@ export default function Home() {
                                   </button>
                                   <button onClick={() => votePost(postItem.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
                                     <IconThumbDown size={12} /> {postItem.dislikes}
+                                  </button>
+                                  <button
+                                    onClick={() => toggleBookmark(postItem.id, "post", postItem.title, postItem.author)}
+                                    className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
+                                      isBookmarked(postItem.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
+                                    }`}
+                                    title={isBookmarked(postItem.id) ? "إزالة من المحفوظات" : "حفظ في المحفوظات"}
+                                  >
+                                    <IconBookmark size={12} fill={isBookmarked(postItem.id) ? "currentColor" : "none"} />
+                                    <span>{isBookmarked(postItem.id) ? "محفوظ" : "حفظ"}</span>
                                   </button>
                                   <button onClick={() => reportPost(postItem.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
                                     <IconFlag size={12} /> بلاغ ({postItem.reports || 0}/20)
@@ -2425,7 +2890,118 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Mixed Activity Feed (Posts, Teacher Reviews, Comments) */}
+                {/* Profile Sub-Tabs: Activity vs Bookmarks (المحفوظات) */}
+                <div className="flex items-center gap-2 border-b-2 border-slate-200 pb-2">
+                  <button
+                    onClick={() => setProfileSubTab("activities")}
+                    className={`px-4 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all ${
+                      profileSubTab === "activities"
+                        ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                        : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
+                    }`}
+                  >
+                    <IconPen size={13} />
+                    <span>{isOwnProfile ? "نشاطاتي ومشاركاتي" : "مشاركات الطالب"}</span>
+                  </button>
+                  {isOwnProfile && (
+                    <button
+                      onClick={() => setProfileSubTab("saved")}
+                      className={`px-4 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all ${
+                        profileSubTab === "saved"
+                          ? "border-slate-900 bg-amber-400 text-slate-950 shadow-[2px_2px_0px_#000]"
+                          : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
+                      }`}
+                    >
+                      <IconBookmark size={13} />
+                      <span>المحفوظات ({userBookmarks.length})</span>
+                    </button>
+                  )}
+                </div>
+
+                {profileSubTab === "saved" && isOwnProfile ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <h3 className="font-black text-sm text-slate-800 flex items-center gap-1.5">
+                        <IconBookmark size={16} className="text-amber-500" />
+                        <span>العناصر المحفوظة للرجوع السريع ({userBookmarks.length})</span>
+                      </h3>
+                      <span className="text-[11px] text-slate-500 font-semibold">تُحفظ بحسابك للرجوع إليها في أي وقت</span>
+                    </div>
+
+                    {userBookmarks.length === 0 ? (
+                      <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-2">
+                        <div className="text-amber-500 flex justify-center"><IconBookmark size={28} /></div>
+                        <p className="text-xs font-bold text-slate-600">لم تقم بحفظ أي مدرسين أو منشورات حتى الآن.</p>
+                        <p className="text-[11px] text-slate-400 font-semibold">اضغط على زر الحفظ (أيقونة العلامة) بجانب أي مدرس أو منشور لحفظه هنا.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {userBookmarks.map(b => {
+                          const isTeacher = b.type === "teacher";
+                          const teacher = isTeacher ? teachers.find(t => t.id === b.targetId) : null;
+                          const post = !isTeacher ? posts.find(p => p.id === b.targetId) : null;
+
+                          return (
+                            <div
+                              key={b.id}
+                              className="bg-white border-2 border-slate-900 shadow-[3px_3px_0px_#000] p-4 flex flex-col justify-between gap-3"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`px-2 py-0.5 text-[9px] font-black border ${
+                                      isTeacher ? "bg-amber-100 text-amber-900 border-amber-600" : "bg-emerald-100 text-emerald-900 border-emerald-600"
+                                    }`}>
+                                      {isTeacher ? "مدرس محفوظ" : "منشور محفوظ"}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-bold">{getRelativeTime(b.created_at)}</span>
+                                  </div>
+                                  <h4 className="font-black text-sm text-slate-900">{b.title}</h4>
+                                  {b.subtitle && <p className="text-xs text-slate-600 font-semibold">{b.subtitle}</p>}
+                                  {post && <p className="text-xs text-slate-500 line-clamp-2 mt-1">{post.body}</p>}
+                                </div>
+
+                                <button
+                                  onClick={() => toggleBookmark(b.targetId, b.type, b.title)}
+                                  className="p-1.5 border border-slate-300 hover:border-red-600 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all shrink-0"
+                                  title="إزالة من المحفوظات"
+                                >
+                                  <IconTrash size={13} />
+                                </button>
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                                {isTeacher && teacher ? (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedTeacher(teacher);
+                                      setTab("teacher");
+                                      window.scrollTo({ top: 0, behavior: "smooth" });
+                                    }}
+                                    className="text-xs font-black text-emerald-800 hover:underline flex items-center gap-1"
+                                  >
+                                    الانتقال لصفحة المدرس ←
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setTab("feed");
+                                      window.scrollTo({ top: 0, behavior: "smooth" });
+                                    }}
+                                    className="text-xs font-black text-emerald-800 hover:underline flex items-center gap-1"
+                                  >
+                                    عرض في ساحة النقاش ←
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                /* Mixed Activity Feed (Posts, Teacher Reviews, Comments) */
                 <div className="space-y-4">
                   <h3 className="font-black text-sm text-slate-800 border-b-2 border-slate-200 pb-2">
                     {isOwnProfile ? "سجل نشاطاتي ومشاركاتي:" : `نشاطات ومشاركات الطالب (${targetProfileUser}):`}
@@ -2654,6 +3230,7 @@ export default function Home() {
                     })
                   )}
                 </div>
+              )}
               </>
             )}
           </section>
@@ -3026,9 +3603,82 @@ export default function Home() {
                   {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
+
+              {/* Multi-Image Upload */}
+              <div>
+                <label className="block font-bold mb-1 text-slate-800">
+                  إرفاق صور (ملازم، ملخصات، أسئلة وزارية - يمكنك اختيار أكثر من صورة)
+                </label>
+                <div className="border-2 border-dashed border-slate-300 p-3 bg-slate-50 text-center space-y-2">
+                  <input
+                    type="file"
+                    id="post-images-input"
+                    multiple
+                    accept="image/*"
+                    onChange={handlePostImagesUpload}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="post-images-input"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] cursor-pointer transition-all"
+                  >
+                    <IconImage size={14} className="text-emerald-primary" />
+                    <span>+ إضافة صور من جهازك</span>
+                  </label>
+
+                  {postImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 justify-center pt-2">
+                      {postImages.map((img, idx) => (
+                        <div key={idx} className="relative group w-14 h-14 border border-slate-900 bg-white shadow-[1px_1px_0px_#000]">
+                          <img src={img} alt={`مرفق ${idx + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removePostImage(idx)}
+                            className="absolute -top-1.5 -left-1.5 bg-red-600 text-white w-4 h-4 text-[10px] font-black rounded-full flex items-center justify-center border border-slate-900 hover:bg-red-700"
+                            title="حذف الصورة"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* YouTube URL */}
+              <div>
+                <label className="block font-bold mb-1 text-slate-800 flex items-center gap-1">
+                  <IconVideo size={13} className="text-red-600" />
+                  <span>رابط شرح يوتيوب (اختياري)</span>
+                </label>
+                <input
+                  type="url"
+                  value={postYoutube}
+                  onChange={e => setPostYoutube(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none"
+                  placeholder="https://youtube.com/watch?v=..."
+                />
+              </div>
+
+              {/* Telegram / File URL */}
+              <div>
+                <label className="block font-bold mb-1 text-slate-800 flex items-center gap-1">
+                  <IconLink size={13} className="text-blue-600" />
+                  <span>رابط ملزمة أو قناة تيليجرام أو ملف (اختياري)</span>
+                </label>
+                <input
+                  type="url"
+                  value={postTelegram}
+                  onChange={e => setPostTelegram(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none"
+                  placeholder="https://t.me/..."
+                />
+              </div>
+
               <button onClick={submitPost} disabled={!postTitle.trim() || !postBody.trim() || !postTeacher}
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-                نشر
+                نشر المنشور
               </button>
             </div>
           </div>
@@ -3145,6 +3795,51 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Box: Teaching Mode (حضوري / إلكتروني / كلاهما) */}
+              <div>
+                <label className="block font-bold mb-1.5 text-slate-800">
+                  طريقة التدريس المتاحة للمدرس <span className="text-red-500">* (اختر طريقة واحدة أو كلاهما)</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (tTeachingModes.includes("حضوري")) {
+                        if (tTeachingModes.length > 1) setTTeachingModes(tTeachingModes.filter(m => m !== "حضوري"));
+                      } else {
+                        setTTeachingModes([...tTeachingModes, "حضوري"]);
+                      }
+                    }}
+                    className={`p-2.5 text-xs font-bold border-2 text-center transition-all flex items-center justify-between ${
+                      tTeachingModes.includes("حضوري")
+                        ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]"
+                        : "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-900"
+                    }`}
+                  >
+                    <span>حضوري (معاهد وقاعات)</span>
+                    <span>{tTeachingModes.includes("حضوري") ? "✓" : "+"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (tTeachingModes.includes("إلكتروني")) {
+                        if (tTeachingModes.length > 1) setTTeachingModes(tTeachingModes.filter(m => m !== "إلكتروني"));
+                      } else {
+                        setTTeachingModes([...tTeachingModes, "إلكتروني"]);
+                      }
+                    }}
+                    className={`p-2.5 text-xs font-bold border-2 text-center transition-all flex items-center justify-between ${
+                      tTeachingModes.includes("إلكتروني")
+                        ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]"
+                        : "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-900"
+                    }`}
+                  >
+                    <span>إلكتروني (دورات أونلاين)</span>
+                    <span>{tTeachingModes.includes("إلكتروني") ? "✓" : "+"}</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Box 5: Image File Upload (FILE ONLY, NOT LINK) */}
               <div>
                 <label className="block font-bold mb-1 text-slate-800">
@@ -3193,6 +3888,7 @@ export default function Home() {
                   !tName.trim() ||
                   (tSubjectChoice === "أخرى" ? !tCustomSubject.trim() : !tSubjectChoice) ||
                   tSelectedGrades.length === 0 ||
+                  tTeachingModes.length === 0 ||
                   !tImg
                 }
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
@@ -3509,6 +4205,34 @@ export default function Home() {
               className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
               متابعة ({selectedGrades.length}/2)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ FULL-SIZE IMAGE PREVIEW MODAL ═══════ */}
+      {previewImageModal && (
+        <div
+          className="fixed inset-0 z-[80] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewImageModal(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] p-2 flex flex-col items-center"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between border-b border-slate-200 pb-2 mb-2 px-1">
+              <span className="text-xs font-black text-slate-800">معاينة الصورة بالحجم الكامل</span>
+              <button
+                onClick={() => setPreviewImageModal(null)}
+                className="px-2.5 py-1 bg-red-600 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] hover:bg-red-700"
+              >
+                إغلاق ✕
+              </button>
+            </div>
+            <img
+              src={previewImageModal}
+              alt="معاينة الصورة بالحجم الكامل"
+              className="max-h-[80vh] w-auto object-contain border border-slate-200"
+            />
           </div>
         </div>
       )}

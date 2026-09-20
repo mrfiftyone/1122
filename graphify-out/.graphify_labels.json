@@ -7,7 +7,7 @@
   "5": "dependencies",
   "6": "devDependencies",
   "7": "handleAuth",
-  "8": "setNotifications",
+  "8": "toggleBookmark",
   "9": "README.md",
   "10": "normalizeTeacherName",
   "11": "feedAlgorithm.ts",
@@ -16,8 +16,5 @@
   "14": "image.ts",
   "15": "vercel.json",
   "16": "CLAUDE.md",
-  "17": "castVote",
-  "18": "Turnstile.tsx",
-  "19": "containsProfanity",
-  "20": "getReportRecords"
+  "18": "Turnstile.tsx"
 }
