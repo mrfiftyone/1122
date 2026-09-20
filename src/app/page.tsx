@@ -8,7 +8,7 @@ import {
   IconBook, IconPen, IconUser, IconThumbUp, IconThumbDown, IconFlag,
   IconShield, IconCrown, IconGrad, IconTag, IconInbox, IconBolt,
   IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch,
-  IconArrowRight, IconHome, IconBell, IconHistory, IconStar,
+  IconArrowRight, IconHome, IconBell, IconHistory,
 } from "@/utils/icons";
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
@@ -122,7 +122,7 @@ function getSession(): User | null { const s = localStorage.getItem("currentUser
 // ─── Main Component ───────────────────────────────────────────────
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const [tab, setTab] = useState<"feed" | "directory" | "notifications" | "profile" | "admin">("feed");
+  const [tab, setTab] = useState<"feed" | "directory" | "notifications" | "profile" | "admin" | "teacher">("feed");
   const [session, setSession] = useState<User | null>(null);
   const [_, setTick] = useState(0);
   const rerender = useCallback(() => setTick(t => t + 1), []);
@@ -166,15 +166,16 @@ export default function Home() {
   const [filterGov, setFilterGov] = useState("all");
   const [filterSubject, setFilterSubject] = useState("all");
 
-  // Selected Teacher Modal (details & reviews)
+  // Selected Teacher Dedicated View & Review states
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewVerdict, setReviewVerdict] = useState<"like" | "dislike" | null>(null);
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewBody, setReviewBody] = useState("");
-  const [reviewRating, setReviewRating] = useState(5);
 
   // Profile Viewing state (view self or another student)
   const [viewedUser, setViewedUser] = useState<string | null>(null);
+
 
   // Profile Edit
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
@@ -658,7 +659,15 @@ export default function Home() {
   }
 
   async function deletePost(postId: string) {
-    setPostsList(prev => prev.filter(p => p.id !== postId));
+    if (!session) return;
+    const p = posts.find(x => x.id === postId);
+    if (!p) return;
+    const isAuthor = session.username === p.author;
+    const isPrivileged = session.role === "owner" || session.role === "mod";
+    if (!isAuthor && !isPrivileged) return;
+    if (!confirm("هل أنت متأكد من حذف هذا المنشور/التقييم؟")) return;
+
+    setPostsList(prev => prev.filter(item => item.id !== postId));
     try {
       await supabase.from('posts').delete().eq('id', postId);
       fetchSupabaseData();
@@ -666,6 +675,32 @@ export default function Home() {
       console.error("Error deleting post from Supabase:", e);
     }
     rerender();
+  }
+
+  // Delete Teacher (Owner / Mod only)
+  async function deleteTeacher(teacherId: string) {
+    if (!session || (session.role !== "owner" && session.role !== "mod")) {
+      alert("عذراً، هذه الصلاحية للمالك والمشرفين فقط.");
+      return;
+    }
+    const target = teachers.find(t => t.id === teacherId);
+    if (!target) return;
+    if (!confirm(`هل أنت متأكد من حذف المدرس "${target.name}" نهائياً من المنصة؟`)) return;
+
+    setTeachersList(prev => prev.filter(t => t.id !== teacherId));
+    if (selectedTeacher?.id === teacherId) {
+      setSelectedTeacher(null);
+      setTab("directory");
+    }
+
+    try {
+      await supabase.from('teachers').delete().eq('id', teacherId);
+      fetchSupabaseData();
+    } catch (e) {
+      console.error("Error deleting teacher from Supabase:", e);
+    }
+    rerender();
+    alert("تم حذف المدرس بنجاح.");
   }
 
   // ─── Image Compression Helper ────────────────────────────────────
@@ -790,10 +825,14 @@ export default function Home() {
     });
   }
 
-  // ─── Teacher Review Handler ───────────────────────────────────────
+  // ─── Teacher Review Handler (Requires Like or Dislike, No stars) ──
   async function submitTeacherReview() {
     if (!session) { setAuthModal(true); return; }
     if (!selectedTeacher) return;
+    if (!reviewVerdict) {
+      alert("يرجى تحديد هل المدرس أعجبك 👍 أو لم يعجبك 👎 للمتابعة.");
+      return;
+    }
     if (!reviewBody.trim()) { alert("يرجى كتابة نص التقييم أو المراجعة."); return; }
     if (containsProfanity(reviewTitle) || containsProfanity(reviewBody)) {
       alert("المحتوى يحتوي على كلمات غير مسموح بها.");
@@ -801,20 +840,27 @@ export default function Home() {
     }
 
     const titleText = reviewTitle.trim() || `تقييم للأستاذ ${selectedTeacher.name}`;
-    const starsEmoji = "⭐".repeat(reviewRating);
-    const fullBody = `${starsEmoji} (${reviewRating}/5)\n\n${reviewBody.trim()}`;
+    const verdictText = reviewVerdict === "like" ? "[أعجبني 👍]" : "[لم يعجبني 👎]";
+    const fullBody = `${verdictText}\n\n${reviewBody.trim()}`;
+    const gradeLevel = reviewVerdict === "like" ? "تقييم أستاذ: أعجبني" : "تقييم أستاذ: لم يعجبني";
 
     const reviewPayload = {
       author: session.username,
       teacher_id: selectedTeacher.id,
       title: titleText,
       body: fullBody,
-      grade_level: "تقييم أستاذ",
+      grade_level: gradeLevel,
       likes: 0,
       dislikes: 0,
       reports: 0,
       status: "active",
     };
+
+    // Auto-vote on teacher if not voted that way yet
+    const currVote = getUserVote(`teacher_${selectedTeacher.id}`);
+    if (currVote !== reviewVerdict) {
+      voteTeacher(selectedTeacher.id, reviewVerdict);
+    }
 
     const tempPost: Post = {
       id: "temp_rev_" + Date.now(),
@@ -823,7 +869,7 @@ export default function Home() {
       teacher_id: selectedTeacher.id,
       title: titleText,
       body: fullBody,
-      grade_level: "تقييم أستاذ",
+      grade_level: gradeLevel,
       likes: 0,
       dislikes: 0,
       reports: 0,
@@ -842,11 +888,12 @@ export default function Home() {
 
     setReviewTitle("");
     setReviewBody("");
-    setReviewRating(5);
+    setReviewVerdict(null);
     setShowReviewForm(false);
     rerender();
     alert("تم نشر تقييمك للأستاذ بنجاح!");
   }
+
 
   // ─── Admin Handlers ───────────────────────────────────────────────
   async function approveTeacher(id: string) {
@@ -1029,8 +1076,8 @@ export default function Home() {
   const isOwnProfile = !!session && targetProfileUser === session.username;
 
   // Profile data calculations for targetProfileUser
-  const userRegularPosts = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && p.grade_level !== "تقييم أستاذ") : [];
-  const userTeacherReviews = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && p.grade_level === "تقييم أستاذ") : [];
+  const userRegularPosts = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && (!p.grade_level || !p.grade_level.includes("تقييم أستاذ"))) : [];
+  const userTeacherReviews = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && (p.grade_level && p.grade_level.includes("تقييم أستاذ"))) : [];
   const userComments: { postTitle: string; comment: Comment }[] = [];
   if (targetProfileUser) {
     posts.forEach(p => {
@@ -1055,6 +1102,7 @@ export default function Home() {
     ...userRegularPosts.map(p => ({
       id: p.id,
       kind: "post" as const,
+      grade_level: p.grade_level,
       teacherId: p.teacher_id || p.teacherId,
       title: p.title,
       content: p.body,
@@ -1065,6 +1113,7 @@ export default function Home() {
     ...userTeacherReviews.map(r => ({
       id: r.id,
       kind: "review" as const,
+      grade_level: r.grade_level,
       teacherId: r.teacher_id || r.teacherId,
       title: r.title,
       content: r.body,
@@ -1075,6 +1124,7 @@ export default function Home() {
     ...userComments.map(c => ({
       id: c.comment.id,
       kind: "comment" as const,
+      grade_level: undefined,
       teacherId: undefined,
       title: `رد على: "${c.postTitle}"`,
       content: c.comment.text,
@@ -1218,7 +1268,7 @@ export default function Home() {
               <div className="space-y-5">
                 {activePosts.map(p => {
                   const teacher = teachers.find(t => t.id === p.teacherId || t.id === p.teacher_id);
-                  const canEditPost = session?.username === p.author && isWithinEditWindow(p.created_at);
+                  const canDeletePost = session && (session.username === p.author || session.role === "owner" || session.role === "mod");
                   const postVote = getUserVote(`post_${p.id}`);
                   return (
                     <div key={p.id} className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
@@ -1230,9 +1280,18 @@ export default function Home() {
                         </button>
                         <div className="flex items-center gap-2">
                           {teacher && (
-                            <span className="px-2.5 py-0.5 bg-emerald-100 border border-slate-900 text-[10px] font-black text-emerald-900 flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setSelectedTeacher(teacher);
+                                setTab("teacher");
+                                setShowReviewForm(false);
+                                setReviewVerdict(null);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                              className="px-2.5 py-0.5 bg-emerald-100 hover:bg-emerald-200 border border-slate-900 text-[10px] font-black text-emerald-900 flex items-center gap-1 transition-colors"
+                            >
                               <IconTag size={10} /> {teacher.name} ({teacher.subject})
-                            </span>
+                            </button>
                           )}
                           <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(p.created_at)}</span>
                         </div>
@@ -1257,9 +1316,9 @@ export default function Home() {
                             <IconFlag size={12} /> بلاغ ({p.reports || 0}/20)
                           </button>
                         </div>
-                        {canEditPost && (
+                        {canDeletePost && (
                           <button onClick={() => deletePost(p.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
-                            <IconTrash size={12} /> حذف
+                            <IconTrash size={12} /> {session?.username === p.author ? "حذف" : "حذف (إدارة)"}
                           </button>
                         )}
                       </div>
@@ -1387,11 +1446,17 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredTeachers.map(t => {
                   const tVote = getUserVote(`teacher_${t.id}`);
-                  const reviewCount = posts.filter(p => (p.teacher_id === t.id || p.teacherId === t.id) && p.grade_level === "تقييم أستاذ").length;
+                  const teacherPostsCount = posts.filter(p => p.teacher_id === t.id || p.teacherId === t.id).length;
                   return (
                     <div
                       key={t.id}
-                      onClick={() => { setSelectedTeacher(t); setShowReviewForm(false); }}
+                      onClick={() => {
+                        setSelectedTeacher(t);
+                        setTab("teacher");
+                        setShowReviewForm(false);
+                        setReviewVerdict(null);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
                       className="group bg-white border-2 border-border-subtle hover:border-slate-900 shadow-[2px_2px_0px_#d1dcd6] hover:shadow-[4px_4px_0px_#000] p-4 flex flex-col justify-between gap-3 cursor-pointer transition-all"
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -1421,31 +1486,385 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Votes */}
-                        <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title="إعجاب">
-                            <IconThumbUp size={12} /> {t.likes}
-                          </button>
-                          <button onClick={() => voteTeacher(t.id, "dislike")} className={vbtn(tVote === "dislike", "dislike")} title="عدم إعجاب">
-                            <IconThumbDown size={12} /> {t.dislikes}
-                          </button>
+                        {/* Votes and Admin Controls */}
+                        <div className="flex flex-col items-end gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title="إعجاب">
+                              <IconThumbUp size={12} /> {t.likes}
+                            </button>
+                            <button onClick={() => voteTeacher(t.id, "dislike")} className={vbtn(tVote === "dislike", "dislike")} title="عدم إعجاب">
+                              <IconThumbDown size={12} /> {t.dislikes}
+                            </button>
+                          </div>
+                          {session && (session.role === "owner" || session.role === "mod") && (
+                            <button
+                              onClick={() => deleteTeacher(t.id)}
+                              className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 text-[10px] font-bold border border-red-500 flex items-center gap-0.5 shadow-[1px_1px_0px_#dc2626]"
+                              title="حذف المدرس نهائياً (إدارة)"
+                            >
+                              <IconTrash size={10} /> حذف (إدارة)
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      {/* Card Footer: Reviews Count & Open Button */}
+                      {/* Card Footer: Posts & Reviews Count & Open Button */}
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                        <span className="font-bold text-amber-800 flex items-center gap-1 bg-amber-50 px-2 py-0.5 border border-amber-300">
-                          <IconStar size={12} fill="#d97706" className="text-amber-600" />
-                          <span>{reviewCount} تقييم ومراجعة</span>
+                        <span className="font-bold text-slate-700 flex items-center gap-1 bg-slate-100 px-2 py-0.5 border border-slate-300">
+                          <IconBook size={12} className="text-slate-600" />
+                          <span>{teacherPostsCount} منشور وتقييم</span>
                         </span>
                         <span className="text-[11px] font-bold text-emerald-700 group-hover:underline flex items-center gap-0.5">
-                          عرض المراجعات وكتابة تقييم ←
+                          عرض صفحة المدرس وكل المنشورات ←
                         </span>
                       </div>
                     </div>
                   );
                 })}
               </div>
+            )}
+          </section>
+        )}
+
+        {/* ──── TAB: DEDICATED TEACHER PAGE (صفحة المدرس وكل ما نُشر عنه) ──── */}
+        {tab === "teacher" && (
+          <section className="space-y-6">
+            {!selectedTeacher ? (
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-4">
+                <p className="text-sm font-black text-slate-700">لم يتم تحديد أي مدرس لعرض صفحته.</p>
+                <button
+                  onClick={() => setTab("directory")}
+                  className="px-5 py-2.5 bg-emerald-primary text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000]"
+                >
+                  ← العودة إلى قائمة المدرسين
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Navigation Bar & Admin Delete Teacher */}
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => setTab("directory")}
+                    className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-800 font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+                  >
+                    ← العودة إلى قائمة المدرسين
+                  </button>
+
+                  {session && (session.role === "owner" || session.role === "mod") && (
+                    <button
+                      onClick={() => deleteTeacher(selectedTeacher.id)}
+                      className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 transition-all"
+                    >
+                      <IconTrash size={14} /> حذف المدرس نهائياً (إدارة)
+                    </button>
+                  )}
+                </div>
+
+                {/* Teacher Hero Profile Card */}
+                <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 space-y-6">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+                    <div className="flex items-start sm:items-center gap-4">
+                      <img
+                        src={selectedTeacher.img}
+                        alt={selectedTeacher.name}
+                        className="w-24 h-24 sm:w-28 sm:h-28 border-2 border-slate-900 object-cover shadow-[3px_3px_0px_#000] bg-slate-100 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E";
+                        }}
+                      />
+                      <div className="space-y-2">
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-900">{selectedTeacher.name}</h2>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-3 py-1 bg-emerald-100 border border-slate-900 text-xs font-black text-emerald-900">
+                            {selectedTeacher.subject}
+                          </span>
+                          <span className="px-3 py-1 bg-blue-100 border border-slate-900 text-xs font-black text-blue-900">
+                            محافظة {selectedTeacher.gov}
+                          </span>
+                        </div>
+                        {selectedTeacher.grades && (
+                          <p className="text-xs text-slate-600 font-bold">
+                            المراحل الدراسية: <span className="text-slate-900 font-semibold">{selectedTeacher.grades}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Teacher Rating: Like or Dislike buttons with live counts */}
+                    <div className="bg-slate-50 border-2 border-slate-900 p-4 shadow-[3px_3px_0px_#000] flex flex-col items-center gap-2.5 w-full sm:w-auto shrink-0">
+                      <span className="text-xs font-black text-slate-800">تقييم الطلاب للمدرس:</span>
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-center">
+                        <button
+                          onClick={() => voteTeacher(selectedTeacher.id, "like")}
+                          className={`px-4 py-2 border-2 border-slate-900 font-black text-xs flex items-center gap-2 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all ${
+                            getUserVote(`teacher_${selectedTeacher.id}`) === "like"
+                              ? "bg-emerald-600 text-white"
+                              : "bg-white hover:bg-emerald-50 text-emerald-800"
+                          }`}
+                          title="أعجبني"
+                        >
+                          <IconThumbUp size={16} /> {selectedTeacher.likes} أعجبني
+                        </button>
+                        <button
+                          onClick={() => voteTeacher(selectedTeacher.id, "dislike")}
+                          className={`px-4 py-2 border-2 border-slate-900 font-black text-xs flex items-center gap-2 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all ${
+                            getUserVote(`teacher_${selectedTeacher.id}`) === "dislike"
+                              ? "bg-red-600 text-white"
+                              : "bg-white hover:bg-red-50 text-red-800"
+                          }`}
+                          title="لم يعجبني"
+                        >
+                          <IconThumbDown size={16} /> {selectedTeacher.dislikes} لم يعجبني
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Toggle Review Form */}
+                  <div className="pt-4 border-t-2 border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="text-xs text-slate-600 font-bold">
+                      هل درست عند الأستاذ {selectedTeacher.name}؟ شارك رأيك وتقييمك لمساعدة بقية الطلاب!
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (!session) { setAuthModal(true); return; }
+                        setShowReviewForm(!showReviewForm);
+                      }}
+                      className="w-full sm:w-auto px-5 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] flex items-center justify-center gap-2 transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none shrink-0"
+                    >
+                      <IconPen size={14} />
+                      {showReviewForm ? "إغلاق استمارة التقييم" : "اكتب مراجعة وتقييم للمدرس"}
+                    </button>
+                  </div>
+
+                  {/* Review Form: Mandatory Like or Dislike selection (NO stars) */}
+                  {showReviewForm && (
+                    <div className="bg-slate-50 border-2 border-slate-900 p-5 space-y-4 shadow-[3px_3px_0px_#000]">
+                      <div className="border-b border-slate-300 pb-2">
+                        <h4 className="font-black text-sm text-slate-900">استمارة تقييم الأستاذ {selectedTeacher.name}</h4>
+                        <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
+                          يجب تحديد ما إذا كان المدرس قد أعجبك أم لا كشرط أساسي لكتابة ونشر التقييم.
+                        </p>
+                      </div>
+
+                      {/* Prerequisite: Mandatory Like or Dislike Choice */}
+                      <div>
+                        <label className="block text-xs font-black text-slate-800 mb-2">
+                          هل تنصح بهذا المدرس؟ <span className="text-red-500">* (إجباري: اختر أحدهما)</span>
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setReviewVerdict("like")}
+                            className={`py-3 px-4 text-xs font-black border-2 flex items-center justify-center gap-2 transition-all ${
+                              reviewVerdict === "like"
+                                ? "border-slate-900 bg-emerald-600 text-white shadow-[3px_3px_0px_#000]"
+                                : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
+                            }`}
+                          >
+                            <IconThumbUp size={16} /> أعجبني 👍 (أنصح به)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReviewVerdict("dislike")}
+                            className={`py-3 px-4 text-xs font-black border-2 flex items-center justify-center gap-2 transition-all ${
+                              reviewVerdict === "dislike"
+                                ? "border-slate-900 bg-red-600 text-white shadow-[3px_3px_0px_#000]"
+                                : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
+                            }`}
+                          >
+                            <IconThumbDown size={16} /> لم يعجبني 👎 (لا أنصح به)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Review Title */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-800 mb-1">عنوان التقييم (اختياري)</label>
+                        <input
+                          type="text"
+                          value={reviewTitle}
+                          onChange={e => setReviewTitle(e.target.value)}
+                          placeholder="مثال: تجربتي مع الأستاذ في مادة الرياضيات..."
+                          className="w-full p-2.5 bg-white border-2 border-slate-900 text-xs font-semibold focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Review Body */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-800 mb-1">
+                          تفاصيل رأيك وتجربتك <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={reviewBody}
+                          onChange={e => setReviewBody(e.target.value)}
+                          placeholder="اكتب بالتفصيل: طريقة الشرح، الواجبات، أسلوب التدريس، ومستوى الاستفادة..."
+                          className="w-full p-2.5 bg-white border-2 border-slate-900 text-xs font-semibold min-h-[90px] resize-none focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => { setShowReviewForm(false); setReviewVerdict(null); }}
+                          className="px-4 py-2 bg-slate-200 hover:bg-slate-300 font-bold text-xs border border-slate-900"
+                        >
+                          إلغاء
+                        </button>
+                        <button
+                          type="button"
+                          onClick={submitTeacherReview}
+                          disabled={!reviewVerdict || !reviewBody.trim()}
+                          className="px-6 py-2 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none"
+                        >
+                          نشر التقييم الآن
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Section: Everything posted about this teacher */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
+                    <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
+                      <IconBook size={18} />
+                      كل ما نُشر عن الأستاذ {selectedTeacher.name}
+                    </h3>
+                    <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 border border-slate-300">
+                      {posts.filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id).length} منشور وتقييم
+                    </span>
+                  </div>
+
+                  {posts.filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id).length === 0 ? (
+                    <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
+                      لا توجد منشورات أو تقييمات عن هذا المدرس حتى الآن. كن أول من يكتب عنه!
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {posts
+                        .filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id)
+                        .map(postItem => {
+                          const postVote = getUserVote(`post_${postItem.id}`);
+                          const canDelete = session && (session.username === postItem.author || session.role === "owner" || session.role === "mod");
+                          const isReview = postItem.grade_level?.includes("تقييم أستاذ");
+                          const isLikeReview = postItem.grade_level?.includes("أعجبني") || postItem.body?.startsWith("[أعجبني");
+                          const isDislikeReview = postItem.grade_level?.includes("لم يعجبني") || postItem.body?.startsWith("[لم يعجبني");
+
+                          return (
+                            <div key={postItem.id} className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
+                              {/* Post / Review Header */}
+                              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                                <button
+                                  onClick={() => { setViewedUser(postItem.author); setTab("profile"); }}
+                                  className="flex items-center gap-2 hover:opacity-80"
+                                >
+                                  <Avatar username={postItem.author} />
+                                  <span className="text-xs font-black text-slate-800">{postItem.author}</span>
+                                  {isReview ? (
+                                    isDislikeReview ? (
+                                      <span className="px-2 py-0.5 bg-red-100 border border-red-500 text-[10px] font-black text-red-900">
+                                        تقييم: لم يعجبني 👎
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-600 text-[10px] font-black text-emerald-900">
+                                        تقييم: أعجبني 👍
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-blue-100 border border-blue-600 text-[10px] font-black text-blue-900">
+                                      منشور نقاش 💬
+                                    </span>
+                                  )}
+                                </button>
+                                <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(postItem.created_at)}</span>
+                              </div>
+
+                              {/* Content */}
+                              <div>
+                                <h4 className="font-black text-sm text-slate-900">{postItem.title}</h4>
+                                <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{postItem.body}</p>
+                              </div>
+
+                              {/* Actions: Likes, Dislikes, Reports, Delete */}
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => votePost(postItem.id, "like")} className={vbtn(postVote === "like", "like")}>
+                                    <IconThumbUp size={12} /> {postItem.likes}
+                                  </button>
+                                  <button onClick={() => votePost(postItem.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
+                                    <IconThumbDown size={12} /> {postItem.dislikes}
+                                  </button>
+                                  <button onClick={() => reportPost(postItem.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
+                                    <IconFlag size={12} /> بلاغ ({postItem.reports || 0}/20)
+                                  </button>
+                                </div>
+                                {canDelete && (
+                                  <button onClick={() => deletePost(postItem.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
+                                    <IconTrash size={12} /> {session?.username === postItem.author ? "حذف" : "حذف (إدارة)"}
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Comments Section */}
+                              <div className="bg-slate-50 p-3 border border-slate-200 space-y-2 text-xs">
+                                <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1">
+                                  <IconComment size={12} /> التعليقات والردود ({postItem.comments?.length || 0}):
+                                </div>
+                                {(postItem.comments || []).map(c => {
+                                  const commentVote = getUserVote(`comment_${c.id}`);
+                                  return (
+                                    <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <button
+                                          onClick={() => { setViewedUser(c.author); setTab("profile"); }}
+                                          className="flex items-center gap-1.5 hover:opacity-80 text-right"
+                                        >
+                                          <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
+                                          <span className="font-bold text-teal-800">{c.author}: </span>
+                                          <span>{c.text}</span>
+                                        </button>
+                                        <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2 pt-1">
+                                        <button onClick={() => voteComment(postItem.id, c.id, "like")} className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
+                                          <IconThumbUp size={10} /> {c.likes}
+                                        </button>
+                                        <button onClick={() => voteComment(postItem.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
+                                          <IconThumbDown size={10} /> {c.dislikes}
+                                        </button>
+                                        <button onClick={() => reportComment(postItem.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
+                                          <IconFlag size={9} /> ({c.reports || 0})
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                <div className="flex gap-2 pt-1">
+                                  <input
+                                    type="text"
+                                    id={`comment-${postItem.id}`}
+                                    placeholder="اكتب رداً أو تعليقاً..."
+                                    className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none"
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") addComment(postItem.id);
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => addComment(postItem.id)}
+                                    className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700"
+                                  >
+                                    إرسال
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </section>
         )}
@@ -1609,7 +2028,7 @@ export default function Home() {
                       <div className="text-[10px] font-bold text-slate-500">المنشورات</div>
                     </div>
                     <div className="bg-amber-50 border border-amber-200 p-2.5">
-                      <div className="text-lg font-black text-amber-900">{userTeacherReviews.length} 🌟</div>
+                      <div className="text-lg font-black text-amber-900">{userTeacherReviews.length} 📝</div>
                       <div className="text-[10px] font-bold text-amber-700">تقييمات المدرسين</div>
                     </div>
                     <div className="bg-slate-50 border border-slate-200 p-2.5">
@@ -1640,6 +2059,8 @@ export default function Home() {
                   ) : (
                     combinedActivities.map(item => {
                       const teacher = item.teacherId ? teachers.find(t => t.id === item.teacherId) : null;
+                      const isDislikeReview = item.kind === "review" && (item.grade_level?.includes("لم يعجبني") || item.content?.startsWith("[لم يعجبني"));
+                      const isLikeReview = item.kind === "review" && (item.grade_level?.includes("أعجبني") || item.content?.startsWith("[أعجبني"));
                       return (
                         <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-2 relative">
                           <div className="flex items-center justify-between">
@@ -1648,14 +2069,14 @@ export default function Home() {
                                 item.kind === "post"
                                   ? "bg-emerald-100 text-emerald-900"
                                   : item.kind === "review"
-                                  ? "bg-amber-200 text-amber-900 border-amber-600"
+                                  ? (isDislikeReview ? "bg-red-100 text-red-900 border-red-600" : "bg-emerald-100 text-emerald-900 border-emerald-600")
                                   : "bg-blue-100 text-blue-900"
                               }`}>
-                                {item.kind === "post" ? "منشور ✍️" : item.kind === "review" ? "تقييم مدرس 🌟" : "تعليق 💬"}
+                                {item.kind === "post" ? "منشور ✍️" : item.kind === "review" ? (isDislikeReview ? "تقييم: لم يعجبني 👎" : "تقييم: أعجبني 👍") : "تعليق 💬"}
                               </span>
                               {teacher && (
                                 <button
-                                  onClick={() => { setSelectedTeacher(teacher); setTab("directory"); }}
+                                  onClick={() => { setSelectedTeacher(teacher); setTab("teacher"); }}
                                   className="text-[11px] font-bold text-emerald-800 hover:underline flex items-center gap-1"
                                 >
                                   الأستاذ: {teacher.name} ({teacher.subject})
@@ -1668,9 +2089,16 @@ export default function Home() {
                           <h4 className="font-black text-sm text-slate-900">{item.title}</h4>
                           <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
 
-                          <div className="flex items-center gap-4 text-xs font-bold pt-2 border-t border-slate-100 text-slate-500">
-                            <span>👍 {item.likes}</span>
-                            <span>👎 {item.dislikes}</span>
+                          <div className="flex items-center justify-between text-xs font-bold pt-2 border-t border-slate-100 text-slate-500">
+                            <div className="flex items-center gap-4">
+                              <span>👍 {item.likes}</span>
+                              <span>👎 {item.dislikes}</span>
+                            </div>
+                            {(item.kind === "post" || item.kind === "review") && session && (session.username === targetProfileUser || session.role === "owner" || session.role === "mod") && (
+                              <button onClick={() => deletePost(item.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
+                                <IconTrash size={12} /> {session.username === targetProfileUser ? "حذف" : "حذف (إدارة)"}
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -2060,267 +2488,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ═══════ SELECTED TEACHER DETAILS & REVIEWS MODAL ═══════ */}
-      {selectedTeacher && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-6">
-            
-            {/* Modal Header: Teacher Info */}
-            <div className="flex items-start justify-between border-b-2 border-slate-200 pb-4">
-              <div className="flex items-start gap-4">
-                {/* Medium-sized teacher image */}
-                <img
-                  src={selectedTeacher.img}
-                  alt={selectedTeacher.name}
-                  className="w-20 h-20 sm:w-24 sm:h-24 border-2 border-slate-900 object-cover shadow-[3px_3px_0px_#000] bg-slate-100 shrink-0"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E";
-                  }}
-                />
-                <div className="space-y-1.5">
-                  <h3 className="font-black text-lg sm:text-xl text-slate-900">{selectedTeacher.name}</h3>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 bg-emerald-100 border border-slate-900 text-xs font-black text-emerald-900">
-                      {selectedTeacher.subject}
-                    </span>
-                    <span className="px-2.5 py-0.5 bg-blue-100 border border-slate-900 text-xs font-black text-blue-900">
-                      {selectedTeacher.gov}
-                    </span>
-                  </div>
-                  {selectedTeacher.grades && (
-                    <p className="text-xs text-slate-600 font-bold mt-1">
-                      المراحل: <span className="font-semibold">{selectedTeacher.grades}</span>
-                    </p>
-                  )}
-                  {/* Teacher Votes */}
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => voteTeacher(selectedTeacher.id, "like")}
-                      className={vbtn(getUserVote(`teacher_${selectedTeacher.id}`) === "like", "like")}
-                    >
-                      <IconThumbUp size={13} /> {selectedTeacher.likes}
-                    </button>
-                    <button
-                      onClick={() => voteTeacher(selectedTeacher.id, "dislike")}
-                      className={vbtn(getUserVote(`teacher_${selectedTeacher.id}`) === "dislike", "dislike")}
-                    >
-                      <IconThumbDown size={13} /> {selectedTeacher.dislikes}
-                    </button>
-                  </div>
-                </div>
-              </div>
 
-              <button
-                onClick={() => setSelectedTeacher(null)}
-                className="p-1 hover:bg-slate-100 border border-transparent hover:border-slate-900"
-              >
-                <IconX size={18} />
-              </button>
-            </div>
-
-            {/* Reviews Header & Add Review Toggle Button */}
-            <div className="flex items-center justify-between">
-              <h4 className="font-black text-sm sm:text-base text-slate-900 flex items-center gap-1.5">
-                <IconStar size={16} fill="#d97706" className="text-amber-600" />
-                <span>تقييمات ومراجعات الطلاب</span>
-                <span className="text-xs text-slate-500 font-bold">
-                  ({posts.filter(p => (p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id) && p.grade_level === "تقييم أستاذ").length})
-                </span>
-              </h4>
-              <button
-                onClick={() => {
-                  if (!session) { setAuthModal(true); return; }
-                  setShowReviewForm(!showReviewForm);
-                }}
-                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all"
-              >
-                <IconPen size={12} />
-                {showReviewForm ? "إلغاء التقييم" : "اكتب مراجعة وتقييم"}
-              </button>
-            </div>
-
-            {/* Write Review Form */}
-            {showReviewForm && (
-              <div className="bg-amber-50 border-2 border-amber-600 p-4 space-y-3">
-                <h5 className="font-black text-xs text-amber-950">شارك تجربتك ورأيك في تدريس الأستاذ:</h5>
-                
-                {/* Rating Stars */}
-                <div>
-                  <label className="block text-[11px] font-bold text-amber-900 mb-1">التقييم العام بالنجوم:</label>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        type="button"
-                        key={star}
-                        onClick={() => setReviewRating(star)}
-                        className="p-1 hover:scale-110 transition-transform"
-                      >
-                        <IconStar
-                          size={22}
-                          fill={star <= reviewRating ? "#f59e0b" : "none"}
-                          className={star <= reviewRating ? "text-amber-500" : "text-slate-400"}
-                        />
-                      </button>
-                    ))}
-                    <span className="text-xs font-black text-amber-900 mr-2">
-                      {reviewRating === 5 ? "ممتاز جداً 🌟" : reviewRating === 4 ? "جيد جداً 👍" : reviewRating === 3 ? "جيد" : reviewRating === 2 ? "مقبول" : "ضعيف"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Review Title */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-800 mb-1">عنوان المراجعة (اختياري)</label>
-                  <input
-                    type="text"
-                    value={reviewTitle}
-                    onChange={e => setReviewTitle(e.target.value)}
-                    placeholder="مثال: تجربتي مع الأستاذ في السادس العلمي..."
-                    className="w-full p-2 bg-white border border-slate-900 text-xs font-semibold focus:outline-none"
-                  />
-                </div>
-
-                {/* Review Body */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-800 mb-1">نص المراجعة والتقييم <span className="text-red-500">*</span></label>
-                  <textarea
-                    value={reviewBody}
-                    onChange={e => setReviewBody(e.target.value)}
-                    placeholder="اكتب تقييمك بالتفصيل: الشرح، الواجبات، الأسلوب، والامتحانات..."
-                    className="w-full p-2 bg-white border border-slate-900 text-xs font-semibold min-h-[80px] resize-none focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  onClick={submitTeacherReview}
-                  disabled={!reviewBody.trim()}
-                  className="w-full py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:shadow-none"
-                >
-                  نشر المراجعة للجميع
-                </button>
-              </div>
-            )}
-
-            {/* List of Reviews for this teacher */}
-            <div className="space-y-4">
-              {posts.filter(p => (p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id) && p.grade_level === "تقييم أستاذ").length === 0 ? (
-                <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-8 text-center text-xs font-bold text-slate-500">
-                  لا توجد مراجعات أو تقييمات لهذا المدرس بعد. كن أول من يشارك تجربته!
-                </div>
-              ) : (
-                posts
-                  .filter(p => (p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id) && p.grade_level === "تقييم أستاذ")
-                  .map(rev => {
-                    const revVote = getUserVote(`post_${rev.id}`);
-                    const canEdit = session?.username === rev.author && isWithinEditWindow(rev.created_at);
-                    return (
-                      <div key={rev.id} className="bg-white border-2 border-slate-900 shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-3">
-                        {/* Review Header */}
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                          <button
-                            onClick={() => {
-                              setViewedUser(rev.author);
-                              setTab("profile");
-                              setSelectedTeacher(null);
-                            }}
-                            className="flex items-center gap-2 hover:opacity-80"
-                          >
-                            <Avatar username={rev.author} size="w-7 h-7 text-xs" />
-                            <span className="text-xs font-black text-slate-800">{rev.author}</span>
-                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 border border-amber-300">
-                              تقييم طالب 🌟
-                            </span>
-                          </button>
-                          <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(rev.created_at)}</span>
-                        </div>
-
-                        {/* Review Content */}
-                        <div>
-                          <h5 className="font-black text-xs sm:text-sm text-slate-900">{rev.title}</h5>
-                          <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{rev.body}</p>
-                        </div>
-
-                        {/* Actions (Likes, Dislikes, Reports) */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => votePost(rev.id, "like")} className={vbtn(revVote === "like", "like")}>
-                              <IconThumbUp size={12} /> {rev.likes}
-                            </button>
-                            <button onClick={() => votePost(rev.id, "dislike")} className={vbtn(revVote === "dislike", "dislike")}>
-                              <IconThumbDown size={12} /> {rev.dislikes}
-                            </button>
-                            <button onClick={() => reportPost(rev.id)} className="text-[10px] text-slate-500 hover:text-red-600 flex items-center gap-0.5">
-                              <IconFlag size={11} /> بلاغ ({rev.reports || 0}/20)
-                            </button>
-                          </div>
-                          {canEdit && (
-                            <button onClick={() => deletePost(rev.id)} className="text-[10px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
-                              <IconTrash size={11} /> حذف
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Comments on this review */}
-                        <div className="bg-slate-50 p-2.5 border border-slate-200 space-y-2 text-xs">
-                          <div className="font-bold text-[10px] text-slate-500 flex items-center gap-1">
-                            <IconComment size={11} /> ردود الطلاب ({rev.comments?.length || 0}):
-                          </div>
-                          {(rev.comments || []).map(c => {
-                            const cVote = getUserVote(`comment_${c.id}`);
-                            return (
-                              <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <button
-                                    onClick={() => {
-                                      setViewedUser(c.author);
-                                      setTab("profile");
-                                      setSelectedTeacher(null);
-                                    }}
-                                    className="flex items-center gap-1.5 hover:opacity-80 text-right"
-                                  >
-                                    <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
-                                    <span className="font-bold text-teal-800">{c.author}: </span>
-                                    <span>{c.text}</span>
-                                  </button>
-                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
-                                </div>
-                                <div className="flex items-center gap-2 pt-1">
-                                  <button onClick={() => voteComment(rev.id, c.id, "like")} className={`${vbtn(cVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
-                                    <IconThumbUp size={10} /> {c.likes}
-                                  </button>
-                                  <button onClick={() => voteComment(rev.id, c.id, "dislike")} className={`${vbtn(cVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
-                                    <IconThumbDown size={10} /> {c.dislikes}
-                                  </button>
-                                  <button onClick={() => reportComment(rev.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
-                                    <IconFlag size={9} /> ({c.reports || 0})
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <div className="flex gap-2 pt-1">
-                            <input
-                              type="text"
-                              id={`comment-${rev.id}`}
-                              placeholder="أضف رداً على هذا التقييم..."
-                              className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none"
-                            />
-                            <button
-                              onClick={() => addComment(rev.id)}
-                              className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700"
-                            >
-                              إرسال
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
 
       {/* ═══════ PROFILE EDIT MODAL ═══════ */}
