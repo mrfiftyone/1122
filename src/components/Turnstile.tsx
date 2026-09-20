@@ -35,8 +35,8 @@ export default function Turnstile({ siteKey, onVerify, onExpire, onError }: Turn
   const widgetIdRef = useRef<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Cloudflare Always-Pass Test Key as safe default
-  const effectiveKey = siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "1x00000000000000000000AA";
+  // Official Cloudflare Turnstile Key for 1122
+  const effectiveKey = siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAE9W7TZB_raO43cA";
 
   useEffect(() => {
     // 1. Check if script is already present
