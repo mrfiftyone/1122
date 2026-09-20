@@ -20,6 +20,12 @@ import { Language, getT } from "@/utils/i18n";
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
 import { supabase } from "@/utils/supabase";
+import {
+  hashPassword, verifyPassword, generateSalt,
+  sanitizeText, sanitizeUsername,
+  isAllowedYoutubeUrl, isAllowedTelegramUrl,
+  verifySessionRole,
+} from "@/utils/security";
 
 function isValidYoutubeUrl(url: string): boolean {
   if (!url || !url.trim()) return true;
@@ -30,7 +36,7 @@ function isValidYoutubeUrl(url: string): boolean {
 }
 
 // ─── Types ─────────────────────────────────────────────────────────
-interface User { username: string; pass: string; role: "student" | "mod" | "owner" }
+interface User { username: string; pass: string; role: "student" | "mod" | "owner"; hash?: string; salt?: string }
 interface Profile {
   avatarColor: string;
   avatarUrl?: string; // Custom uploaded PFP image (DataURL or URL)
@@ -599,19 +605,34 @@ export default function Home() {
 
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileServerVerified, setTurnstileServerVerified] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
-  const handleTurnstileVerify = useCallback((token: string) => {
+  const handleTurnstileVerify = useCallback(async (token: string) => {
     setTurnstileToken(token);
+    // Phase 1: Verify the token on the server side
+    try {
+      const res = await fetch("/api/verify-turnstile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      setTurnstileServerVerified(data.success === true);
+    } catch {
+      setTurnstileServerVerified(false);
+    }
   }, []);
 
   const handleTurnstileExpire = useCallback(() => {
     setTurnstileToken(null);
+    setTurnstileServerVerified(false);
   }, []);
 
   const handleTurnstileError = useCallback(() => {
     setTurnstileToken(null);
+    setTurnstileServerVerified(false);
   }, []);
 
   const canOwner = !!(session && session.role === "owner");
@@ -734,7 +755,23 @@ export default function Home() {
   useEffect(() => {
     initStorage();
     const currUser = getSession();
-    setSession(currUser);
+    // Phase 3: Cross-verify session role against stored users to prevent DevTools spoofing
+    if (currUser) {
+      const verified = verifySessionRole(currUser, getUsers());
+      if (verified && verified.role !== currUser.role) {
+        const fixedUser = { ...currUser, role: verified.role as User["role"] };
+        localStorage.setItem("currentUser", JSON.stringify(fixedUser));
+        setSession(fixedUser);
+      } else if (!verified) {
+        // User not found in stored users list — clear the session
+        localStorage.removeItem("currentUser");
+        setSession(null);
+      } else {
+        setSession(currUser);
+      }
+    } else {
+      setSession(null);
+    }
     setPostsList(getPosts());
     setTeachersList(getTeachers());
     setAllNotifications(getNotifications());
@@ -839,7 +876,7 @@ export default function Home() {
   const getProfile = (u: string): Profile => profiles[u] || { avatarColor: "#94a3b8", bio: "", avatarUrl: "" };
 
   // ─── Auth ─────────────────────────────────────────────────────────
-  function handleAuth() {
+  async function handleAuth() {
     setAuthError("");
 
     if (!isRegister && lockoutRemaining > 0) {
@@ -849,8 +886,16 @@ export default function Home() {
 
     if (!authUser.trim() || !authPass.trim()) { setAuthError("املأ الحقول المطلوبة."); return; }
 
-    if (!turnstileToken) {
+    // Phase 1: Require server-side verified Turnstile token
+    if (!turnstileToken || !turnstileServerVerified) {
       setAuthError("يرجى إكمال التحقق الأمني من Cloudflare أولاً.");
+      return;
+    }
+
+    // Phase 5: Sanitize username input
+    const cleanUsername = sanitizeUsername(authUser.trim());
+    if (!cleanUsername) {
+      setAuthError(siteLang === "en" ? "Invalid username." : "اسم المستخدم غير صالح.");
       return;
     }
 
@@ -858,38 +903,44 @@ export default function Home() {
     if (isRegister) {
       if (!platformSettings.allowRegistration) {
         setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "تم تعليق إنشاء الحسابات الجديدة مؤقتاً بأمر من إدارة المنصة.");
-        setTurnstileToken(null);
+        setTurnstileToken(null); setTurnstileServerVerified(false);
         return;
       }
       if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
         setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير.");
-        setTurnstileToken(null);
+        setTurnstileToken(null); setTurnstileServerVerified(false);
         return;
       }
-      if (users.find(u => u.username === authUser.trim())) {
+      if (users.find(u => u.username === cleanUsername)) {
         setAuthError("اسم المستخدم موجود مسبقاً.");
-        setTurnstileToken(null);
+        setTurnstileToken(null); setTurnstileServerVerified(false);
         return;
       }
-      const newUser: User = { username: authUser.trim(), pass: authPass, role: "student" };
+      // Phase 2: Hash the password with a unique salt
+      const salt = generateSalt();
+      const hash = await hashPassword(authPass, salt);
+      const newUser: User = { username: cleanUsername, pass: "", role: "student", hash, salt };
       users.push(newUser);
       setUsers(users);
       const p = getProfiles();
       p[newUser.username] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
       setProfiles(p);
       setProfilesMap(p);
-      localStorage.setItem("currentUser", JSON.stringify(newUser));
-      setSession(newUser);
+      // Store session without the hash/salt for safety
+      const sessionUser: User = { username: newUser.username, pass: "", role: newUser.role };
+      localStorage.setItem("currentUser", JSON.stringify(sessionUser));
+      setSession(sessionUser);
       setAuthModal(false);
-      setAuthUser(""); setAuthPass(""); setTurnstileToken(null);
+      setAuthUser(""); setAuthPass(""); setTurnstileToken(null); setTurnstileServerVerified(false);
       setSelectedGrades([]);
       setGradeModal(true);
     } else {
-      const found = users.find(u => u.username === authUser.trim() && u.pass === authPass);
-      if (!found) {
+      // Login: find user and verify password
+      const userRecord = users.find(u => u.username === cleanUsername);
+      if (!userRecord) {
         const nextFails = failedAttempts + 1;
         setFailedAttempts(nextFails);
-        setTurnstileToken(null);
+        setTurnstileToken(null); setTurnstileServerVerified(false);
         if (nextFails >= 5) {
           const lockUntil = Date.now() + 60 * 1000;
           localStorage.setItem("login_lockout_until", lockUntil.toString());
@@ -901,12 +952,51 @@ export default function Home() {
         }
         return;
       }
+
+      // Phase 2: Verify hashed password; backward-compatible with old plaintext accounts
+      let passwordValid = false;
+      if (userRecord.hash && userRecord.salt) {
+        // New hashed account
+        passwordValid = await verifyPassword(authPass, userRecord.salt, userRecord.hash);
+      } else if (userRecord.pass && userRecord.pass === authPass) {
+        // Legacy plaintext account — migrate it to hashed storage now
+        passwordValid = true;
+        const salt = generateSalt();
+        const hash = await hashPassword(authPass, salt);
+        userRecord.hash = hash;
+        userRecord.salt = salt;
+        userRecord.pass = ""; // Clear the plaintext password
+        setUsers(users);
+      }
+
+      if (!passwordValid) {
+        const nextFails = failedAttempts + 1;
+        setFailedAttempts(nextFails);
+        setTurnstileToken(null); setTurnstileServerVerified(false);
+        if (nextFails >= 5) {
+          const lockUntil = Date.now() + 60 * 1000;
+          localStorage.setItem("login_lockout_until", lockUntil.toString());
+          setLockoutRemaining(60);
+          setFailedAttempts(0);
+          setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
+        } else {
+          setAuthError(`خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`);
+        }
+        return;
+      }
+
+      // Phase 3: Cross-verify role from stored users list (prevent DevTools spoofing)
+      const verifiedRole = verifySessionRole(userRecord, users);
+      const safeRole = verifiedRole ? verifiedRole.role as User["role"] : "student";
+
       setFailedAttempts(0);
       localStorage.removeItem("login_lockout_until");
-      localStorage.setItem("currentUser", JSON.stringify(found));
-      setSession(found);
-      fetchVotesFromSupabase(found.username);
-      setAuthModal(false); setAuthUser(""); setAuthPass(""); setTurnstileToken(null);
+      // Store session without hash/salt
+      const sessionUser: User = { username: userRecord.username, pass: "", role: safeRole };
+      localStorage.setItem("currentUser", JSON.stringify(sessionUser));
+      setSession(sessionUser);
+      fetchVotesFromSupabase(userRecord.username);
+      setAuthModal(false); setAuthUser(""); setAuthPass(""); setTurnstileToken(null); setTurnstileServerVerified(false);
     }
     rerender();
   }
@@ -991,6 +1081,11 @@ export default function Home() {
     if (!session || !postTitle.trim() || !postBody.trim()) return;
     if (postTitle.length > 100 || postBody.length > 1500) return;
 
+    // Phase 5: Sanitize post inputs
+    const cleanTitle = sanitizeText(postTitle.trim(), 100);
+    const cleanBody = sanitizeText(postBody.trim(), 1500);
+    if (!cleanTitle || !cleanBody) return;
+
     const muteCheck = isUserCurrentlyMuted(session.username);
     if (muteCheck.muted) {
       alert(siteLang === "en"
@@ -1006,18 +1101,24 @@ export default function Home() {
       return;
     }
 
-    if (containsProfanity(postTitle, customBannedWords) || containsProfanity(postBody, customBannedWords)) {
+    if (containsProfanity(cleanTitle, customBannedWords) || containsProfanity(cleanBody, customBannedWords)) {
       alert(siteLang === "en"
         ? "Post content contains prohibited words."
         : "المحتوى يحتوي على كلمات غير مسموح بها وفق معايير المجتمع والكلمات المحظورة.");
       return;
     }
 
-    // Strict YouTube link validation
-    if (postYoutube.trim() && !isValidYoutubeUrl(postYoutube.trim())) {
+    // Phase 5: Strict YouTube & Telegram URL whitelisting
+    if (postYoutube.trim() && !isAllowedYoutubeUrl(postYoutube.trim())) {
       alert(siteLang === "en"
         ? "Please enter a valid YouTube link (e.g., https://youtube.com/watch?v=... or https://youtu.be/...)"
         : "يرجى إدخال رابط يوتيوب صحيح (مثل https://youtube.com/watch?v=... أو https://youtu.be/...)");
+      return;
+    }
+    if (postTelegram.trim() && !isAllowedTelegramUrl(postTelegram.trim())) {
+      alert(siteLang === "en"
+        ? "Please enter a valid Telegram link (e.g., https://t.me/...)"
+        : "يرجى إدخال رابط تلغرام صحيح (مثل https://t.me/...)");
       return;
     }
 
@@ -1031,8 +1132,8 @@ export default function Home() {
     const newPostPayload = {
       author: session.username,
       teacher_id: postTeacher.trim() || undefined,
-      title: postTitle.trim(),
-      body: postBody.trim() + metaSuffix,
+      title: cleanTitle,
+      body: cleanBody + metaSuffix,
       grade_level: postGrade,
       likes: 0,
       dislikes: 0,
@@ -1046,8 +1147,8 @@ export default function Home() {
       author: session.username,
       teacherId: postTeacher.trim() || undefined,
       teacher_id: postTeacher.trim() || undefined,
-      title: postTitle.trim(),
-      body: postBody.trim(),
+      title: cleanTitle,
+      body: cleanBody,
       grade_level: postGrade,
       tag: postTag,
       pinned: false,
@@ -1351,12 +1452,15 @@ export default function Home() {
     const input = (document.getElementById(`comment-${postId}`) || document.getElementById(`profile-comment-${postId}`)) as HTMLInputElement;
     const rawText = textOverride || input?.value || "";
     if (!rawText.trim()) return;
-    if (containsProfanity(rawText, customBannedWords)) {
+
+    // Phase 5: Sanitize comment text
+    const commentText = sanitizeText(rawText.trim(), 1000);
+    if (!commentText) return;
+
+    if (containsProfanity(commentText, customBannedWords)) {
       alert(siteLang === "en" ? "Comment contains prohibited words." : "التعليق يحتوي على كلمات غير مسموح بها وفق معايير المجتمع.");
       return;
     }
-
-    const commentText = rawText.trim();
 
     // Optimistic UI update
     const tempComment: Comment = {
@@ -2675,9 +2779,9 @@ export default function Home() {
 
             {!session ? (
               <>
-                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); setTurnstileToken(null); }}
+                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); setTurnstileToken(null); setTurnstileServerVerified(false); }}
                   className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000]">{t("login")}</button>
-                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); setTurnstileToken(null); }}
+                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); setTurnstileToken(null); setTurnstileServerVerified(false); }}
                   className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]">{t("register")}</button>
               </>
             ) : (
@@ -5886,10 +5990,12 @@ export default function Home() {
                   <label className="font-bold text-slate-800 flex items-center gap-1">
                     <span>التحقق الأمني (Cloudflare Turnstile):</span>
                   </label>
-                  {turnstileToken ? (
+                  {turnstileServerVerified ? (
                     <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
                       <IconCheck size={12} className="text-emerald-700" /> تم التحقق بنجاح
                     </span>
+                  ) : turnstileToken ? (
+                    <span className="text-[10px] text-amber-600 font-semibold animate-pulse">جاري التحقق من الخادم...</span>
                   ) : (
                     <span className="text-[10px] text-slate-500 font-semibold">مطلوب للتحقق</span>
                   )}
@@ -5903,7 +6009,7 @@ export default function Home() {
 
               <button
                 onClick={handleAuth}
-                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken}
+                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileServerVerified}
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all"
               >
                 {!isRegister && lockoutRemaining > 0
@@ -5912,7 +6018,7 @@ export default function Home() {
               </button>
             </div>
             <div className="text-center pt-1">
-              <button onClick={() => { setIsRegister(!isRegister); setAuthError(""); setTurnstileToken(null); }} className="text-xs text-emerald-700 font-bold underline">
+              <button onClick={() => { setIsRegister(!isRegister); setAuthError(""); setTurnstileToken(null); setTurnstileServerVerified(false); }} className="text-xs text-emerald-700 font-bold underline">
                 {isRegister ? "لديك حساب؟ سجل دخولك" : "ليس لديك حساب؟ سجل الآن"}
               </button>
             </div>

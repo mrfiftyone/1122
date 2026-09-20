@@ -4,7 +4,7 @@
   "2": "package.json",
   "3": "compilerOptions",
   "4": "next",
-  "5": "Turnstile.tsx",
+  "5": "dependencies",
   "6": "icons.tsx",
   "7": "addAuditLog",
   "8": "toggleBookmark",
@@ -17,6 +17,7 @@
   "15": "vercel.json",
   "16": "CLAUDE.md",
   "17": "not-found.tsx",
+  "18": "moderation.ts",
   "19": "i18n.ts",
   "20": "time.ts"
 }
