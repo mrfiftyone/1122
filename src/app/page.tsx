@@ -7,14 +7,19 @@ import { getRelativeTime, isWithinEditWindow } from "@/utils/time";
 import {
   IconBook, IconPen, IconUser, IconThumbUp, IconThumbDown, IconFlag,
   IconShield, IconCrown, IconGrad, IconTag, IconInbox, IconBolt,
-  IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch, IconArrowRight,
+  IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch,
+  IconArrowRight, IconHome, IconBell, IconHistory,
 } from "@/utils/icons";
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
 
 // ─── Types ─────────────────────────────────────────────────────────
 interface User { username: string; pass: string; role: "student" | "mod" | "owner" }
-interface Profile { avatarColor: string; bio: string; }
+interface Profile {
+  avatarColor: string;
+  avatarUrl?: string; // Custom uploaded PFP image (DataURL or URL)
+  bio: string;
+}
 interface Comment {
   id: string; author: string; text: string; created_at: string;
   likes: number; dislikes: number; reports: number;
@@ -30,6 +35,17 @@ interface Teacher {
   id: string; createdBy: string; name: string; normalizedName: string;
   gov: string; subject: string; grades: string; img: string;
   likes: number; dislikes: number; status: "active" | "pending_custom";
+}
+interface NotificationItem {
+  id: string;
+  recipient: string; // username of post author
+  actor: string; // who commented
+  type: "comment" | "reply" | "like";
+  postId: string;
+  targetTitle: string;
+  commentText?: string;
+  read: boolean;
+  created_at: string;
 }
 
 // Vote map: "username_itemId" -> "like" | "dislike"
@@ -57,9 +73,9 @@ function initStorage() {
   }
   if (!localStorage.getItem("profiles")) {
     localStorage.setItem("profiles", JSON.stringify({
-      hh: { avatarColor: "#0d9488", bio: "مالك المنصة" },
-      mod1: { avatarColor: "#2563eb", bio: "مشرف" },
-      student1: { avatarColor: "#dc2626", bio: "" },
+      hh: { avatarColor: "#0d9488", bio: "مالك المنصة الرسمي", avatarUrl: "" },
+      mod1: { avatarColor: "#2563eb", bio: "مشرف عام", avatarUrl: "" },
+      student1: { avatarColor: "#dc2626", bio: "طالب سادس إعدادي", avatarUrl: "" },
     }));
   }
   if (!localStorage.getItem("teachers")) {
@@ -81,6 +97,21 @@ function initStorage() {
     ]));
   }
   if (!localStorage.getItem("votes")) localStorage.setItem("votes", JSON.stringify({}));
+  if (!localStorage.getItem("notifications")) {
+    localStorage.setItem("notifications", JSON.stringify([
+      {
+        id: "notif_1",
+        recipient: "student1",
+        actor: "mod1",
+        type: "comment",
+        postId: "p1",
+        targetTitle: "شنو رأيكم بملزمة الفصل الثالث مالته؟",
+        commentText: "اليوتيوب كافي وزيادة بس حل كل الوزاريات وياه.",
+        read: false,
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+      },
+    ]));
+  }
 }
 
 function getUsers(): User[] { return JSON.parse(localStorage.getItem("users") || "[]"); }
@@ -88,17 +119,19 @@ function getProfiles(): Record<string, Profile> { return JSON.parse(localStorage
 function getTeachers(): Teacher[] { return JSON.parse(localStorage.getItem("teachers") || "[]"); }
 function getPosts(): Post[] { return JSON.parse(localStorage.getItem("posts") || "[]"); }
 function getVotes(): VoteMap { return JSON.parse(localStorage.getItem("votes") || "{}"); }
+function getNotifications(): NotificationItem[] { return JSON.parse(localStorage.getItem("notifications") || "[]"); }
 function setUsers(u: User[]) { localStorage.setItem("users", JSON.stringify(u)); }
 function setProfiles(p: Record<string, Profile>) { localStorage.setItem("profiles", JSON.stringify(p)); }
 function setTeachers(t: Teacher[]) { localStorage.setItem("teachers", JSON.stringify(t)); }
 function setPosts(p: Post[]) { localStorage.setItem("posts", JSON.stringify(p)); }
 function setVotes(v: VoteMap) { localStorage.setItem("votes", JSON.stringify(v)); }
+function setNotifications(n: NotificationItem[]) { localStorage.setItem("notifications", JSON.stringify(n)); }
 function getSession(): User | null { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; }
 
 // ─── Main Component ───────────────────────────────────────────────
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const [tab, setTab] = useState<"feed" | "directory" | "admin">("feed");
+  const [tab, setTab] = useState<"feed" | "directory" | "notifications" | "profile" | "admin">("feed");
   const [session, setSession] = useState<User | null>(null);
   const [_, setTick] = useState(0);
   const rerender = useCallback(() => setTick(t => t + 1), []);
@@ -110,6 +143,7 @@ export default function Home() {
   const [postModal, setPostModal] = useState(false);
   const [gradeModal, setGradeModal] = useState(false);
   const [profileModal, setProfileModal] = useState(false);
+  const [historyModal, setHistoryModal] = useState(false);
 
   // Auth fields
   const [authUser, setAuthUser] = useState("");
@@ -129,11 +163,12 @@ export default function Home() {
   const [tGrades, setTGrades] = useState("");
   const [tImg, setTImg] = useState("");
 
-  // Search & profile
+  // Search & Profile Edit
   const [dirSearch, setDirSearch] = useState("");
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [editBio, setEditBio] = useState("");
   const [editColor, setEditColor] = useState("#0d9488");
+  const [editPfpUrl, setEditPfpUrl] = useState("");
 
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -171,7 +206,7 @@ export default function Home() {
   if (!mounted) return null;
 
   const profiles = getProfiles();
-  const getProfile = (u: string): Profile => profiles[u] || { avatarColor: "#94a3b8", bio: "" };
+  const getProfile = (u: string): Profile => profiles[u] || { avatarColor: "#94a3b8", bio: "", avatarUrl: "" };
 
   // ─── Auth ─────────────────────────────────────────────────────────
   function handleAuth() {
@@ -207,7 +242,7 @@ export default function Home() {
       users.push(newUser);
       setUsers(users);
       const p = getProfiles();
-      p[newUser.username] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "" };
+      p[newUser.username] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
       setProfiles(p);
       localStorage.setItem("currentUser", JSON.stringify(newUser));
       setSession(newUser);
@@ -244,8 +279,10 @@ export default function Home() {
   }
 
   function logout() {
-    localStorage.removeItem("currentUser"); setSession(null);
-    if (tab === "admin") setTab("feed"); rerender();
+    localStorage.removeItem("currentUser");
+    setSession(null);
+    if (tab === "admin" || tab === "profile" || tab === "notifications") setTab("feed");
+    rerender();
   }
 
   // ─── Voting (single vote per user per item, changeable) ────────────
@@ -257,6 +294,10 @@ export default function Home() {
       const val = prompt("أنت المالك. أدخل عدد الأصوات:", "1");
       const amount = parseInt(val || "1") || 1;
       updateFn({ likes: type === "like" ? amount : 0, dislikes: type === "dislike" ? amount : 0 });
+      // Log in votes ledger
+      const votes = getVotes();
+      votes[`${session.username}_${itemKey}`] = type;
+      setVotes(votes);
       rerender(); return;
     }
 
@@ -264,14 +305,12 @@ export default function Home() {
     const voteKey = `${session.username}_${itemKey}`;
     const existing = votes[voteKey];
 
-    if (existing === type) return; // Already voted this way, do nothing
+    if (existing === type) return;
 
     let delta = { likes: 0, dislikes: 0 };
     if (existing) {
-      // Changing vote: undo the old one
       if (existing === "like") delta.likes = -1; else delta.dislikes = -1;
     }
-    // Apply the new one
     if (type === "like") delta.likes += 1; else delta.dislikes += 1;
 
     votes[voteKey] = type;
@@ -333,8 +372,28 @@ export default function Home() {
     const posts = getPosts();
     const p = posts.find(x => x.id === postId);
     if (!p) return;
-    p.comments.push({ id: "c_" + Date.now(), author: session.username, text: input.value.trim(), created_at: new Date().toISOString(), likes: 0, dislikes: 0, reports: 0 });
-    setPosts(posts); input.value = ""; rerender();
+    const commentText = input.value.trim();
+    p.comments.push({ id: "c_" + Date.now(), author: session.username, text: commentText, created_at: new Date().toISOString(), likes: 0, dislikes: 0, reports: 0 });
+    setPosts(posts);
+
+    // Trigger Notification if commenting on someone else's post
+    if (p.author !== session.username) {
+      const notifs = getNotifications();
+      notifs.unshift({
+        id: "notif_" + Date.now(),
+        recipient: p.author,
+        actor: session.username,
+        type: "comment",
+        postId: p.id,
+        targetTitle: p.title,
+        commentText: commentText,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+      setNotifications(notifs);
+    }
+
+    input.value = ""; rerender();
   }
 
   function voteComment(postId: string, commentId: string, type: "like" | "dislike") {
@@ -406,7 +465,7 @@ export default function Home() {
   function saveProfile() {
     if (!session) return;
     const p = getProfiles();
-    p[session.username] = { avatarColor: editColor, bio: editBio };
+    p[session.username] = { avatarColor: editColor, bio: editBio, avatarUrl: editPfpUrl };
     setProfiles(p);
     setProfileModal(false); rerender();
   }
@@ -414,8 +473,21 @@ export default function Home() {
   function openProfileEditor() {
     if (!session) return;
     const p = getProfile(session.username);
-    setEditBio(p.bio); setEditColor(p.avatarColor);
+    setEditBio(p.bio);
+    setEditColor(p.avatarColor);
+    setEditPfpUrl(p.avatarUrl || "");
     setProfileModal(true);
+  }
+
+  function handlePfpUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const result = uploadEvent.target?.result as string;
+      if (result) setEditPfpUrl(result);
+    };
+    reader.readAsDataURL(file);
   }
 
   // ─── Grade onboarding ─────────────────────────────────────────────
@@ -424,6 +496,17 @@ export default function Home() {
   // ─── Data ──────────────────────────────────────────────────────────
   const posts = getPosts();
   const teachers = getTeachers();
+  const allNotifications = getNotifications();
+  const myNotifications = session ? allNotifications.filter(n => n.recipient === session.username) : [];
+  const unreadCount = myNotifications.filter(n => !n.read).length;
+
+  function markAllNotifsRead() {
+    if (!session) return;
+    const updated = allNotifications.map(n => n.recipient === session.username ? { ...n, read: true } : n);
+    setNotifications(updated);
+    rerender();
+  }
+
   const activePosts = posts.filter(p => p.status === "active");
   const activeTeachers = teachers.filter(t => t.status === "active");
   const filteredTeachers = activeTeachers.filter(t =>
@@ -436,8 +519,15 @@ export default function Home() {
   // Helper: render avatar
   const Avatar = ({ username, size = "w-8 h-8 text-sm" }: { username: string; size?: string }) => {
     const p = getProfile(username);
+    if (p.avatarUrl) {
+      return (
+        <div className={`${size} border-2 border-slate-900 overflow-hidden shrink-0 bg-white`}>
+          <img src={p.avatarUrl} alt={username} className="w-full h-full object-cover" />
+        </div>
+      );
+    }
     return (
-      <div className={`${size} border-2 border-slate-900 flex items-center justify-center font-black text-white`} style={{ backgroundColor: p.avatarColor }}>
+      <div className={`${size} border-2 border-slate-900 flex items-center justify-center font-black text-white shrink-0`} style={{ backgroundColor: p.avatarColor }}>
         {username.substring(0, 1).toUpperCase()}
       </div>
     );
@@ -458,13 +548,78 @@ export default function Home() {
     return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black"><IconGrad size={10} /> طالب</span>;
   };
 
+  // Profile data calculations for active session
+  const userPosts = session ? posts.filter(p => p.author === session.username) : [];
+  const userComments: { postTitle: string; comment: Comment }[] = [];
+  if (session) {
+    posts.forEach(p => {
+      p.comments.forEach(c => {
+        if (c.author === session.username) {
+          userComments.push({ postTitle: p.title, comment: c });
+        }
+      });
+    });
+  }
+
+  const totalLikesReceived = userPosts.reduce((acc, p) => acc + p.likes, 0) + userComments.reduce((acc, c) => acc + c.comment.likes, 0);
+  const totalDislikesReceived = userPosts.reduce((acc, p) => acc + p.dislikes, 0) + userComments.reduce((acc, c) => acc + c.comment.dislikes, 0);
+
+  // Combined mixed activity feed (posts & comments) sorted by created_at descending
+  const combinedActivities = [
+    ...userPosts.map(p => ({
+      id: p.id,
+      kind: "post" as const,
+      title: p.title,
+      content: p.body,
+      created_at: p.created_at,
+      likes: p.likes,
+      dislikes: p.dislikes,
+    })),
+    ...userComments.map(c => ({
+      id: c.comment.id,
+      kind: "comment" as const,
+      title: `رد على: "${c.postTitle}"`,
+      content: c.comment.text,
+      created_at: c.comment.created_at,
+      likes: c.comment.likes,
+      dislikes: c.comment.dislikes,
+    })),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  // Voting history list for session user
+  const votes = getVotes();
+  const userVoteHistory = session ? Object.entries(votes).filter(([k]) => k.startsWith(`${session.username}_`)).map(([key, voteType]) => {
+    const rawKey = key.replace(`${session.username}_`, "");
+    let label = "عنصر مجهول";
+    let sub = "";
+    if (rawKey.startsWith("post_")) {
+      const pid = rawKey.replace("post_", "");
+      const foundPost = posts.find(p => p.id === pid);
+      label = foundPost ? `منشور: ${foundPost.title}` : `منشور (#${pid})`;
+      sub = foundPost ? foundPost.body.substring(0, 50) + "..." : "";
+    } else if (rawKey.startsWith("comment_")) {
+      const cid = rawKey.replace("comment_", "");
+      let foundText = "";
+      posts.forEach(p => {
+        const found = p.comments.find(c => c.id === cid);
+        if (found) foundText = found.text;
+      });
+      label = `تعليق: "${foundText || cid}"`;
+    } else if (rawKey.startsWith("teacher_")) {
+      const tid = rawKey.replace("teacher_", "");
+      const foundTeacher = teachers.find(t => t.id === tid);
+      label = foundTeacher ? `مدرس: ${foundTeacher.name}` : `مدرس (#${tid})`;
+    }
+    return { key, voteType, label, sub };
+  }) : [];
+
   // ═══════════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════════
   return (
-    <div className="min-h-screen bg-page-bg text-slate-900 selection:bg-teal-500 selection:text-white pb-16 md:pb-0">
+    <div className="min-h-screen bg-page-bg text-slate-900 selection:bg-teal-500 selection:text-white pb-20 md:pb-0">
 
-      {/* ═══════ TOP NAV ═══════ */}
+      {/* ═══════ TOP NAV (DESKTOP) ═══════ */}
       <header className="sticky top-0 z-50 bg-white border-b-2 border-border-subtle shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setTab("feed")}>
@@ -477,15 +632,33 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-2">
             <button onClick={() => setTab("feed")}
-              className={`px-4 py-2 text-xs font-bold transition-all border-2 ${tab === "feed" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-              الرئيسية
+              className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "feed" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+              <IconHome size={14} /> الرئيسية
             </button>
             <button onClick={() => setTab("directory")}
-              className={`px-4 py-2 text-xs font-bold transition-all border-2 ${tab === "directory" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-              دليل المدرسين
+              className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "directory" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+              <IconBook size={14} /> دليل المدرسين
             </button>
+            {session && (
+              <button onClick={() => setTab("notifications")}
+                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 relative ${tab === "notifications" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+                <IconBell size={14} /> الإشعارات
+                {unreadCount > 0 && (
+                  <span className="bg-red-600 text-white font-black text-[9px] px-1.5 py-0.2 rounded-full border border-slate-900">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {session && (
+              <button onClick={() => setTab("profile")}
+                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "profile" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+                <IconUser size={14} /> حسابي
+              </button>
+            )}
             {canAdmin && (
               <button onClick={() => setTab("admin")}
                 className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1 ${tab === "admin" ? "border-slate-900 bg-red-600 text-white shadow-[2px_2px_0px_#7f1d1d]" : "border-red-600 bg-red-50 text-red-700"}`}>
@@ -494,32 +667,33 @@ export default function Home() {
             )}
           </nav>
 
+          {/* User Auth Profile Widget */}
           <div className="flex items-center gap-2">
             {!session ? (
               <>
-                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); }}
+                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); setTurnstileToken(null); }}
                   className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000]">دخول</button>
-                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); }}
+                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); setTurnstileToken(null); }}
                   className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]">حساب جديد</button>
               </>
             ) : (
               <div className="flex items-center gap-2 bg-white border-2 border-slate-900 px-3 py-1 shadow-[2px_2px_0px_#000]">
-                <button onClick={openProfileEditor} className="hover:opacity-70"><Avatar username={session.username} /></button>
+                <button onClick={() => setTab("profile")} className="hover:opacity-70"><Avatar username={session.username} /></button>
                 <div className="text-right">
-                  <Link href={`/profile/${session.username}`} className="text-xs font-black hover:underline">{session.username}</Link>
+                  <button onClick={() => setTab("profile")} className="text-xs font-black hover:underline block">{session.username}</button>
                   <div className="text-[9px]"><RoleIcon role={session.role} /></div>
                 </div>
-                <button onClick={logout} className="text-red-600 mr-1"><IconX size={14} /></button>
+                <button onClick={logout} title="تسجيل الخروج" className="text-red-600 mr-1 p-1 hover:bg-red-50 rounded"><IconX size={14} /></button>
               </div>
             )}
           </div>
         </div>
       </header>
 
-      {/* ═══════ MAIN ═══════ */}
+      {/* ═══════ MAIN CONTENT AREA ═══════ */}
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* ──── TAB: FEED ──── */}
+        {/* ──── TAB 1: FEED (الرئيسية) ──── */}
         {tab === "feed" && (
           <section className="space-y-6">
             <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -548,10 +722,10 @@ export default function Home() {
                     <div key={p.id} className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
                       {/* Post Header */}
                       <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                        <Link href={`/profile/${p.author}`} className="flex items-center gap-2 hover:opacity-80">
+                        <button onClick={() => { if (session?.username === p.author) setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
                           <Avatar username={p.author} />
                           <span className="text-xs font-black text-slate-700">{p.author}</span>
-                        </Link>
+                        </button>
                         <div className="flex items-center gap-2">
                           {teacher && (
                             <span className="px-2.5 py-0.5 bg-emerald-100 border border-slate-900 text-[10px] font-black text-emerald-900 flex items-center gap-1">
@@ -596,8 +770,9 @@ export default function Home() {
                           return (
                             <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
                               <div className="flex items-center justify-between">
-                                <div>
-                                  <Link href={`/profile/${c.author}`} className="font-bold text-teal-800 hover:underline">{c.author}: </Link>
+                                <div className="flex items-center gap-1.5">
+                                  <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
+                                  <span className="font-bold text-teal-800">{c.author}: </span>
                                   <span>{c.text}</span>
                                 </div>
                                 <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
@@ -629,7 +804,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ──── TAB: DIRECTORY ──── */}
+        {/* ──── TAB 2: DIRECTORY (دليل المدرسين) ──── */}
         {tab === "directory" && (
           <section className="space-y-6">
             <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -676,7 +851,193 @@ export default function Home() {
           </section>
         )}
 
-        {/* ──── TAB: ADMIN ──── */}
+        {/* ──── TAB 3: NOTIFICATIONS (الإشعارات) ──── */}
+        {tab === "notifications" && (
+          <section className="space-y-6">
+            <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <IconBell size={24} className="text-emerald-primary" />
+                <div>
+                  <h2 className="font-black text-base text-slate-900">صندوق الإشعارات</h2>
+                  <p className="text-xs text-slate-600">التفاعلات والردود والتعليقات على منشوراتك</p>
+                </div>
+              </div>
+              {myNotifications.length > 0 && (
+                <button onClick={markAllNotifsRead} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-900">
+                  تحديد الكل كمقروء ✓
+                </button>
+              )}
+            </div>
+
+            {myNotifications.length === 0 ? (
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
+                لا توجد إشعارات جديدة حالياً.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {myNotifications.map(n => (
+                  <div
+                    key={n.id}
+                    onClick={() => {
+                      // Mark this one read and go to feed
+                      const updated = allNotifications.map(item => item.id === n.id ? { ...item, read: true } : item);
+                      setNotifications(updated);
+                      setTab("feed");
+                    }}
+                    className={`p-4 border-2 transition-all cursor-pointer shadow-[2px_2px_0px_#d1dcd6] ${n.read ? "bg-white border-border-subtle" : "bg-emerald-50 border-emerald-600"}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Avatar username={n.actor} size="w-7 h-7 text-xs" />
+                        <span className="font-black text-xs text-slate-800">{n.actor}</span>
+                        <span className="text-xs text-slate-600">علّق على منشورك:</span>
+                        <span className="text-xs font-bold text-emerald-800">"{n.targetTitle}"</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(n.created_at)}</span>
+                    </div>
+                    {n.commentText && (
+                      <p className="text-xs font-medium text-slate-700 mt-2 pr-9 bg-white/70 p-2 border border-slate-200">
+                        {n.commentText}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ──── TAB 4: PROFILE (الملف الشخصي) ──── */}
+        {tab === "profile" && (
+          <section className="space-y-6">
+            {!session ? (
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-4">
+                <h3 className="text-base font-black">يجب تسجيل الدخول لمشاهدة وتعديل ملفك الشخصي</h3>
+                <button onClick={() => { setIsRegister(false); setAuthModal(true); }} className="px-6 py-2.5 bg-emerald-primary text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000]">
+                  تسجيل الدخول الآن
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Profile Header & Top Logout Bar */}
+                <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 space-y-5">
+                  <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
+                    <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                      <IconUser size={18} /> ملفي الشخصي
+                    </h2>
+                    {/* Prominent Logout Button on Top of Profile */}
+                    <button
+                      onClick={logout}
+                      className="px-4 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 transition-all"
+                    >
+                      <IconX size={14} /> تسجيل الخروج
+                    </button>
+                  </div>
+
+                  {/* Profile Info Row */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      {/* Avatar with image or color */}
+                      <div className="relative group cursor-pointer" onClick={openProfileEditor}>
+                        <Avatar username={session.username} size="w-20 h-20 text-2xl" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">
+                          تغيير
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xl font-black text-slate-900">{session.username}</h3>
+                          <RoleIcon role={session.role} />
+                        </div>
+                        <p className="text-xs text-slate-600 font-medium mt-1 max-w-md">
+                          {getProfile(session.username).bio || "لا توجد نبذة تعريفية بعد، اضغط على تعديل لإضافتها."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={openProfileEditor}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
+                      >
+                        <IconCamera size={14} /> تعديل الحساب والصورة
+                      </button>
+
+                      {/* History Button (Only for user or owner) */}
+                      <button
+                        onClick={() => setHistoryModal(true)}
+                        className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-xs border-2 border-amber-600 shadow-[2px_2px_0px_#d97706] flex items-center gap-1.5"
+                        title="سجل كل التفاعلات واللايكات التي قمت بها (سري)"
+                      >
+                        <IconHistory size={14} /> سجل التفاعلات (سري)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t-2 border-slate-100 pt-4 text-center">
+                    <div className="bg-slate-50 border border-slate-200 p-3">
+                      <div className="text-xl font-black text-slate-900">{userPosts.length}</div>
+                      <div className="text-[11px] font-bold text-slate-500">المنشورات</div>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 p-3">
+                      <div className="text-xl font-black text-slate-900">{userComments.length}</div>
+                      <div className="text-[11px] font-bold text-slate-500">التعليقات</div>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-200 p-3">
+                      <div className="text-xl font-black text-emerald-800">{totalLikesReceived} 👍</div>
+                      <div className="text-[11px] font-bold text-emerald-700">إعجابات مستلمة</div>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 p-3">
+                      <div className="text-xl font-black text-red-700">{totalDislikesReceived} 👎</div>
+                      <div className="text-[11px] font-bold text-red-600">عدم إعجاب مستلم</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mixed Activity Feed (Posts & Comments) */}
+                <div className="space-y-4">
+                  <h3 className="font-black text-sm text-slate-800 border-b-2 border-slate-200 pb-2">
+                    📋 سجل نشاطاتي (المنشورات والتعليقات):
+                  </h3>
+
+                  {combinedActivities.length === 0 ? (
+                    <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 text-center text-xs font-bold text-slate-400">
+                      لم تقم بنشر أي منشورات أو تعليقات حتى الآن.
+                    </div>
+                  ) : (
+                    combinedActivities.map(item => (
+                      <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-2 relative">
+                        <div className="flex items-center justify-between">
+                          {/* Label: Post or Comment */}
+                          <span className={`px-2.5 py-0.5 text-[10px] font-black border border-slate-900 uppercase tracking-widest ${
+                            item.kind === "post"
+                              ? "bg-emerald-100 text-emerald-900"
+                              : "bg-blue-100 text-blue-900"
+                          }`}>
+                            {item.kind === "post" ? "منشور ✍️" : "تعليق 💬"}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(item.created_at)}</span>
+                        </div>
+
+                        <h4 className="font-black text-sm text-slate-900">{item.title}</h4>
+                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+
+                        <div className="flex items-center gap-4 text-xs font-bold pt-2 border-t border-slate-100 text-slate-500">
+                          <span>👍 {item.likes}</span>
+                          <span>👎 {item.dislikes}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
+        {/* ──── TAB 5: ADMIN (الإدارة) ──── */}
         {tab === "admin" && canAdmin && (
           <section className="space-y-6">
             <div className="bg-red-50 border-2 border-red-600 shadow-[4px_4px_0px_#dc2626] p-5 flex items-center justify-between">
@@ -684,7 +1045,7 @@ export default function Home() {
                 <IconShield size={20} className="text-red-700" />
                 <div>
                   <h2 className="font-black text-base text-red-800">لوحة التحكم والإشراف</h2>
-                  <p className="text-xs text-red-600 mt-0.5">إدارة المحتوى المبلغ عنه</p>
+                  <p className="text-xs text-red-600 mt-0.5">إدارة المحتوى المبلغ عنه والطلبات</p>
                 </div>
               </div>
               <span className="px-3 py-1 bg-red-600 text-white font-black text-[10px] border border-slate-900">صلاحيات المالك</span>
@@ -723,16 +1084,27 @@ export default function Home() {
         )}
       </main>
 
-      {/* ═══════ MOBILE BOTTOM NAV ═══════ */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-border-subtle z-50 flex justify-around py-2.5">
-        <button onClick={() => setTab("feed")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-3 ${tab === "feed" ? "text-emerald-primary" : "text-slate-400"}`}>
-          <IconPen size={20} />مناقشات
+      {/* ═══════ MOBILE BOTTOM NAVIGATION BAR ═══════ */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-border-subtle z-50 flex justify-around py-2 shadow-lg">
+        <button onClick={() => setTab("feed")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "feed" ? "text-emerald-primary" : "text-slate-400"}`}>
+          <IconHome size={20} />الرئيسية
         </button>
-        <button onClick={() => setTab("directory")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-3 ${tab === "directory" ? "text-emerald-primary" : "text-slate-400"}`}>
+        <button onClick={() => setTab("directory")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "directory" ? "text-emerald-primary" : "text-slate-400"}`}>
           <IconBook size={20} />الدليل
         </button>
+        <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("notifications"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 relative ${tab === "notifications" ? "text-emerald-primary" : "text-slate-400"}`}>
+          <IconBell size={20} />الإشعارات
+          {unreadCount > 0 && (
+            <span className="absolute top-0.5 right-2 bg-red-600 text-white font-black text-[8px] px-1 rounded-full border border-slate-900">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+        <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("profile"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "profile" ? "text-emerald-primary" : "text-slate-400"}`}>
+          <IconUser size={20} />حسابي
+        </button>
         {canAdmin && (
-          <button onClick={() => setTab("admin")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-3 ${tab === "admin" ? "text-red-600" : "text-slate-400"}`}>
+          <button onClick={() => setTab("admin")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "admin" ? "text-red-600" : "text-slate-400"}`}>
             <IconShield size={20} />الإدارة
           </button>
         )}
@@ -901,34 +1273,126 @@ export default function Home() {
       {/* ═══════ PROFILE EDIT MODAL ═══════ */}
       {profileModal && session && (
         <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-sm p-6 space-y-4">
+          <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
-              <h3 className="font-black text-base flex items-center gap-1"><IconCamera size={16} /> تعديل الملف الشخصي</h3>
+              <h3 className="font-black text-base flex items-center gap-1.5"><IconCamera size={16} /> تعديل الملف الشخصي والصورة</h3>
               <button onClick={() => setProfileModal(false)}><IconX size={16} /></button>
             </div>
-            <div className="space-y-3 text-xs">
+            <div className="space-y-4 text-xs">
+              
+              {/* Custom Image Upload (Screenshots, JPG, PNG, WebP) */}
+              <div className="bg-slate-50 border-2 border-slate-900 p-3 space-y-2">
+                <label className="block font-bold text-slate-800">
+                  صورة الحساب الشخصية (PFP):
+                </label>
+                <div className="flex items-center gap-3">
+                  {editPfpUrl ? (
+                    <div className="w-14 h-14 border-2 border-slate-900 overflow-hidden shrink-0 bg-white">
+                      <img src={editPfpUrl} alt="معاينة" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 border-2 border-slate-900 flex items-center justify-center font-black text-white text-lg shrink-0" style={{ backgroundColor: editColor }}>
+                      {session.username.substring(0, 1).toUpperCase()}
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5 flex-1">
+                    <label className="block">
+                      <span className="sr-only">اختر صورة</span>
+                      <input
+                        type="file"
+                        accept="image/png, image/jpeg, image/jpg, image/webp, image/*"
+                        onChange={handlePfpUpload}
+                        className="block w-full text-xs text-slate-500 file:mr-0 file:py-1.5 file:px-3 file:border-2 file:border-slate-900 file:text-xs file:font-black file:bg-emerald-primary file:text-white hover:file:bg-emerald-dark cursor-pointer"
+                      />
+                    </label>
+                    <p className="text-[10px] text-slate-500">يقبل الصور، السكرين شوت، JPG، PNG، WebP وغيرها.</p>
+                    {editPfpUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditPfpUrl("")}
+                        className="text-[10px] text-red-600 font-bold hover:underline"
+                      >
+                        حذف الصورة واستخدام الرمز اللوني
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Color Picker (Fallback if no custom image) */}
               <div>
-                <label className="block font-bold mb-2">لون الأفاتار</label>
+                <label className="block font-bold mb-2">لون الرمز التعبيري (إذا لم ترفع صورة):</label>
                 <div className="flex gap-2 flex-wrap">
                   {AVATAR_COLORS.map(c => (
                     <button key={c} onClick={() => setEditColor(c)}
-                      className={`w-10 h-10 border-2 flex items-center justify-center font-black text-white text-sm ${editColor === c ? "border-slate-900 shadow-[2px_2px_0px_#000]" : "border-slate-300"}`}
+                      className={`w-9 h-9 border-2 flex items-center justify-center font-black text-white text-xs ${editColor === c ? "border-slate-900 shadow-[2px_2px_0px_#000]" : "border-slate-300"}`}
                       style={{ backgroundColor: c }}>
                       {editColor === c ? "✓" : session.username.substring(0, 1).toUpperCase()}
                     </button>
                   ))}
                 </div>
               </div>
+
+              {/* Bio */}
               <div>
-                <label className="block font-bold mb-1">النبذة التعريفية</label>
-                <textarea value={editBio} onChange={e => setEditBio(e.target.value)} maxLength={200}
-                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[60px] resize-none focus:outline-none" placeholder="اكتب شيئاً عنك..." />
+                <label className="block font-bold mb-1">النبذة التعريفية (Bio):</label>
+                <textarea
+                  value={editBio}
+                  onChange={e => setEditBio(e.target.value)}
+                  maxLength={200}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[70px] resize-none focus:outline-none"
+                  placeholder="اكتب شيئاً عنك، مرحلتك الدراسية، أو هدفك..."
+                />
+                <span className="text-[10px] text-slate-400 font-bold">{editBio.length}/200</span>
               </div>
-              <button onClick={saveProfile}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-                حفظ
+
+              <button
+                onClick={saveProfile}
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+              >
+                حفظ التغييرات
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ VOTING HISTORY MODAL (سجل التفاعلات) ═══════ */}
+      {historyModal && session && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-lg p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
+              <div>
+                <h3 className="font-black text-base flex items-center gap-1.5 text-amber-900">
+                  <IconHistory size={18} /> سجل تفاعلاتك (سري وخاص)
+                </h3>
+                <p className="text-[11px] text-slate-500 font-semibold">مرئي فقط لك وللمالك — يحتوي على كل تصويتاتك</p>
+              </div>
+              <button onClick={() => setHistoryModal(false)}><IconX size={16} /></button>
+            </div>
+
+            {userVoteHistory.length === 0 ? (
+              <div className="p-6 text-center text-xs font-bold text-slate-400 border border-dashed border-slate-300">
+                لم تقم بأي تصويت (إعجاب أو عدم إعجاب) بعد.
+              </div>
+            ) : (
+              <div className="space-y-2 text-xs">
+                {userVoteHistory.map((item, idx) => (
+                  <div key={idx} className="p-3 bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-slate-800">{item.label}</div>
+                      {item.sub && <div className="text-[10px] text-slate-500 truncate max-w-xs">{item.sub}</div>}
+                    </div>
+                    <span className={`px-2.5 py-1 font-black text-xs border border-slate-900 ${
+                      item.voteType === "like" ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-900"
+                    }`}>
+                      {item.voteType === "like" ? "أعجبك 👍" : "لم يعجبك 👎"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -939,7 +1403,7 @@ export default function Home() {
           <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4">
             <div className="text-center mb-2">
               <h3 className="font-black text-xl text-slate-900">أي الصفوف تهمك؟</h3>
-              <p className="text-xs text-slate-600 font-semibold mt-1">اختر بالضبط ٢ من المراحل الدراسية</p>
+              <p className="text-xs text-slate-600 font-semibold mt-1">اختر بالضبط ٢ من المراحل الدراسية لتخصيص تجربتك</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {GRADES.map(g => (
