@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "missing_token" }, { status: 400 });
     }
 
-    const secretKey = process.env.TURNSTILE_SECRET_KEY || "0x4AAAAAAE9W7VOLgPZLjVlwL02n0ZxXCkc";
+    const secretKey = process.env.TURNSTILE_SECRET_KEY;
     if (!secretKey) {
       console.error("TURNSTILE_SECRET_KEY is not configured in environment variables");
       return NextResponse.json({ success: false, error: "server_config_error" }, { status: 500 });

@@ -81,15 +81,23 @@ interface BookmarkItem {
   created_at: string;
 }
 
+interface SupportReply {
+  id: string;
+  sender: string;
+  message: string;
+  created_at: string;
+}
+
 interface SupportTicket {
   id: string;
   sender: string;
-  contact?: string;
   category: "bug" | "teacher" | "content" | "account" | "other";
   subject: string;
   message: string;
   status: "open" | "resolved";
   created_at: string;
+  replies?: SupportReply[];
+  allowUserReply?: boolean;
 }
 
 function getSupportTickets(): SupportTicket[] {
@@ -588,9 +596,9 @@ export default function Home() {
   const [supportCategory, setSupportCategory] = useState<"bug" | "teacher" | "content" | "account" | "other">("bug");
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
-  const [supportContact, setSupportContact] = useState("");
   const [supportSuccess, setSupportSuccess] = useState(false);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [ticketReplyTexts, setTicketReplyTexts] = useState<Record<string, string>>({});
 
   // Profile Edit
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
@@ -911,7 +919,9 @@ export default function Home() {
       return;
     }
 
-    const users = getUsers();
+    // Generate a pseudo-email for Supabase Auth since we only collect usernames
+    const pseudoEmail = `${cleanUsername.toLowerCase()}@iq-academy.local`;
+
     if (isRegister) {
       if (!platformSettings.allowRegistration) {
         setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "تم تعليق إنشاء الحسابات الجديدة مؤقتاً بأمر من إدارة المنصة.");
@@ -921,22 +931,33 @@ export default function Home() {
         setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير.");
         return;
       }
-      if (users.find(u => u.username === cleanUsername)) {
-        setAuthError("اسم المستخدم موجود مسبقاً.");
+
+      // 1. Sign up with Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email: pseudoEmail,
+        password: authPass,
+        options: {
+          data: {
+            username: cleanUsername,
+            role: "student"
+          }
+        }
+      });
+
+      if (error) {
+        setAuthError(error.message);
         return;
       }
-      // Phase 2: Hash the password with a unique salt
-      const salt = generateSalt();
-      const hash = await hashPassword(authPass, salt);
-      const newUser: User = { username: cleanUsername, pass: "", role: "student", hash, salt };
-      users.push(newUser);
-      setUsers(users);
+
+      // Legacy fallback for UI state
       const p = getProfiles();
-      p[newUser.username] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
-      setProfiles(p);
-      setProfilesMap(p);
-      // Store session without the hash/salt for safety
-      const sessionUser: User = { username: newUser.username, pass: "", role: newUser.role };
+      if (!p[cleanUsername]) {
+        p[cleanUsername] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
+        setProfiles(p);
+        setProfilesMap(p);
+      }
+
+      const sessionUser: User = { username: cleanUsername, pass: "", role: "student" };
       localStorage.setItem("currentUser", JSON.stringify(sessionUser));
       setSession(sessionUser);
       setAuthModal(false);
@@ -944,9 +965,13 @@ export default function Home() {
       setSelectedGrades([]);
       setGradeModal(true);
     } else {
-      // Login: find user and verify password
-      const userRecord = users.find(u => u.username === cleanUsername);
-      if (!userRecord) {
+      // Login: Use Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: pseudoEmail,
+        password: authPass,
+      });
+
+      if (error) {
         const nextFails = failedAttempts + 1;
         setFailedAttempts(nextFails);
         if (nextFails >= 5) {
@@ -961,50 +986,18 @@ export default function Home() {
         }
         return;
       }
-
-      // Phase 2: Verify hashed password; backward-compatible with old plaintext accounts
-      let passwordValid = false;
-      if (userRecord.hash && userRecord.salt) {
-        // New hashed account
-        passwordValid = await verifyPassword(authPass, userRecord.salt, userRecord.hash);
-      } else if (userRecord.pass && userRecord.pass === authPass) {
-        // Legacy plaintext account — migrate it to hashed storage now
-        passwordValid = true;
-        const salt = generateSalt();
-        const hash = await hashPassword(authPass, salt);
-        userRecord.hash = hash;
-        userRecord.salt = salt;
-        userRecord.pass = ""; // Clear the plaintext password
-        setUsers(users);
-      }
-
-      if (!passwordValid) {
-        const nextFails = failedAttempts + 1;
-        setFailedAttempts(nextFails);
-        if (nextFails >= 5) {
-          const lockUntil = Date.now() + 60 * 1000;
-          localStorage.setItem("login_lockout_until", lockUntil.toString());
-          setLockoutRemaining(60);
-          setFailedAttempts(0);
-          resetTurnstile();
-          setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
-        } else {
-          setAuthError(`خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`);
-        }
-        return;
-      }
-
-      // Phase 3: Cross-verify role from stored users list (prevent DevTools spoofing)
-      const verifiedRole = verifySessionRole(userRecord, users);
-      const safeRole = verifiedRole ? verifiedRole.role as User["role"] : "student";
 
       setFailedAttempts(0);
       localStorage.removeItem("login_lockout_until");
-      // Store session without hash/salt
-      const sessionUser: User = { username: userRecord.username, pass: "", role: safeRole };
+      
+      // Extract role from Supabase metadata (fallback to student)
+      const role = data.user?.user_metadata?.role || "student";
+      const sessionUser: User = { username: cleanUsername, pass: "", role };
+      
+      // Store UI session
       localStorage.setItem("currentUser", JSON.stringify(sessionUser));
       setSession(sessionUser);
-      fetchVotesFromSupabase(userRecord.username);
+      fetchVotesFromSupabase(cleanUsername);
       setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
     }
     rerender();
@@ -1173,6 +1166,12 @@ export default function Home() {
     };
     setPostsList(prev => [tempPost, ...prev]);
 
+    // Close modal instantly for better UX
+    setPostTitle(""); setPostBody(""); setPostGrade("General"); setPostTeacher("");
+    setPostTeacherSearch("");
+    setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
+    setPostModal(false); rerender();
+
     // Send to Supabase
     try {
       const { data, error } = await supabase.from('posts').insert([newPostPayload]).select('*, comments(*)').single();
@@ -1182,11 +1181,6 @@ export default function Home() {
     } catch (e) {
       console.error("Error creating post in Supabase:", e);
     }
-
-    setPostTitle(""); setPostBody(""); setPostGrade("General"); setPostTeacher("");
-    setPostTeacherSearch("");
-    setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
-    setPostModal(false); rerender();
   }
 
   function togglePinPost(postId: string) {
@@ -1443,7 +1437,9 @@ export default function Home() {
     setReportNote("");
     setReportReason("inappropriate");
     rerender();
-    alert("تم تسجيل بلاغك بنجاح وسيقوم المشرفون بمراجعته في لوحة التحكم.");
+    setTimeout(() => {
+      alert("تم تقديم البلاغ بنجاح وسيتم مراجعته من قبل الإدارة.");
+    }, 10);
   }
 
 
@@ -1714,7 +1710,9 @@ export default function Home() {
     setTImg("");
     setTeacherModal(false);
     rerender();
-    alert("تم إرسال الأستاذ بنجاح وهو الآن في قائمة الانتظار للمراجعة من قبل المشرفين!");
+    setTimeout(() => {
+      alert("تم تقديم المعلم بنجاح! سيتم مراجعته من قبل الإدارة قبل ظهوره للجميع.");
+    }, 10);
   }
 
   function voteTeacher(teacherId: string, type: "like" | "dislike") {
@@ -1806,7 +1804,9 @@ export default function Home() {
     setReviewVerdict(null);
     setShowReviewForm(false);
     rerender();
-    alert("تم نشر تقييمك للأستاذ بنجاح!");
+    setTimeout(() => {
+      alert("تم نشر تقييمك للمدرس بنجاح!");
+    }, 10);
   }
 
 
@@ -1957,13 +1957,14 @@ export default function Home() {
     }
     const newTicket: SupportTicket = {
       id: "ticket_" + Date.now(),
-      sender: session ? session.username : (supportContact.trim() || (siteLang === "en" ? "Guest Student" : "طالب زائر")),
-      contact: supportContact.trim(),
+      sender: session ? session.username : (siteLang === "en" ? "Guest Student" : "طالب ضيف"),
       category: supportCategory,
       subject: supportSubject.trim(),
       message: supportMessage.trim(),
       status: "open",
       created_at: new Date().toISOString(),
+      replies: [],
+      allowUserReply: false,
     };
 
     const existing = getSupportTickets();
@@ -1973,9 +1974,10 @@ export default function Home() {
 
     setSupportSubject("");
     setSupportMessage("");
-    setSupportContact("");
-    setSupportSuccess(true);
-    setTimeout(() => setSupportSuccess(false), 5000);
+    setSettingsModal(false); // Close the settings modal directly after submitting
+    
+    // Using a quick alert or toast instead of supportSuccess state which keeps the modal open waiting for timeout
+    alert("تم ارسال رسالتك بنجاح. سيتم الرد عليك قريباً في قسم التنبيهات أو الدعم.");
   }
 
   function resolveSupportTicket(id: string) {
@@ -1983,7 +1985,36 @@ export default function Home() {
     const updated = existing.map(t => t.id === id ? { ...t, status: (t.status === "open" ? "resolved" : "open") as any } : t);
     setSupportTicketsStorage(updated);
     setSupportTickets(updated);
-    rerender();
+  }
+
+  function toggleAllowUserReply(id: string) {
+    const existing = getSupportTickets();
+    const updated = existing.map(t => t.id === id ? { ...t, allowUserReply: !t.allowUserReply } : t);
+    setSupportTicketsStorage(updated);
+    setSupportTickets(updated);
+  }
+
+  function submitSupportReply(id: string) {
+    const replyText = ticketReplyTexts[id];
+    if (!replyText || !replyText.trim() || !session) return;
+    
+    const existing = getSupportTickets();
+    const updated = existing.map(t => {
+      if (t.id === id) {
+        const newReply: SupportReply = {
+          id: "rep_" + Date.now(),
+          sender: session.username,
+          message: replyText.trim(),
+          created_at: new Date().toISOString(),
+        };
+        return { ...t, replies: [...(t.replies || []), newReply] };
+      }
+      return t;
+    });
+    setSupportTicketsStorage(updated);
+    setSupportTickets(updated);
+    
+    setTicketReplyTexts(prev => ({ ...prev, [id]: "" }));
   }
 
   function deleteSupportTicket(id: string) {
@@ -5238,7 +5269,7 @@ export default function Home() {
                                 </span>
                               </div>
                               <p className="text-[10px] text-slate-500 font-semibold mt-1">
-                                المرسل: <strong className="text-slate-800">{ticket.sender}</strong> {ticket.contact && `• للتواصل: ${ticket.contact}`} • {new Date(ticket.created_at).toLocaleDateString("ar-IQ")}
+                                المرسل: <strong className="text-slate-800">{ticket.sender}</strong> • {new Date(ticket.created_at).toLocaleDateString("ar-IQ")}
                               </p>
                             </div>
                             <div className="flex items-center gap-1.5 self-end sm:self-start">
@@ -5247,6 +5278,12 @@ export default function Home() {
                                 className={`px-2.5 py-1 text-xs font-bold border border-slate-900 transition-all ${ticket.status === "resolved" ? "bg-slate-200 text-slate-700" : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-[1px_1px_0px_#000]"}`}
                               >
                                 {ticket.status === "resolved" ? "إعادة الفتح" : "معالجة التذكرة"}
+                              </button>
+                              <button
+                                onClick={() => toggleAllowUserReply(ticket.id)}
+                                className={`px-2.5 py-1 text-xs font-bold border border-slate-900 transition-all ${ticket.allowUserReply ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}
+                              >
+                                {ticket.allowUserReply ? "تعطيل رد الطالب" : "تفعيل رد الطالب"}
                               </button>
                               <button
                                 onClick={() => deleteSupportTicket(ticket.id)}
@@ -5258,6 +5295,38 @@ export default function Home() {
                           </div>
                           <div className="bg-white p-2.5 border border-slate-300 text-xs text-slate-700 font-medium whitespace-pre-wrap">
                             {ticket.message}
+                          </div>
+                          
+                          {/* Replies Section */}
+                          {ticket.replies && ticket.replies.length > 0 && (
+                            <div className="mt-2 space-y-2 border-t border-slate-300 pt-2">
+                              {ticket.replies.map(reply => (
+                                <div key={reply.id} className="bg-slate-100 p-2 border border-slate-200 text-xs text-slate-700">
+                                  <div className="flex justify-between items-center mb-1">
+                                    <strong className="text-slate-900">{reply.sender}</strong>
+                                    <span className="text-[9px] text-slate-500">{new Date(reply.created_at).toLocaleTimeString("ar-IQ")}</span>
+                                  </div>
+                                  <div className="whitespace-pre-wrap">{reply.message}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Reply Input for Admins */}
+                          <div className="mt-2 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={ticketReplyTexts[ticket.id] || ""}
+                              onChange={e => setTicketReplyTexts(prev => ({ ...prev, [ticket.id]: e.target.value }))}
+                              placeholder="اكتب رداً..."
+                              className="flex-1 p-1.5 text-xs border border-slate-300 focus:outline-none focus:border-slate-900"
+                            />
+                            <button
+                              onClick={() => submitSupportReply(ticket.id)}
+                              className="px-3 py-1.5 bg-slate-900 text-white text-xs font-bold border-2 border-slate-900 hover:bg-slate-800"
+                            >
+                              إرسال
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -7213,16 +7282,16 @@ export default function Home() {
               {GRADES.map(g => (
                 <button key={g} onClick={() => {
                   if (selectedGrades.includes(g)) setSelectedGrades(selectedGrades.filter(x => x !== g));
-                  else if (selectedGrades.length < 2) setSelectedGrades([...selectedGrades, g]);
+                  else setSelectedGrades([...selectedGrades, g]);
                 }}
                   className={`border-2 py-3 text-xs font-bold transition-all ${selectedGrades.includes(g) ? "border-slate-900 bg-emerald-primary text-white shadow-none translate-x-[1px] translate-y-[1px]" : "border-slate-900 bg-white text-slate-700 shadow-[2px_2px_0px_#000] hover:bg-slate-50"}`}>
                   {selectedGrades.includes(g) ? "✓ " : ""}{g}
                 </button>
               ))}
             </div>
-            <button onClick={completeGrades} disabled={selectedGrades.length !== 2}
+            <button onClick={completeGrades} disabled={selectedGrades.length === 0}
               className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-              متابعة ({selectedGrades.length}/2)
+              متابعة ({selectedGrades.length} مختار)
             </button>
           </div>
         </div>
@@ -7656,17 +7725,6 @@ export default function Home() {
                       />
                     </div>
 
-                    {/* Sender Contact info */}
-                    <div>
-                      <label className="block font-bold mb-1 text-slate-800">{t("supportContact")}:</label>
-                      <input
-                        type="text"
-                        value={supportContact}
-                        onChange={e => setSupportContact(e.target.value)}
-                        placeholder={t("supportContactPlaceholder")}
-                        className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white"
-                      />
-                    </div>
 
                     <button
                       type="button"
@@ -7675,6 +7733,55 @@ export default function Home() {
                     >
                       {t("sendSupportTicket")}
                     </button>
+
+                    {/* Show User's Own Tickets */}
+                    {session && (
+                      <div className="mt-8 pt-4 border-t-2 border-slate-200 space-y-3">
+                        <h4 className="font-black text-sm text-slate-900">تذاكري السابقة</h4>
+                        {supportTickets.filter(t => t.sender === session.username).length === 0 && (
+                          <p className="text-xs text-slate-500 font-medium">لا توجد تذاكر سابقة.</p>
+                        )}
+                        {supportTickets.filter(t => t.sender === session.username).map(ticket => (
+                          <div key={ticket.id} className="p-3 border-2 border-slate-900 bg-white space-y-2 shadow-[2px_2px_0px_#000]">
+                            <div className="flex justify-between items-center">
+                              <span className="font-black text-xs text-slate-900">{ticket.subject}</span>
+                              <span className={`px-2 py-0.5 text-[9px] font-black border border-slate-900 ${ticket.status === "resolved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                                {ticket.status === "resolved" ? "تمت المعالجة" : "قيد المتابعة"}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-700 whitespace-pre-wrap">{ticket.message}</div>
+                            
+                            {/* Replies */}
+                            {ticket.replies && ticket.replies.length > 0 && (
+                              <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
+                                {ticket.replies.map(reply => (
+                                  <div key={reply.id} className={`p-2 border border-slate-200 text-xs ${reply.sender === session.username ? "bg-emerald-50" : "bg-slate-100"}`}>
+                                    <strong className="text-slate-900 block mb-1">{reply.sender}</strong>
+                                    <div className="whitespace-pre-wrap">{reply.message}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Reply Input if allowed */}
+                            {ticket.allowUserReply && ticket.status !== "resolved" && (
+                              <div className="mt-2 flex gap-2">
+                                <input
+                                  type="text"
+                                  value={ticketReplyTexts[ticket.id] || ""}
+                                  onChange={e => setTicketReplyTexts(prev => ({ ...prev, [ticket.id]: e.target.value }))}
+                                  placeholder="أضف رداً..."
+                                  className="flex-1 p-2 text-xs border border-slate-300 focus:outline-none focus:border-slate-900"
+                                />
+                                <button onClick={() => submitSupportReply(ticket.id)} className="px-3 py-1 bg-slate-900 text-white font-bold text-xs border border-slate-900 hover:bg-slate-800">
+                                  إرسال
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

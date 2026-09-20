@@ -13,18 +13,17 @@ import { createClient } from "@supabase/supabase-js";
  */
 export async function POST(req: NextRequest) {
   try {
-    const { username, action } = await req.json();
+    const { action } = await req.json();
 
-    if (!username || typeof username !== "string") {
-      return NextResponse.json({ authorized: false, error: "missing_username" }, { status: 400 });
+    // Get the JWT from the Authorization header
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ authorized: false, error: "missing_token" }, { status: 401 });
     }
+    const token = authHeader.split(" ")[1];
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    // If service key is available, use it for privileged reads
-    // Otherwise fall back to anon key (with RLS)
-    const supabaseKey = supabaseServiceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
       console.error("Supabase env vars not configured for admin-verify");
@@ -33,16 +32,21 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Query the profiles/users table for the user's role
+    // 1. Verify the JWT and get the user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return NextResponse.json({ authorized: false, error: "invalid_token" }, { status: 401 });
+    }
+
+    // 2. Query the profiles table for the user's role using their UUID
     const { data, error } = await supabase
       .from("profiles")
       .select("role")
-      .eq("username", username)
+      .eq("id", user.id)
       .single();
 
     if (error || !data) {
-      // If profiles table doesn't have role column, this is expected
-      // For now, return unauthorized - will work once RLS and roles table is set up
       return NextResponse.json(
         { authorized: false, role: "student", note: "role_not_found_in_db" },
         { status: 200 }
