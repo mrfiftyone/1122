@@ -10,6 +10,7 @@ import {
   IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch, IconArrowRight,
 } from "@/utils/icons";
 import Link from "next/link";
+import Turnstile from "@/components/Turnstile";
 
 // ─── Types ─────────────────────────────────────────────────────────
 interface User { username: string; pass: string; role: "student" | "mod" | "owner" }
@@ -134,18 +135,10 @@ export default function Home() {
   const [editBio, setEditBio] = useState("");
   const [editColor, setEditColor] = useState("#0d9488");
 
-  // Captcha & Lockout State
-  const [captchaNum1, setCaptchaNum1] = useState(3);
-  const [captchaNum2, setCaptchaNum2] = useState(5);
-  const [captchaInput, setCaptchaInput] = useState("");
+  // Turnstile & Lockout State
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
-
-  const refreshCaptcha = useCallback(() => {
-    setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
-    setCaptchaNum2(Math.floor(Math.random() * 9) + 1);
-    setCaptchaInput("");
-  }, []);
 
   // Check existing lockout on load
   useEffect(() => {
@@ -156,9 +149,8 @@ export default function Home() {
     if (lockExpiry > now) {
       setLockoutRemaining(Math.ceil((lockExpiry - now) / 1000));
     }
-    refreshCaptcha();
     setMounted(true);
-  }, [refreshCaptcha]);
+  }, []);
 
   // Lockout countdown timer
   useEffect(() => {
@@ -193,10 +185,9 @@ export default function Home() {
 
     if (!authUser.trim() || !authPass.trim()) { setAuthError("املأ الحقول المطلوبة."); return; }
 
-    // 2. CAPTCHA human verification
-    if (parseInt(captchaInput.trim()) !== (captchaNum1 + captchaNum2)) {
-      setAuthError("رمز التحقق البشري (CAPTCHA) غير صحيح، يرجى المحاولة مجدداً.");
-      refreshCaptcha();
+    // 2. Cloudflare Turnstile verification
+    if (!turnstileToken) {
+      setAuthError("يرجى إكمال التحقق الأمني من Cloudflare أولاً.");
       return;
     }
 
@@ -204,12 +195,12 @@ export default function Home() {
     if (isRegister) {
       if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
         setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير.");
-        refreshCaptcha();
+        setTurnstileToken(null);
         return;
       }
       if (users.find(u => u.username === authUser.trim())) {
         setAuthError("اسم المستخدم موجود مسبقاً.");
-        refreshCaptcha();
+        setTurnstileToken(null);
         return;
       }
       const newUser: User = { username: authUser.trim(), pass: authPass, role: "student" };
@@ -221,7 +212,7 @@ export default function Home() {
       localStorage.setItem("currentUser", JSON.stringify(newUser));
       setSession(newUser);
       setAuthModal(false);
-      setAuthUser(""); setAuthPass(""); setCaptchaInput("");
+      setAuthUser(""); setAuthPass(""); setTurnstileToken(null);
       // Prompt for grades ONLY for new signups
       setSelectedGrades([]);
       setGradeModal(true);
@@ -230,7 +221,7 @@ export default function Home() {
       if (!found) {
         const nextFails = failedAttempts + 1;
         setFailedAttempts(nextFails);
-        refreshCaptcha();
+        setTurnstileToken(null);
         if (nextFails >= 5) {
           const lockUntil = Date.now() + 60 * 1000;
           localStorage.setItem("login_lockout_until", lockUntil.toString());
@@ -247,7 +238,7 @@ export default function Home() {
       localStorage.removeItem("login_lockout_until");
       localStorage.setItem("currentUser", JSON.stringify(found));
       setSession(found);
-      setAuthModal(false); setAuthUser(""); setAuthPass(""); setCaptchaInput("");
+      setAuthModal(false); setAuthUser(""); setAuthPass(""); setTurnstileToken(null);
     }
     rerender();
   }
@@ -780,35 +771,29 @@ export default function Home() {
                 )}
               </div>
 
-              {/* CAPTCHA Human Verification */}
-              <div className="bg-slate-50 border-2 border-slate-900 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-800 text-xs flex items-center gap-1">
-                    <span>🛡️ التحقق الأمني (CAPTCHA):</span>
+              {/* Cloudflare Turnstile Human Verification */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-800 flex items-center gap-1">
+                    <span>التحقق الأمني (Cloudflare Turnstile):</span>
                   </label>
-                  <button type="button" onClick={refreshCaptcha} className="text-[10px] text-emerald-700 font-bold hover:underline">
-                    مسألة أخرى ↻
-                  </button>
+                  {turnstileToken ? (
+                    <span className="text-[10px] text-emerald-700 font-black">✓ تم التحقق بنجاح</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 font-semibold">مطلوب للتحقق</span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="px-3 py-2 bg-white border-2 border-slate-900 font-black text-sm tracking-widest select-none text-slate-800 shadow-[1px_1px_0px_#000]">
-                    {captchaNum1} + {captchaNum2} = ؟
-                  </div>
-                  <input
-                    type="number"
-                    value={captchaInput}
-                    onChange={e => setCaptchaInput(e.target.value)}
-                    className="flex-1 p-2 bg-white border-2 border-slate-900 font-bold text-center text-sm focus:outline-none"
-                    placeholder="اكتب الناتج هنا"
-                  />
-                </div>
-                <p className="text-[10px] text-slate-500 font-medium">أثبت أنك إنسان لحماية المنصة من الحسابات الوهمية.</p>
+                <Turnstile
+                  onVerify={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken(null)}
+                  onError={() => setTurnstileToken(null)}
+                />
               </div>
 
               <button
                 onClick={handleAuth}
-                disabled={!isRegister && lockoutRemaining > 0}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none"
+                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken}
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all"
               >
                 {!isRegister && lockoutRemaining > 0
                   ? `مقفل مؤقتاً (${lockoutRemaining} ثانية)`
@@ -816,7 +801,7 @@ export default function Home() {
               </button>
             </div>
             <div className="text-center pt-1">
-              <button onClick={() => { setIsRegister(!isRegister); setAuthError(""); refreshCaptcha(); }} className="text-xs text-emerald-700 font-bold underline">
+              <button onClick={() => { setIsRegister(!isRegister); setAuthError(""); setTurnstileToken(null); }} className="text-xs text-emerald-700 font-bold underline">
                 {isRegister ? "لديك حساب؟ سجل دخولك" : "ليس لديك حساب؟ سجل الآن"}
               </button>
             </div>
