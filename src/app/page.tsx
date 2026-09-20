@@ -8,7 +8,7 @@ import {
   IconBook, IconPen, IconUser, IconThumbUp, IconThumbDown, IconFlag,
   IconShield, IconCrown, IconGrad, IconTag, IconInbox, IconBolt,
   IconTrash, IconX, IconPlus, IconCamera, IconComment, IconSearch,
-  IconArrowRight, IconHome, IconBell, IconHistory,
+  IconArrowRight, IconHome, IconBell, IconHistory, IconStar,
 } from "@/utils/icons";
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
@@ -36,13 +36,13 @@ interface Teacher {
   id: string; createdBy?: string; created_by?: string; name: string;
   normalizedName?: string; normalized_name?: string;
   gov: string; subject: string; grades: string; img: string;
-  likes: number; dislikes: number; status: "active" | "pending_custom";
+  likes: number; dislikes: number; status: "active" | "pending" | "pending_custom";
 }
 interface NotificationItem {
   id: string;
-  recipient: string; // username of post author
-  actor: string; // who commented
-  type: "comment" | "reply" | "like";
+  recipient: string; // username of recipient
+  actor: string; // who triggered notification
+  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected";
   postId: string;
   targetTitle: string;
   commentText?: string;
@@ -58,10 +58,29 @@ const GRADES = [
   "الرابع إعدادي", "الخامس إعدادي", "السادس إعدادي",
 ];
 
+const GOVERNORATES = [
+  "بغداد", "البصرة", "نينوى", "أربيل", "النجف", "كربلاء",
+  "كركوك", "بابل", "الأنبار", "ذي قار", "ديالى", "ميسان",
+  "المثنى", "القادسية", "واسط", "صلاح الدين", "دهوك", "السليمانية",
+];
+
+const SUBJECT_OPTIONS = [
+  "رياضيات", "فيزياء", "كيمياء", "أحياء",
+  "لغة عربية", "لغة إنجليزية", "إسلامية", "اجتماعيات",
+  "حاسوب", "فرنسي", "أخرى",
+];
+
+const GRADE_OPTIONS = [
+  "الأول متوسط", "الثاني متوسط", "الثالث متوسط",
+  "الرابع إعدادي", "الخامس إعدادي", "السادس إعدادي",
+  "كل المراحل / عام",
+];
+
 const AVATAR_COLORS = [
   "#0d9488", "#dc2626", "#2563eb", "#7c3aed",
   "#ea580c", "#0891b2", "#4f46e5", "#be185d",
 ];
+
 
 // ─── LocalStorage Cache Helpers ─────────────────────────────────────
 function initStorage() {
@@ -134,19 +153,35 @@ export default function Home() {
   const [postGrade, setPostGrade] = useState("General");
   const [postTeacher, setPostTeacher] = useState("");
 
-  // Teacher fields
+  // Teacher fields (Add teacher form)
   const [tName, setTName] = useState("");
   const [tGov, setTGov] = useState("بغداد");
-  const [tSubject, setTSubject] = useState("");
-  const [tGrades, setTGrades] = useState("");
+  const [tSubjectChoice, setTSubjectChoice] = useState("رياضيات");
+  const [tCustomSubject, setTCustomSubject] = useState("");
+  const [tSelectedGrades, setTSelectedGrades] = useState<string[]>([]);
   const [tImg, setTImg] = useState("");
 
-  // Search & Profile Edit
+  // Search & Filters for Teachers section
   const [dirSearch, setDirSearch] = useState("");
+  const [filterGov, setFilterGov] = useState("all");
+  const [filterSubject, setFilterSubject] = useState("all");
+
+  // Selected Teacher Modal (details & reviews)
+  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewBody, setReviewBody] = useState("");
+  const [reviewRating, setReviewRating] = useState(5);
+
+  // Profile Viewing state (view self or another student)
+  const [viewedUser, setViewedUser] = useState<string | null>(null);
+
+  // Profile Edit
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [editBio, setEditBio] = useState("");
   const [editColor, setEditColor] = useState("#0d9488");
   const [editPfpUrl, setEditPfpUrl] = useState("");
+
 
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -633,21 +668,80 @@ export default function Home() {
     rerender();
   }
 
+  // ─── Image Compression Helper ────────────────────────────────────
+  function compressImage(file: File, maxWidth = 400, maxHeight = 400, quality = 0.82): Promise<string> {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          } else {
+            resolve(e.target?.result as string || "");
+          }
+        };
+        img.onerror = () => resolve(e.target?.result as string || "");
+        img.src = e.target?.result as string || "";
+      };
+      reader.onerror = () => resolve("");
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Teacher Image File Upload Handler (No URLs)
+  async function handleTeacherImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const compressed = await compressImage(file);
+    if (compressed) setTImg(compressed);
+  }
+
   // ─── Teacher Handlers (Persisted to Supabase) ──────────────────────
   async function submitTeacher() {
-    if (!session || !tName.trim() || !tSubject.trim() || !tImg.trim()) return;
+    if (!session) { setAuthModal(true); return; }
+    const finalSubject = tSubjectChoice === "أخرى" ? tCustomSubject.trim() : tSubjectChoice.trim();
+    if (!tName.trim()) { alert("يرجى كتابة اسم المدرس."); return; }
+    if (!finalSubject) { alert("يرجى اختيار أو كتابة المادة الدراسية."); return; }
+    if (tSelectedGrades.length === 0) { alert("يرجى اختيار مرحلة دراسية واحدة على الأقل."); return; }
+    if (!tImg.trim()) { alert("يرجى رفع ملف صورة للمدرس (ملف صورة وليس رابط)."); return; }
+
     const normalized = normalizeTeacherName(tName.trim());
-    const isDupe = teachers.some(t => (t.normalizedName === normalized || t.normalized_name === normalized) && t.subject === tSubject.trim() && t.gov === tGov);
-    if (isDupe) { alert("هذا المدرس موجود مسبقاً في الدليل!"); return; }
+    const isDupe = teachers.some(t =>
+      (t.normalizedName === normalized || t.normalized_name === normalized) &&
+      t.subject === finalSubject &&
+      t.gov === tGov
+    );
+    if (isDupe) { alert("هذا المدرس موجود مسبقاً في قسم المدرسين!"); return; }
+
+    const finalGrades = tSelectedGrades.join("، ");
 
     const teacherPayload = {
       name: tName.trim(),
       normalized_name: normalized,
       gov: tGov,
-      subject: tSubject.trim(),
-      grades: tGrades,
+      subject: finalSubject,
+      grades: finalGrades,
       img: tImg.trim(),
-      status: "active",
+      status: "pending", // Waiting list for mod/owner review
       likes: 0,
       dislikes: 0,
       created_by: session.username,
@@ -660,12 +754,12 @@ export default function Home() {
       name: tName.trim(),
       normalizedName: normalized,
       gov: tGov,
-      subject: tSubject.trim(),
-      grades: tGrades,
+      subject: finalSubject,
+      grades: finalGrades,
       img: tImg.trim(),
       likes: 0,
       dislikes: 0,
-      status: "active",
+      status: "pending" as any,
     };
     setTeachersList(prev => [tempTeacher, ...prev]);
 
@@ -677,26 +771,146 @@ export default function Home() {
       console.error("Error creating teacher in Supabase:", e);
     }
 
-    setTName(""); setTSubject(""); setTGrades(""); setTImg("");
-    setTeacherModal(false); rerender();
-    alert("تمت إضافة الأستاذ بنجاح للجميع!");
+    setTName("");
+    setTSubjectChoice("رياضيات");
+    setTCustomSubject("");
+    setTSelectedGrades([]);
+    setTImg("");
+    setTeacherModal(false);
+    rerender();
+    alert("تم إرسال الأستاذ بنجاح وهو الآن في قائمة الانتظار للمراجعة من قبل المشرفين! ⏳");
   }
 
   function voteTeacher(teacherId: string, type: "like" | "dislike") {
     castVote(`teacher_${teacherId}`, type, (delta) => {
       setTeachersList(prev => prev.map(t => t.id === teacherId ? { ...t, likes: t.likes + delta.likes, dislikes: t.dislikes + delta.dislikes } : t));
+      if (selectedTeacher && selectedTeacher.id === teacherId) {
+        setSelectedTeacher(prev => prev ? { ...prev, likes: prev.likes + delta.likes, dislikes: prev.dislikes + delta.dislikes } : null);
+      }
     });
+  }
+
+  // ─── Teacher Review Handler ───────────────────────────────────────
+  async function submitTeacherReview() {
+    if (!session) { setAuthModal(true); return; }
+    if (!selectedTeacher) return;
+    if (!reviewBody.trim()) { alert("يرجى كتابة نص التقييم أو المراجعة."); return; }
+    if (containsProfanity(reviewTitle) || containsProfanity(reviewBody)) {
+      alert("المحتوى يحتوي على كلمات غير مسموح بها.");
+      return;
+    }
+
+    const titleText = reviewTitle.trim() || `تقييم للأستاذ ${selectedTeacher.name}`;
+    const starsEmoji = "⭐".repeat(reviewRating);
+    const fullBody = `${starsEmoji} (${reviewRating}/5)\n\n${reviewBody.trim()}`;
+
+    const reviewPayload = {
+      author: session.username,
+      teacher_id: selectedTeacher.id,
+      title: titleText,
+      body: fullBody,
+      grade_level: "تقييم أستاذ",
+      likes: 0,
+      dislikes: 0,
+      reports: 0,
+      status: "active",
+    };
+
+    const tempPost: Post = {
+      id: "temp_rev_" + Date.now(),
+      author: session.username,
+      teacherId: selectedTeacher.id,
+      teacher_id: selectedTeacher.id,
+      title: titleText,
+      body: fullBody,
+      grade_level: "تقييم أستاذ",
+      likes: 0,
+      dislikes: 0,
+      reports: 0,
+      status: "active",
+      comments: [],
+      created_at: new Date().toISOString(),
+    };
+    setPostsList(prev => [tempPost, ...prev]);
+
+    try {
+      await supabase.from('posts').insert([reviewPayload]);
+      fetchSupabaseData();
+    } catch (e) {
+      console.error("Error submitting teacher review:", e);
+    }
+
+    setReviewTitle("");
+    setReviewBody("");
+    setReviewRating(5);
+    setShowReviewForm(false);
+    rerender();
+    alert("تم نشر تقييمك للأستاذ بنجاح!");
   }
 
   // ─── Admin Handlers ───────────────────────────────────────────────
   async function approveTeacher(id: string) {
+    const target = teachers.find(t => t.id === id);
     setTeachersList(prev => prev.map(t => t.id === id ? { ...t, status: "active" } : t));
     try {
       await supabase.from('teachers').update({ status: 'active' }).eq('id', id);
       fetchSupabaseData();
+    } catch (e) {
+      console.error("Error approving teacher:", e);
+    }
+
+    // Send notification to the submitter
+    const submitter = target?.createdBy || target?.created_by;
+    if (submitter) {
+      const notifs = getNotifications();
+      notifs.unshift({
+        id: "notif_" + Date.now(),
+        recipient: submitter,
+        actor: session?.username || "الإدارة",
+        type: "teacher_approved",
+        postId: target?.id || "",
+        targetTitle: target?.name || "المدرس",
+        commentText: `🎉 تمت الموافقة على طلبك لإضافة المدرس "${target?.name}" بنجاح! أصبح الآن متاحاً للجميع في قسم المدرسين.`,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+      setNotifications(notifs);
+      setAllNotifications(notifs);
+    }
+    rerender();
+    alert("تمت الموافقة على الأستاذ وإرسال إشعار لصاحب الطلب!");
+  }
+
+  async function rejectTeacher(id: string) {
+    const target = teachers.find(t => t.id === id);
+    if (!target) return;
+    if (!confirm(`هل أنت متأكد من رفض وحذف طلب الأستاذ "${target.name}"؟`)) return;
+    setTeachersList(prev => prev.filter(t => t.id !== id));
+    try {
+      await supabase.from('teachers').delete().eq('id', id);
+      fetchSupabaseData();
     } catch (e) {}
+
+    const submitter = target.createdBy || target.created_by;
+    if (submitter) {
+      const notifs = getNotifications();
+      notifs.unshift({
+        id: "notif_" + Date.now(),
+        recipient: submitter,
+        actor: session?.username || "الإدارة",
+        type: "teacher_rejected",
+        postId: "",
+        targetTitle: target.name,
+        commentText: `نعتذر، لم تتم الموافقة على طلب إضافة المدرس "${target.name}".`,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+      setNotifications(notifs);
+      setAllNotifications(notifs);
+    }
     rerender();
   }
+
 
   async function restorePost(id: string) {
     setPostsList(prev => prev.map(p => p.id === id ? { ...p, status: "active", reports: 0 } : p));
@@ -763,10 +977,18 @@ export default function Home() {
 
   const activePosts = posts.filter(p => p.status === "active");
   const activeTeachers = teachers.filter(t => t.status === "active");
-  const filteredTeachers = activeTeachers.filter(t =>
-    t.name.includes(dirSearch) || t.subject.includes(dirSearch) || t.gov.includes(dirSearch)
-  );
-  const pendingTeachers = teachers.filter(t => t.status === "pending_custom");
+  const filteredTeachers = activeTeachers.filter(t => {
+    const q = dirSearch.trim().toLowerCase();
+    const matchesSearch = !q ||
+      t.name.toLowerCase().includes(q) ||
+      t.subject.toLowerCase().includes(q) ||
+      t.gov.toLowerCase().includes(q) ||
+      (t.grades && t.grades.toLowerCase().includes(q));
+    const matchesGov = filterGov === "all" || t.gov === filterGov;
+    const matchesSubject = filterSubject === "all" || t.subject === filterSubject;
+    return matchesSearch && matchesGov && matchesSubject;
+  });
+  const pendingTeachers = teachers.filter(t => t.status === "pending" || t.status === "pending_custom");
   const reportedPosts = posts.filter(p => p.status === "hidden" || (p.reports && p.reports > 0));
   const canAdmin = session && (session.role === "owner" || session.role === "mod");
 
@@ -802,36 +1024,58 @@ export default function Home() {
     return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black"><IconGrad size={10} /> طالب</span>;
   };
 
-  // Profile data calculations for active session
-  const userPosts = session ? posts.filter(p => p.author === session.username) : [];
+  // Active viewed user profile (defaults to logged-in user)
+  const targetProfileUser = viewedUser || session?.username || "";
+  const isOwnProfile = !!session && targetProfileUser === session.username;
+
+  // Profile data calculations for targetProfileUser
+  const userRegularPosts = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && p.grade_level !== "تقييم أستاذ") : [];
+  const userTeacherReviews = targetProfileUser ? posts.filter(p => p.author === targetProfileUser && p.grade_level === "تقييم أستاذ") : [];
   const userComments: { postTitle: string; comment: Comment }[] = [];
-  if (session) {
+  if (targetProfileUser) {
     posts.forEach(p => {
       p.comments.forEach(c => {
-        if (c.author === session.username) {
+        if (c.author === targetProfileUser) {
           userComments.push({ postTitle: p.title, comment: c });
         }
       });
     });
   }
 
-  const totalLikesReceived = userPosts.reduce((acc, p) => acc + p.likes, 0) + userComments.reduce((acc, c) => acc + c.comment.likes, 0);
-  const totalDislikesReceived = userPosts.reduce((acc, p) => acc + p.dislikes, 0) + userComments.reduce((acc, c) => acc + c.comment.dislikes, 0);
+  const totalLikesReceived = userRegularPosts.reduce((acc, p) => acc + p.likes, 0) +
+    userTeacherReviews.reduce((acc, r) => acc + r.likes, 0) +
+    userComments.reduce((acc, c) => acc + c.comment.likes, 0);
 
-  // Combined mixed activity feed (posts & comments) sorted by created_at descending
+  const totalDislikesReceived = userRegularPosts.reduce((acc, p) => acc + p.dislikes, 0) +
+    userTeacherReviews.reduce((acc, r) => acc + r.dislikes, 0) +
+    userComments.reduce((acc, c) => acc + c.comment.dislikes, 0);
+
+  // Combined mixed activity feed (posts, reviews, comments) sorted by created_at descending
   const combinedActivities = [
-    ...userPosts.map(p => ({
+    ...userRegularPosts.map(p => ({
       id: p.id,
       kind: "post" as const,
+      teacherId: p.teacher_id || p.teacherId,
       title: p.title,
       content: p.body,
       created_at: p.created_at,
       likes: p.likes,
       dislikes: p.dislikes,
     })),
+    ...userTeacherReviews.map(r => ({
+      id: r.id,
+      kind: "review" as const,
+      teacherId: r.teacher_id || r.teacherId,
+      title: r.title,
+      content: r.body,
+      created_at: r.created_at,
+      likes: r.likes,
+      dislikes: r.dislikes,
+    })),
     ...userComments.map(c => ({
       id: c.comment.id,
       kind: "comment" as const,
+      teacherId: undefined,
       title: `رد على: "${c.postTitle}"`,
       content: c.comment.text,
       created_at: c.comment.created_at,
@@ -839,6 +1083,7 @@ export default function Home() {
       dislikes: c.comment.dislikes,
     })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
 
   // Voting history list for session user
   const votes = getVotes();
@@ -882,7 +1127,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="font-black text-base tracking-tight text-slate-900">منصة طلاب العراق</h1>
-              <p className="text-[11px] text-slate-600 font-semibold">دليل ومناقشات المدرسين</p>
+              <p className="text-[11px] text-slate-600 font-semibold">مراجعات وتقييمات المدرسين</p>
             </div>
           </div>
 
@@ -894,7 +1139,7 @@ export default function Home() {
             </button>
             <button onClick={() => setTab("directory")}
               className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "directory" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
-              <IconBook size={14} /> دليل المدرسين
+              <IconBook size={14} /> المدرسين
             </button>
             {session && (
               <button onClick={() => setTab("notifications")}
@@ -908,8 +1153,8 @@ export default function Home() {
               </button>
             )}
             {session && (
-              <button onClick={() => setTab("profile")}
-                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "profile" ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
+              <button onClick={() => { setViewedUser(session.username); setTab("profile"); }}
+                className={`px-4 py-2 text-xs font-bold transition-all border-2 flex items-center gap-1.5 ${tab === "profile" && targetProfileUser === session.username ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#115e59]" : "border-transparent hover:border-slate-900 text-slate-700"}`}>
                 <IconUser size={14} /> حسابي
               </button>
             )}
@@ -932,15 +1177,16 @@ export default function Home() {
               </>
             ) : (
               <div className="flex items-center gap-2 bg-white border-2 border-slate-900 px-3 py-1 shadow-[2px_2px_0px_#000]">
-                <button onClick={() => setTab("profile")} className="hover:opacity-70"><Avatar username={session.username} /></button>
+                <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="hover:opacity-70"><Avatar username={session.username} /></button>
                 <div className="text-right">
-                  <button onClick={() => setTab("profile")} className="text-xs font-black hover:underline block">{session.username}</button>
+                  <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="text-xs font-black hover:underline block">{session.username}</button>
                   <div className="text-[9px]"><RoleIcon role={session.role} /></div>
                 </div>
                 <button onClick={logout} title="تسجيل الخروج" className="text-red-600 mr-1 p-1 hover:bg-red-50 rounded"><IconX size={14} /></button>
               </div>
             )}
           </div>
+
         </div>
       </header>
 
@@ -978,7 +1224,7 @@ export default function Home() {
                     <div key={p.id} className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
                       {/* Post Header */}
                       <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                        <button onClick={() => { if (session?.username === p.author) setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
+                        <button onClick={() => { setViewedUser(p.author); setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
                           <Avatar username={p.author} />
                           <span className="text-xs font-black text-slate-700">{p.author}</span>
                         </button>
@@ -1026,13 +1272,14 @@ export default function Home() {
                           return (
                             <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
+                                <button onClick={() => { setViewedUser(c.author); setTab("profile"); }} className="flex items-center gap-1.5 hover:opacity-80 text-right">
                                   <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
                                   <span className="font-bold text-teal-800">{c.author}: </span>
                                   <span>{c.text}</span>
-                                </div>
+                                </button>
                                 <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
                               </div>
+
                               <div className="flex items-center gap-2 pt-1">
                                 <button onClick={() => voteComment(p.id, c.id, "like")} className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
                                   <IconThumbUp size={10} /> {c.likes}
@@ -1060,46 +1307,140 @@ export default function Home() {
           </section>
         )}
 
-        {/* ──── TAB 2: DIRECTORY (دليل المدرسين) ──── */}
+        {/* ──── TAB 2: TEACHERS (المدرسين) ──── */}
         {tab === "directory" && (
           <section className="space-y-6">
+            {/* Top Bar: Title & Add Teacher Button */}
             <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="w-full md:w-1/2 relative">
-                <IconSearch size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input type="text" value={dirSearch} onChange={e => setDirSearch(e.target.value)}
-                  placeholder="ابحث باسم الأستاذ، المادة، أو المحافظة..." className="w-full pr-9 pl-4 py-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white" />
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <IconBook size={24} className="text-emerald-primary" />
+                <div>
+                  <h2 className="font-black text-base text-slate-900">المدرسين</h2>
+                  <p className="text-xs text-slate-600">دليل ومراجعات وتقييمات المدرسين في جميع محافظات العراق</p>
+                </div>
               </div>
               <button onClick={() => { if (!session) { setAuthModal(true); return; } setTeacherModal(true); }}
-                className="w-full md:w-auto px-5 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2">
-                <IconPlus size={14} /> إضافة أستاذ جديد للدليل
+                className="w-full md:w-auto px-5 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2 shrink-0">
+                <IconPlus size={14} /> إضافة مدرس
               </button>
             </div>
 
+            {/* Search & Filters Bar */}
+            <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 flex flex-col md:flex-row items-center gap-3">
+              {/* Search text */}
+              <div className="w-full md:flex-1 relative">
+                <IconSearch size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={dirSearch}
+                  onChange={e => setDirSearch(e.target.value)}
+                  placeholder="ابحث باسم المدرس، المادة، أو المحافظة..."
+                  className="w-full pr-9 pl-4 py-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
+                />
+              </div>
+
+              {/* Filter by Governorate */}
+              <div className="w-full md:w-48">
+                <select
+                  value={filterGov}
+                  onChange={e => setFilterGov(e.target.value)}
+                  className="w-full py-2.5 px-3 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="all">كل المحافظات</option>
+                  {GOVERNORATES.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter by Subject */}
+              <div className="w-full md:w-44">
+                <select
+                  value={filterSubject}
+                  onChange={e => setFilterSubject(e.target.value)}
+                  className="w-full py-2.5 px-3 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="all">كل المواد</option>
+                  {SUBJECT_OPTIONS.filter(s => s !== "أخرى").map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Clear filters */}
+              {(dirSearch || filterGov !== "all" || filterSubject !== "all") && (
+                <button
+                  onClick={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); }}
+                  className="w-full md:w-auto px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border-2 border-slate-900 shrink-0"
+                >
+                  إعادة ضبط
+                </button>
+              )}
+            </div>
+
+            {/* Results Count & Grid */}
             {filteredTeachers.length === 0 ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                لا توجد نتائج مطابقة للبحث في الدليل.
+                لا توجد نتائج مطابقة للبحث في قسم المدرسين.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredTeachers.map(t => {
                   const tVote = getUserVote(`teacher_${t.id}`);
+                  const reviewCount = posts.filter(p => (p.teacher_id === t.id || p.teacherId === t.id) && p.grade_level === "تقييم أستاذ").length;
                   return (
-                    <div key={t.id} className="bg-white border-[1.5px] border-border-subtle shadow-[2px_2px_0px_#d1dcd6] p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <img src={t.img} alt={t.name} className="w-12 h-12 border border-slate-900 object-cover" onError={(e) => { (e.target as HTMLImageElement).src = ""; (e.target as HTMLImageElement).style.display = "none"; }} />
-                        <div>
-                          <h3 className="font-black text-sm">{t.name}</h3>
-                          <p className="text-[11px] text-emerald-800 font-bold">{t.subject} • {t.gov}</p>
-                          {t.grades && <p className="text-[10px] text-slate-500 font-bold">{t.grades}</p>}
+                    <div
+                      key={t.id}
+                      onClick={() => { setSelectedTeacher(t); setShowReviewForm(false); }}
+                      className="group bg-white border-2 border-border-subtle hover:border-slate-900 shadow-[2px_2px_0px_#d1dcd6] hover:shadow-[4px_4px_0px_#000] p-4 flex flex-col justify-between gap-3 cursor-pointer transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          {/* Medium sized teacher image */}
+                          <img
+                            src={t.img}
+                            alt={t.name}
+                            className="w-16 h-16 sm:w-20 sm:h-20 border-2 border-slate-900 object-cover shrink-0 shadow-[2px_2px_0px_#000] bg-slate-100"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E";
+                            }}
+                          />
+                          <div className="space-y-1">
+                            <h3 className="font-black text-sm sm:text-base text-slate-900 group-hover:text-emerald-700 transition-colors">
+                              {t.name}
+                            </h3>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2 py-0.5 bg-emerald-100 border border-slate-900 text-[10px] font-black text-emerald-900">
+                                {t.subject}
+                              </span>
+                              <span className="px-2 py-0.5 bg-blue-100 border border-slate-900 text-[10px] font-black text-blue-900">
+                                {t.gov}
+                              </span>
+                            </div>
+                            {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
+                          </div>
+                        </div>
+
+                        {/* Votes */}
+                        <div className="flex gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title="إعجاب">
+                            <IconThumbUp size={12} /> {t.likes}
+                          </button>
+                          <button onClick={() => voteTeacher(t.id, "dislike")} className={vbtn(tVote === "dislike", "dislike")} title="عدم إعجاب">
+                            <IconThumbDown size={12} /> {t.dislikes}
+                          </button>
                         </div>
                       </div>
-                      <div className="flex gap-1.5">
-                        <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")}>
-                          <IconThumbUp size={12} /> {t.likes}
-                        </button>
-                        <button onClick={() => voteTeacher(t.id, "dislike")} className={vbtn(tVote === "dislike", "dislike")}>
-                          <IconThumbDown size={12} /> {t.dislikes}
-                        </button>
+
+                      {/* Card Footer: Reviews Count & Open Button */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className="font-bold text-amber-800 flex items-center gap-1 bg-amber-50 px-2 py-0.5 border border-amber-300">
+                          <IconStar size={12} fill="#d97706" className="text-amber-600" />
+                          <span>{reviewCount} تقييم ومراجعة</span>
+                        </span>
+                        <span className="text-[11px] font-bold text-emerald-700 group-hover:underline flex items-center gap-0.5">
+                          عرض المراجعات وكتابة تقييم ←
+                        </span>
                       </div>
                     </div>
                   );
@@ -1108,6 +1449,7 @@ export default function Home() {
             )}
           </section>
         )}
+
 
         {/* ──── TAB 3: NOTIFICATIONS (الإشعارات) ──── */}
         {tab === "notifications" && (
@@ -1140,15 +1482,27 @@ export default function Home() {
                       const updated = allNotifications.map(item => item.id === n.id ? { ...item, read: true } : item);
                       setNotifications(updated);
                       setAllNotifications(updated);
-                      setTab("feed");
+                      if (n.type === "teacher_approved") {
+                        setTab("directory");
+                      } else {
+                        setTab("feed");
+                      }
                     }}
                     className={`p-4 border-2 transition-all cursor-pointer shadow-[2px_2px_0px_#d1dcd6] ${n.read ? "bg-white border-border-subtle" : "bg-emerald-50 border-emerald-600"}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Avatar username={n.actor} size="w-7 h-7 text-xs" />
+                        {n.type === "teacher_approved" ? (
+                          <div className="w-7 h-7 bg-emerald-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                            🎉
+                          </div>
+                        ) : (
+                          <Avatar username={n.actor} size="w-7 h-7 text-xs" />
+                        )}
                         <span className="font-black text-xs text-slate-800">{n.actor}</span>
-                        <span className="text-xs text-slate-600">علّق على منشورك:</span>
+                        <span className="text-xs text-slate-600">
+                          {n.type === "teacher_approved" ? "وافق على طلب إضافة المدرس:" : "علّق على منشورك:"}
+                        </span>
                         <span className="text-xs font-bold text-emerald-800">"{n.targetTitle}"</span>
                       </div>
                       <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(n.created_at)}</span>
@@ -1162,13 +1516,14 @@ export default function Home() {
                 ))}
               </div>
             )}
+
           </section>
         )}
 
         {/* ──── TAB 4: PROFILE (الملف الشخصي) ──── */}
         {tab === "profile" && (
           <section className="space-y-6">
-            {!session ? (
+            {!targetProfileUser ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-4">
                 <h3 className="text-base font-black">يجب تسجيل الدخول لمشاهدة وتعديل ملفك الشخصي</h3>
                 <button onClick={() => { setIsRegister(false); setAuthModal(true); }} className="px-6 py-2.5 bg-emerald-primary text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000]">
@@ -1181,118 +1536,152 @@ export default function Home() {
                 <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 space-y-5">
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
                     <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-                      <IconUser size={18} /> ملفي الشخصي
+                      <IconUser size={18} /> {isOwnProfile ? "ملفي الشخصي" : `الملف الشخصي للطالب: ${targetProfileUser}`}
                     </h2>
-                    {/* Prominent Logout Button on Top of Profile */}
-                    <button
-                      onClick={logout}
-                      className="px-4 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 transition-all"
-                    >
-                      <IconX size={14} /> تسجيل الخروج
-                    </button>
+                    {isOwnProfile ? (
+                      <button
+                        onClick={logout}
+                        className="px-4 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 transition-all"
+                      >
+                        <IconX size={14} /> تسجيل الخروج
+                      </button>
+                    ) : session ? (
+                      <button
+                        onClick={() => setViewedUser(session.username)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border-2 border-slate-900 flex items-center gap-1"
+                      >
+                        ← العودة إلى ملفي الشخصي
+                      </button>
+                    ) : null}
                   </div>
 
                   {/* Profile Info Row */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                      {/* Avatar with image or color */}
-                      <div className="relative group cursor-pointer" onClick={openProfileEditor}>
-                        <Avatar username={session.username} size="w-20 h-20 text-2xl" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">
-                          تغيير
-                        </div>
+                      {/* Avatar */}
+                      <div className={`relative ${isOwnProfile ? "group cursor-pointer" : ""}`} onClick={isOwnProfile ? openProfileEditor : undefined}>
+                        <Avatar username={targetProfileUser} size="w-20 h-20 text-2xl" />
+                        {isOwnProfile && (
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">
+                            تغيير
+                          </div>
+                        )}
                       </div>
 
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-xl font-black text-slate-900">{session.username}</h3>
-                          <RoleIcon role={session.role} />
+                          <h3 className="text-xl font-black text-slate-900">{targetProfileUser}</h3>
+                          {getUsers().find(u => u.username === targetProfileUser) && (
+                            <RoleIcon role={getUsers().find(u => u.username === targetProfileUser)?.role || "student"} />
+                          )}
                         </div>
                         <p className="text-xs text-slate-600 font-medium mt-1 max-w-md">
-                          {getProfile(session.username).bio || "لا توجد نبذة تعريفية بعد، اضغط على تعديل لإضافتها."}
+                          {getProfile(targetProfileUser).bio || "لا توجد نبذة تعريفية بعد."}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                      <button
-                        onClick={openProfileEditor}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
-                      >
-                        <IconCamera size={14} /> تعديل الحساب والصورة
-                      </button>
+                    {isOwnProfile && (
+                      <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={openProfileEditor}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
+                        >
+                          <IconCamera size={14} /> تعديل الحساب والصورة
+                        </button>
 
-                      {/* History Button (Only for user or owner) */}
-                      <button
-                        onClick={() => setHistoryModal(true)}
-                        className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-xs border-2 border-amber-600 shadow-[2px_2px_0px_#d97706] flex items-center gap-1.5"
-                        title="سجل كل التفاعلات واللايكات التي قمت بها (سري)"
-                      >
-                        <IconHistory size={14} /> سجل التفاعلات (سري)
-                      </button>
-                    </div>
+                        {/* History Button (Only for user or owner) */}
+                        <button
+                          onClick={() => setHistoryModal(true)}
+                          className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-xs border-2 border-amber-600 shadow-[2px_2px_0px_#d97706] flex items-center gap-1.5"
+                          title="سجل كل التفاعلات واللايكات التي قمت بها (سري)"
+                        >
+                          <IconHistory size={14} /> سجل التفاعلات (سري)
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t-2 border-slate-100 pt-4 text-center">
-                    <div className="bg-slate-50 border border-slate-200 p-3">
-                      <div className="text-xl font-black text-slate-900">{userPosts.length}</div>
-                      <div className="text-[11px] font-bold text-slate-500">المنشورات</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 border-t-2 border-slate-100 pt-4 text-center">
+                    <div className="bg-slate-50 border border-slate-200 p-2.5">
+                      <div className="text-lg font-black text-slate-900">{userRegularPosts.length}</div>
+                      <div className="text-[10px] font-bold text-slate-500">المنشورات</div>
                     </div>
-                    <div className="bg-slate-50 border border-slate-200 p-3">
-                      <div className="text-xl font-black text-slate-900">{userComments.length}</div>
-                      <div className="text-[11px] font-bold text-slate-500">التعليقات</div>
+                    <div className="bg-amber-50 border border-amber-200 p-2.5">
+                      <div className="text-lg font-black text-amber-900">{userTeacherReviews.length} 🌟</div>
+                      <div className="text-[10px] font-bold text-amber-700">تقييمات المدرسين</div>
                     </div>
-                    <div className="bg-emerald-50 border border-emerald-200 p-3">
-                      <div className="text-xl font-black text-emerald-800">{totalLikesReceived} 👍</div>
-                      <div className="text-[11px] font-bold text-emerald-700">إعجابات مستلمة</div>
+                    <div className="bg-slate-50 border border-slate-200 p-2.5">
+                      <div className="text-lg font-black text-slate-900">{userComments.length}</div>
+                      <div className="text-[10px] font-bold text-slate-500">التعليقات</div>
                     </div>
-                    <div className="bg-red-50 border border-red-200 p-3">
-                      <div className="text-xl font-black text-red-700">{totalDislikesReceived} 👎</div>
-                      <div className="text-[11px] font-bold text-red-600">عدم إعجاب مستلم</div>
+                    <div className="bg-emerald-50 border border-emerald-200 p-2.5">
+                      <div className="text-lg font-black text-emerald-800">{totalLikesReceived} 👍</div>
+                      <div className="text-[10px] font-bold text-emerald-700">إعجابات مستلمة</div>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 p-2.5">
+                      <div className="text-lg font-black text-red-700">{totalDislikesReceived} 👎</div>
+                      <div className="text-[10px] font-bold text-red-600">عدم إعجاب</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Mixed Activity Feed (Posts & Comments) */}
+                {/* Mixed Activity Feed (Posts, Teacher Reviews, Comments) */}
                 <div className="space-y-4">
                   <h3 className="font-black text-sm text-slate-800 border-b-2 border-slate-200 pb-2">
-                    📋 سجل نشاطاتي (المنشورات والتعليقات):
+                    {isOwnProfile ? "📋 سجل نشاطاتي ومشاركاتي:" : `📋 نشاطات ومشاركات الطالب (${targetProfileUser}):`}
                   </h3>
 
                   {combinedActivities.length === 0 ? (
                     <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 text-center text-xs font-bold text-slate-400">
-                      لم تقم بنشر أي منشورات أو تعليقات حتى الآن.
+                      لم يتم نشر أي منشورات أو تقييمات أو تعليقات حتى الآن.
                     </div>
                   ) : (
-                    combinedActivities.map(item => (
-                      <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-2 relative">
-                        <div className="flex items-center justify-between">
-                          <span className={`px-2.5 py-0.5 text-[10px] font-black border border-slate-900 uppercase tracking-widest ${
-                            item.kind === "post"
-                              ? "bg-emerald-100 text-emerald-900"
-                              : "bg-blue-100 text-blue-900"
-                          }`}>
-                            {item.kind === "post" ? "منشور ✍️" : "تعليق 💬"}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(item.created_at)}</span>
-                        </div>
+                    combinedActivities.map(item => {
+                      const teacher = item.teacherId ? teachers.find(t => t.id === item.teacherId) : null;
+                      return (
+                        <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-2 relative">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2.5 py-0.5 text-[10px] font-black border border-slate-900 uppercase tracking-widest ${
+                                item.kind === "post"
+                                  ? "bg-emerald-100 text-emerald-900"
+                                  : item.kind === "review"
+                                  ? "bg-amber-200 text-amber-900 border-amber-600"
+                                  : "bg-blue-100 text-blue-900"
+                              }`}>
+                                {item.kind === "post" ? "منشور ✍️" : item.kind === "review" ? "تقييم مدرس 🌟" : "تعليق 💬"}
+                              </span>
+                              {teacher && (
+                                <button
+                                  onClick={() => { setSelectedTeacher(teacher); setTab("directory"); }}
+                                  className="text-[11px] font-bold text-emerald-800 hover:underline flex items-center gap-1"
+                                >
+                                  الأستاذ: {teacher.name} ({teacher.subject})
+                                </button>
+                              )}
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(item.created_at)}</span>
+                          </div>
 
-                        <h4 className="font-black text-sm text-slate-900">{item.title}</h4>
-                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                          <h4 className="font-black text-sm text-slate-900">{item.title}</h4>
+                          <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
 
-                        <div className="flex items-center gap-4 text-xs font-bold pt-2 border-t border-slate-100 text-slate-500">
-                          <span>👍 {item.likes}</span>
-                          <span>👎 {item.dislikes}</span>
+                          <div className="flex items-center gap-4 text-xs font-bold pt-2 border-t border-slate-100 text-slate-500">
+                            <span>👍 {item.likes}</span>
+                            <span>👎 {item.dislikes}</span>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </>
             )}
           </section>
         )}
+
 
         {/* ──── TAB 5: ADMIN (الإدارة) ──── */}
         {tab === "admin" && canAdmin && (
@@ -1311,15 +1700,36 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
                 <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
-                  <h3 className="font-black text-sm flex items-center gap-1"><IconInbox size={14} /> طلبات الأساتذة المعلقة</h3>
+                  <h3 className="font-black text-sm flex items-center gap-1.5"><IconInbox size={16} /> طلبات إضافة المدرسين (قائمة الانتظار)</h3>
                   <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">{pendingTeachers.length}</span>
                 </div>
-                {pendingTeachers.length === 0 ? <div className="text-xs text-slate-400">لا توجد طلبات معلقة.</div> : pendingTeachers.map(t => (
-                  <div key={t.id} className="bg-white p-2 border border-slate-900 text-xs flex justify-between items-center">
-                    <span>{t.name} ({t.subject})</span>
-                    <button onClick={() => approveTeacher(t.id)} className="px-2 py-1 bg-emerald-600 text-white font-bold">قبول</button>
-                  </div>
-                ))}
+                {pendingTeachers.length === 0 ? (
+                  <div className="text-xs text-slate-400 py-4 text-center font-semibold">لا توجد طلبات معلقة حالياً في قائمة الانتظار.</div>
+                ) : (
+                  pendingTeachers.map(t => (
+                    <div key={t.id} className="bg-slate-50 p-3 border-2 border-slate-900 shadow-[2px_2px_0px_#000] space-y-2">
+                      <div className="flex items-start gap-3">
+                        <img src={t.img} alt={t.name} className="w-14 h-14 border-2 border-slate-900 object-cover shrink-0 bg-white" />
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-black text-sm text-slate-900">{t.name}</h4>
+                          <p className="text-xs text-emerald-800 font-bold">{t.subject} • {t.gov}</p>
+                          {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
+                          <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                            مُرسل الطلب: <span className="font-bold text-slate-800">{t.createdBy || t.created_by || "مستخدم"}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                        <button onClick={() => approveTeacher(t.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border border-slate-900 flex items-center gap-1">
+                          ✓ قبول ونشر
+                        </button>
+                        <button onClick={() => rejectTeacher(t.id)} className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 flex items-center gap-1">
+                          ✕ رفض
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
@@ -1347,7 +1757,7 @@ export default function Home() {
           <IconHome size={20} />الرئيسية
         </button>
         <button onClick={() => setTab("directory")} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "directory" ? "text-emerald-primary" : "text-slate-400"}`}>
-          <IconBook size={20} />الدليل
+          <IconBook size={20} />المدرسين
         </button>
         <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("notifications"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 relative ${tab === "notifications" ? "text-emerald-primary" : "text-slate-400"}`}>
           <IconBell size={20} />الإشعارات
@@ -1357,7 +1767,7 @@ export default function Home() {
             </span>
           )}
         </button>
-        <button onClick={() => { if (!session) { setAuthModal(true); return; } setTab("profile"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "profile" ? "text-emerald-primary" : "text-slate-400"}`}>
+        <button onClick={() => { if (!session) { setAuthModal(true); return; } setViewedUser(session.username); setTab("profile"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "profile" && targetProfileUser === session?.username ? "text-emerald-primary" : "text-slate-400"}`}>
           <IconUser size={20} />حسابي
         </button>
         {canAdmin && (
@@ -1365,6 +1775,7 @@ export default function Home() {
             <IconShield size={20} />الإدارة
           </button>
         )}
+
       </nav>
 
       {/* ═══════ AUTH MODAL ═══════ */}
@@ -1480,52 +1891,437 @@ export default function Home() {
         </div>
       )}
 
-      {/* ═══════ ADD TEACHER MODAL ═══════ */}
+      {/* ═══════ ADD TEACHER MODAL (المدرسين - قائمة الانتظار) ═══════ */}
       {teacherModal && (
         <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
-              <h3 className="font-black text-base">إضافة أستاذ جديد</h3>
+              <div>
+                <h3 className="font-black text-base text-slate-900">إضافة مدرس جديد</h3>
+                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">سيتم إرسال المدرس لقائمة الانتظار لمراجعة الإدارة</p>
+              </div>
               <button onClick={() => setTeacherModal(false)}><IconX size={16} /></button>
             </div>
-            <div className="space-y-3 text-xs">
+
+            <div className="space-y-4 text-xs">
+              {/* Box 1: Teacher Name (No name prefilled in box) */}
               <div>
-                <label className="block font-bold mb-1">اسم الأستاذ الكامل</label>
-                <input type="text" value={tName} onChange={e => setTName(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder="أستاذ حيدر وليد" />
+                <label className="block font-bold mb-1 text-slate-800">
+                  اسم المدرس <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={tName}
+                  onChange={e => setTName(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white"
+                  placeholder="اكتب اسم المدرس هنا..."
+                />
               </div>
+
+              {/* Box 2: Location / City (Single select from 18 governorates) */}
               <div>
-                <label className="block font-bold mb-1">المحافظة</label>
-                <select value={tGov} onChange={e => setTGov(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none">
-                  <option value="بغداد">بغداد</option><option value="كركوك">كركوك</option><option value="أربيل">أربيل</option>
-                  <option value="البصرة">البصرة</option><option value="الموصل">الموصل</option><option value="النجف">النجف</option><option value="كربلاء">كربلاء</option>
+                <label className="block font-bold mb-1 text-slate-800">
+                  أين يتواجد هذا المدرس؟ (اختر محافظة واحدة) <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={tGov}
+                  onChange={e => setTGov(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-bold focus:outline-none cursor-pointer"
+                >
+                  {GOVERNORATES.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
                 </select>
               </div>
+
+              {/* Box 3: Subject Boxes + Other */}
               <div>
-                <label className="block font-bold mb-1">المادة الدراسية</label>
-                <input type="text" value={tSubject} onChange={e => setTSubject(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder="رياضيات" />
-              </div>
-              <div>
-                <label className="block font-bold mb-1">المراحل</label>
-                <input type="text" value={tGrades} onChange={e => setTGrades(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder="السادس الاعدادي" />
-              </div>
-              <div>
-                <label className="block font-bold mb-1">رابط صورة المدرس <span className="text-red-500">*</span></label>
-                <input type="text" value={tImg} onChange={e => setTImg(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder="https://..." />
-                {tImg && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <img src={tImg} alt="معاينة" className="w-12 h-12 border border-slate-900 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    <span className="text-[10px] text-slate-500">معاينة الصورة</span>
+                <label className="block font-bold mb-1.5 text-slate-800">
+                  المادة الدراسية <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  {SUBJECT_OPTIONS.map(s => (
+                    <button
+                      type="button"
+                      key={s}
+                      onClick={() => setTSubjectChoice(s)}
+                      className={`p-2 text-xs font-bold border-2 transition-all ${
+                        tSubjectChoice === s
+                          ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]"
+                          : "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-900"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {tSubjectChoice === "أخرى" && (
+                  <div className="mt-2">
+                    <input
+                      type="text"
+                      value={tCustomSubject}
+                      onChange={e => setTCustomSubject(e.target.value)}
+                      placeholder="اكتب اسم المادة الدراسية غير المتوفرة..."
+                      className="w-full p-2 bg-white border-2 border-emerald-600 text-xs font-semibold focus:outline-none"
+                    />
                   </div>
                 )}
               </div>
-              <button onClick={submitTeacher} disabled={!tName.trim() || !tSubject.trim() || !tImg.trim()}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-                إرسال للدليل
+
+              {/* Box 4: Grades Options (Multiple selection) */}
+              <div>
+                <label className="block font-bold mb-1.5 text-slate-800">
+                  المراحل الدراسية التي يدرّسها (يمكنك اختيار أكثر من مرحلة) <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {GRADE_OPTIONS.map(g => {
+                    const isSelected = tSelectedGrades.includes(g);
+                    return (
+                      <button
+                        type="button"
+                        key={g}
+                        onClick={() => {
+                          if (isSelected) {
+                            setTSelectedGrades(tSelectedGrades.filter(x => x !== g));
+                          } else {
+                            setTSelectedGrades([...tSelectedGrades, g]);
+                          }
+                        }}
+                        className={`p-2 text-xs font-bold border-2 text-right transition-all flex items-center justify-between ${
+                          isSelected
+                            ? "border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]"
+                            : "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-900"
+                        }`}
+                      >
+                        <span>{g}</span>
+                        <span>{isSelected ? "✓" : "+"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Box 5: Image File Upload (FILE ONLY, NOT LINK) */}
+              <div>
+                <label className="block font-bold mb-1 text-slate-800">
+                  صورة المدرس (ملف صورة فقط) <span className="text-red-500">*</span>
+                </label>
+                <div className="border-2 border-dashed border-slate-400 p-4 bg-slate-50 text-center">
+                  <input
+                    type="file"
+                    id="teacher-img-file"
+                    accept="image/png, image/jpeg, image/jpg, image/webp, image/*"
+                    onChange={handleTeacherImageUpload}
+                    className="hidden"
+                  />
+                  {tImg ? (
+                    <div className="flex items-center justify-center gap-4">
+                      {/* Medium-sized preview image */}
+                      <img
+                        src={tImg}
+                        alt="معاينة المدرس"
+                        className="w-20 h-20 border-2 border-slate-900 object-cover shadow-[2px_2px_0px_#000] bg-white"
+                      />
+                      <div className="text-right space-y-1">
+                        <span className="text-xs font-black text-emerald-800 block">✓ تم رفع الصورة بنجاح</span>
+                        <label
+                          htmlFor="teacher-img-file"
+                          className="inline-block px-3 py-1 bg-white border border-slate-900 text-xs font-bold cursor-pointer hover:bg-slate-100 shadow-[1px_1px_0px_#000]"
+                        >
+                          تغيير ملف الصورة
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <label htmlFor="teacher-img-file" className="cursor-pointer block py-2 space-y-1.5">
+                      <div className="flex justify-center text-slate-600"><IconCamera size={28} /></div>
+                      <div className="text-xs font-black text-slate-800">اضغط هنا لاختيار ملف صورة المدرس من جهازك</div>
+                      <div className="text-[10px] text-slate-500 font-semibold">يقبل JPG، PNG، WebP، وغيرها (ملف فقط وليس رابط)</div>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* Submit to Waiting List */}
+              <button
+                onClick={submitTeacher}
+                disabled={
+                  !tName.trim() ||
+                  (tSubjectChoice === "أخرى" ? !tCustomSubject.trim() : !tSubjectChoice) ||
+                  tSelectedGrades.length === 0 ||
+                  !tImg
+                }
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+              >
+                إرسال للمراجعة (قائمة الانتظار) ⏳
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ═══════ SELECTED TEACHER DETAILS & REVIEWS MODAL ═══════ */}
+      {selectedTeacher && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-6">
+            
+            {/* Modal Header: Teacher Info */}
+            <div className="flex items-start justify-between border-b-2 border-slate-200 pb-4">
+              <div className="flex items-start gap-4">
+                {/* Medium-sized teacher image */}
+                <img
+                  src={selectedTeacher.img}
+                  alt={selectedTeacher.name}
+                  className="w-20 h-20 sm:w-24 sm:h-24 border-2 border-slate-900 object-cover shadow-[3px_3px_0px_#000] bg-slate-100 shrink-0"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M20 21a8 8 0 1 0-16 0'/%3E%3C/svg%3E";
+                  }}
+                />
+                <div className="space-y-1.5">
+                  <h3 className="font-black text-lg sm:text-xl text-slate-900">{selectedTeacher.name}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-0.5 bg-emerald-100 border border-slate-900 text-xs font-black text-emerald-900">
+                      {selectedTeacher.subject}
+                    </span>
+                    <span className="px-2.5 py-0.5 bg-blue-100 border border-slate-900 text-xs font-black text-blue-900">
+                      {selectedTeacher.gov}
+                    </span>
+                  </div>
+                  {selectedTeacher.grades && (
+                    <p className="text-xs text-slate-600 font-bold mt-1">
+                      المراحل: <span className="font-semibold">{selectedTeacher.grades}</span>
+                    </p>
+                  )}
+                  {/* Teacher Votes */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => voteTeacher(selectedTeacher.id, "like")}
+                      className={vbtn(getUserVote(`teacher_${selectedTeacher.id}`) === "like", "like")}
+                    >
+                      <IconThumbUp size={13} /> {selectedTeacher.likes}
+                    </button>
+                    <button
+                      onClick={() => voteTeacher(selectedTeacher.id, "dislike")}
+                      className={vbtn(getUserVote(`teacher_${selectedTeacher.id}`) === "dislike", "dislike")}
+                    >
+                      <IconThumbDown size={13} /> {selectedTeacher.dislikes}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedTeacher(null)}
+                className="p-1 hover:bg-slate-100 border border-transparent hover:border-slate-900"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            {/* Reviews Header & Add Review Toggle Button */}
+            <div className="flex items-center justify-between">
+              <h4 className="font-black text-sm sm:text-base text-slate-900 flex items-center gap-1.5">
+                <IconStar size={16} fill="#d97706" className="text-amber-600" />
+                <span>تقييمات ومراجعات الطلاب</span>
+                <span className="text-xs text-slate-500 font-bold">
+                  ({posts.filter(p => (p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id) && p.grade_level === "تقييم أستاذ").length})
+                </span>
+              </h4>
+              <button
+                onClick={() => {
+                  if (!session) { setAuthModal(true); return; }
+                  setShowReviewForm(!showReviewForm);
+                }}
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all"
+              >
+                <IconPen size={12} />
+                {showReviewForm ? "إلغاء التقييم" : "اكتب مراجعة وتقييم"}
+              </button>
+            </div>
+
+            {/* Write Review Form */}
+            {showReviewForm && (
+              <div className="bg-amber-50 border-2 border-amber-600 p-4 space-y-3">
+                <h5 className="font-black text-xs text-amber-950">شارك تجربتك ورأيك في تدريس الأستاذ:</h5>
+                
+                {/* Rating Stars */}
+                <div>
+                  <label className="block text-[11px] font-bold text-amber-900 mb-1">التقييم العام بالنجوم:</label>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        type="button"
+                        key={star}
+                        onClick={() => setReviewRating(star)}
+                        className="p-1 hover:scale-110 transition-transform"
+                      >
+                        <IconStar
+                          size={22}
+                          fill={star <= reviewRating ? "#f59e0b" : "none"}
+                          className={star <= reviewRating ? "text-amber-500" : "text-slate-400"}
+                        />
+                      </button>
+                    ))}
+                    <span className="text-xs font-black text-amber-900 mr-2">
+                      {reviewRating === 5 ? "ممتاز جداً 🌟" : reviewRating === 4 ? "جيد جداً 👍" : reviewRating === 3 ? "جيد" : reviewRating === 2 ? "مقبول" : "ضعيف"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Review Title */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-800 mb-1">عنوان المراجعة (اختياري)</label>
+                  <input
+                    type="text"
+                    value={reviewTitle}
+                    onChange={e => setReviewTitle(e.target.value)}
+                    placeholder="مثال: تجربتي مع الأستاذ في السادس العلمي..."
+                    className="w-full p-2 bg-white border border-slate-900 text-xs font-semibold focus:outline-none"
+                  />
+                </div>
+
+                {/* Review Body */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-800 mb-1">نص المراجعة والتقييم <span className="text-red-500">*</span></label>
+                  <textarea
+                    value={reviewBody}
+                    onChange={e => setReviewBody(e.target.value)}
+                    placeholder="اكتب تقييمك بالتفصيل: الشرح، الواجبات، الأسلوب، والامتحانات..."
+                    className="w-full p-2 bg-white border border-slate-900 text-xs font-semibold min-h-[80px] resize-none focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  onClick={submitTeacherReview}
+                  disabled={!reviewBody.trim()}
+                  className="w-full py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:shadow-none"
+                >
+                  نشر المراجعة للجميع
+                </button>
+              </div>
+            )}
+
+            {/* List of Reviews for this teacher */}
+            <div className="space-y-4">
+              {posts.filter(p => (p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id) && p.grade_level === "تقييم أستاذ").length === 0 ? (
+                <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-8 text-center text-xs font-bold text-slate-500">
+                  لا توجد مراجعات أو تقييمات لهذا المدرس بعد. كن أول من يشارك تجربته!
+                </div>
+              ) : (
+                posts
+                  .filter(p => (p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id) && p.grade_level === "تقييم أستاذ")
+                  .map(rev => {
+                    const revVote = getUserVote(`post_${rev.id}`);
+                    const canEdit = session?.username === rev.author && isWithinEditWindow(rev.created_at);
+                    return (
+                      <div key={rev.id} className="bg-white border-2 border-slate-900 shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-3">
+                        {/* Review Header */}
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                          <button
+                            onClick={() => {
+                              setViewedUser(rev.author);
+                              setTab("profile");
+                              setSelectedTeacher(null);
+                            }}
+                            className="flex items-center gap-2 hover:opacity-80"
+                          >
+                            <Avatar username={rev.author} size="w-7 h-7 text-xs" />
+                            <span className="text-xs font-black text-slate-800">{rev.author}</span>
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 border border-amber-300">
+                              تقييم طالب 🌟
+                            </span>
+                          </button>
+                          <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(rev.created_at)}</span>
+                        </div>
+
+                        {/* Review Content */}
+                        <div>
+                          <h5 className="font-black text-xs sm:text-sm text-slate-900">{rev.title}</h5>
+                          <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{rev.body}</p>
+                        </div>
+
+                        {/* Actions (Likes, Dislikes, Reports) */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => votePost(rev.id, "like")} className={vbtn(revVote === "like", "like")}>
+                              <IconThumbUp size={12} /> {rev.likes}
+                            </button>
+                            <button onClick={() => votePost(rev.id, "dislike")} className={vbtn(revVote === "dislike", "dislike")}>
+                              <IconThumbDown size={12} /> {rev.dislikes}
+                            </button>
+                            <button onClick={() => reportPost(rev.id)} className="text-[10px] text-slate-500 hover:text-red-600 flex items-center gap-0.5">
+                              <IconFlag size={11} /> بلاغ ({rev.reports || 0}/20)
+                            </button>
+                          </div>
+                          {canEdit && (
+                            <button onClick={() => deletePost(rev.id)} className="text-[10px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
+                              <IconTrash size={11} /> حذف
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Comments on this review */}
+                        <div className="bg-slate-50 p-2.5 border border-slate-200 space-y-2 text-xs">
+                          <div className="font-bold text-[10px] text-slate-500 flex items-center gap-1">
+                            <IconComment size={11} /> ردود الطلاب ({rev.comments?.length || 0}):
+                          </div>
+                          {(rev.comments || []).map(c => {
+                            const cVote = getUserVote(`comment_${c.id}`);
+                            return (
+                              <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <button
+                                    onClick={() => {
+                                      setViewedUser(c.author);
+                                      setTab("profile");
+                                      setSelectedTeacher(null);
+                                    }}
+                                    className="flex items-center gap-1.5 hover:opacity-80 text-right"
+                                  >
+                                    <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
+                                    <span className="font-bold text-teal-800">{c.author}: </span>
+                                    <span>{c.text}</span>
+                                  </button>
+                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
+                                </div>
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button onClick={() => voteComment(rev.id, c.id, "like")} className={`${vbtn(cVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
+                                    <IconThumbUp size={10} /> {c.likes}
+                                  </button>
+                                  <button onClick={() => voteComment(rev.id, c.id, "dislike")} className={`${vbtn(cVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
+                                    <IconThumbDown size={10} /> {c.dislikes}
+                                  </button>
+                                  <button onClick={() => reportComment(rev.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
+                                    <IconFlag size={9} /> ({c.reports || 0})
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="flex gap-2 pt-1">
+                            <input
+                              type="text"
+                              id={`comment-${rev.id}`}
+                              placeholder="أضف رداً على هذا التقييم..."
+                              className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none"
+                            />
+                            <button
+                              onClick={() => addComment(rev.id)}
+                              className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700"
+                            >
+                              إرسال
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ═══════ PROFILE EDIT MODAL ═══════ */}
       {profileModal && session && (
