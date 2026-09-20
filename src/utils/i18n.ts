@@ -149,6 +149,13 @@ export const T_DICT: TranslationDict = {
   supportContactPlaceholder: { ar: "معرف تيليغرام أو بريد إلكتروني أو رقم هاتف (اختياري)", en: "Telegram username, email, or phone (optional)" },
   sendSupportTicket: { ar: "إرسال التذكرة", en: "Submit Inquiry" },
   supportSuccessAlert: { ar: "تم إرسال استفسارك بنجاح! سيقوم فريق المنصة بمراجعته في أقرب وقت.", en: "Your message has been sent successfully! Our team will review it shortly." },
+
+  // Admin Sub-tabs
+  adminSubMod: { ar: "الإشراف والبلاغات", en: "Moderation & Queue" },
+  adminSubBanner: { ar: "شريط التنبيهات", en: "Site Announcement" },
+  adminSubAudit: { ar: "سجل العمليات", en: "Audit Log" },
+  adminSubFilter: { ar: "الكلمات المحظورة", en: "Word Filter" },
+  adminSubOwner: { ar: "تحكم المالك الحصري", en: "Owner Controls" },
 };
 
 export function getT(lang: Language) {

@@ -6,10 +6,10 @@
   "4": "next",
   "5": "dependencies",
   "6": "icons.tsx",
-  "7": "handleAuth",
+  "7": "addAuditLog",
   "8": "toggleBookmark",
   "9": "README.md",
-  "10": "normalizeTeacherName",
+  "10": "devDependencies",
   "11": "feedAlgorithm.ts",
   "12": "AGENTS.md",
   "13": "postcss.config.mjs",
@@ -17,7 +17,6 @@
   "15": "vercel.json",
   "16": "CLAUDE.md",
   "17": "not-found.tsx",
-  "18": "Turnstile.tsx",
   "19": "i18n.ts",
   "20": "time.ts"
 }
