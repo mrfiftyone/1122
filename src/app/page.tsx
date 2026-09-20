@@ -11,7 +11,7 @@ import {
   IconArrowRight, IconHome, IconBell, IconHistory, IconBookmark,
   IconImage, IconLink, IconAward, IconVideo, IconMonitor, IconFlame,
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
-  IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon,
+  IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -34,9 +34,13 @@ interface Comment {
   id: string; author: string; text: string; created_at: string;
   likes: number; dislikes: number; reports: number;
 }
+export type PostTag = "question" | "discussion" | "news" | "tips" | "booklet" | "other";
+
 interface Post {
   id: string; author: string; teacherId?: string; teacher_id?: string;
   title: string; body: string; grade_level: string;
+  tag?: PostTag;
+  pinned?: boolean;
   likes: number; dislikes: number; reports: number;
   status: "active" | "hidden"; comments: Comment[];
   images?: string[]; // Multiple image DataURLs (screenshots, summaries)
@@ -85,6 +89,22 @@ function setSupportTicketsStorage(tickets: SupportTicket[]) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem("iq_support_tickets_v1", JSON.stringify(tickets));
+  } catch {}
+}
+
+function getPinnedPostIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("iq_pinned_posts_v1") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function setPinnedPostIdsStorage(ids: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("iq_pinned_posts_v1", JSON.stringify(ids));
   } catch {}
 }
 
@@ -226,6 +246,9 @@ export default function Home() {
   const [postImages, setPostImages] = useState<string[]>([]);
   const [postYoutube, setPostYoutube] = useState("");
   const [postTelegram, setPostTelegram] = useState("");
+  const [postTag, setPostTag] = useState<PostTag>("discussion");
+  const [selectedFeedTag, setSelectedFeedTag] = useState<"all" | PostTag>("all");
+  const [pinnedPostIds, setPinnedPostIds] = useState<string[]>([]);
 
   // Teacher fields (Add teacher form)
   const [tName, setTName] = useState("");
@@ -314,29 +337,45 @@ export default function Home() {
       ]);
 
       if (pRes.data) {
-        const formattedPosts: Post[] = pRes.data.map((p: any) => ({
-          id: p.id,
-          author: p.author,
-          teacherId: p.teacher_id,
-          teacher_id: p.teacher_id,
-          title: p.title,
-          body: p.body,
-          grade_level: p.grade_level || "General",
-          likes: p.likes || 0,
-          dislikes: p.dislikes || 0,
-          reports: p.reports || 0,
-          status: p.status || "active",
-          comments: (p.comments || []).map((c: any) => ({
-            id: c.id,
-            author: c.author,
-            text: c.text,
-            created_at: c.created_at,
-            likes: c.likes || 0,
-            dislikes: c.dislikes || 0,
-            reports: c.reports || 0,
-          })).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
-          created_at: p.created_at,
-        }));
+        const formattedPosts: Post[] = pRes.data.map((p: any) => {
+          let cleanBody = p.body || "";
+          let meta: any = {};
+          const metaMatch = cleanBody.match(/<!--meta:(.*?)-->/);
+          if (metaMatch) {
+            try {
+              meta = JSON.parse(metaMatch[1]);
+              cleanBody = cleanBody.replace(/<!--meta:.*?-->/, "").trim();
+            } catch {}
+          }
+          return {
+            id: p.id,
+            author: p.author,
+            teacherId: p.teacher_id,
+            teacher_id: p.teacher_id,
+            title: p.title,
+            body: cleanBody,
+            tag: (meta.tag || p.tag || "discussion") as PostTag,
+            pinned: meta.pinned !== undefined ? meta.pinned : (p.pinned || false),
+            grade_level: p.grade_level || "General",
+            likes: p.likes || 0,
+            dislikes: p.dislikes || 0,
+            reports: p.reports || 0,
+            status: p.status || "active",
+            images: meta.images || [],
+            youtubeUrl: meta.youtubeUrl || p.youtube_url || "",
+            telegramUrl: meta.telegramUrl || p.telegram_url || "",
+            comments: (p.comments || []).map((c: any) => ({
+              id: c.id,
+              author: c.author,
+              text: c.text,
+              created_at: c.created_at,
+              likes: c.likes || 0,
+              dislikes: c.dislikes || 0,
+              reports: c.reports || 0,
+            })).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+            created_at: p.created_at,
+          };
+        });
         setPostsList(formattedPosts);
         setPosts(formattedPosts);
       }
@@ -403,6 +442,7 @@ export default function Home() {
     setAllNotifications(getNotifications());
     setReportRecordsList(getReportRecords());
     setSupportTickets(getSupportTickets());
+    setPinnedPostIds(getPinnedPostIds());
 
     const savedTheme = (localStorage.getItem("iq_site_theme") as any) || "light";
     const savedLang = (localStorage.getItem("iq_site_lang") as any) || "ar";
@@ -624,6 +664,7 @@ export default function Home() {
     if (!session || !postTitle.trim() || !postBody.trim() || !postTeacher) return;
     if (postTitle.length > 100 || postBody.length > 1500) return;
     const meta: any = {};
+    if (postTag) meta.tag = postTag;
     if (postImages.length > 0) meta.images = postImages;
     if (postYoutube.trim()) meta.youtubeUrl = postYoutube.trim();
     if (postTelegram.trim()) meta.telegramUrl = postTelegram.trim();
@@ -651,6 +692,8 @@ export default function Home() {
       title: postTitle.trim(),
       body: postBody.trim(),
       grade_level: postGrade,
+      tag: postTag,
+      pinned: false,
       likes: 0,
       dislikes: 0,
       reports: 0,
@@ -674,8 +717,24 @@ export default function Home() {
     }
 
     setPostTitle(""); setPostBody(""); setPostGrade("General"); setPostTeacher("");
-    setPostImages([]); setPostYoutube(""); setPostTelegram("");
+    setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
     setPostModal(false); rerender();
+  }
+
+  function togglePinPost(postId: string) {
+    if (!canAdmin) return;
+    const current = getPinnedPostIds();
+    const isCurrentlyPinned = current.includes(postId);
+    let updated: string[];
+    if (isCurrentlyPinned) {
+      updated = current.filter(id => id !== postId);
+    } else {
+      updated = [postId, ...current];
+    }
+    setPinnedPostIdsStorage(updated);
+    setPinnedPostIds(updated);
+    setPostsList(prev => prev.map(p => p.id === postId ? { ...p, pinned: !isCurrentlyPinned } : p));
+    rerender();
   }
 
   function handlePostImagesUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1983,169 +2042,314 @@ export default function Home() {
               </button>
             </div>
 
-            {activePosts.length === 0 ? (
-              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                لا توجد منشورات حالياً. كن أول من يطرح نقاشاً!
+            {/* Feed Tag Filter Bar */}
+            <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <IconTag size={13} className="text-emerald-primary" /> {t("filterByTag")}
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">
+                  {selectedFeedTag === "all" ? `${activePosts.length} منشور` : `${activePosts.filter(p => (selectedFeedTag === "discussion" ? (p.tag === "discussion" || !p.tag) : p.tag === selectedFeedTag)).length} منشور`}
+                </span>
               </div>
-            ) : (
-              <div className="space-y-5">
-                {activePosts.map(p => {
-                  const teacher = teachers.find(t => t.id === p.teacherId || t.id === p.teacher_id);
-                  const canDeletePost = session && (session.username === p.author || session.role === "owner" || session.role === "mod");
-                  const postVote = getUserVote(`post_${p.id}`);
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5">
+                {[
+                  { id: "all", label: t("tagAll"), icon: null, count: activePosts.length },
+                  { id: "question", label: t("tagQuestion"), icon: <IconHelpCircle size={12} />, count: activePosts.filter(p => p.tag === "question").length },
+                  { id: "news", label: t("tagNews"), icon: <IconBolt size={12} />, count: activePosts.filter(p => p.tag === "news").length },
+                  { id: "discussion", label: t("tagDiscussion"), icon: <IconPen size={12} />, count: activePosts.filter(p => p.tag === "discussion" || !p.tag).length },
+                  { id: "tips", label: t("tagTips"), icon: <IconCheck size={12} />, count: activePosts.filter(p => p.tag === "tips").length },
+                  { id: "booklet", label: t("tagBooklet"), icon: <IconBookmark size={12} />, count: activePosts.filter(p => p.tag === "booklet").length },
+                  { id: "other", label: t("tagOther"), icon: <IconTag size={12} />, count: activePosts.filter(p => p.tag === "other").length },
+                ].map(filterBtn => {
+                  const isSelected = selectedFeedTag === filterBtn.id;
                   return (
-                    <div key={p.id} className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
-                      {/* Post Header */}
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                        <button onClick={() => { setViewedUser(p.author); setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
-                          <Avatar username={p.author} />
-                          <span className="text-xs font-black text-slate-700">{p.author}</span>
-                        </button>
-                        <div className="flex items-center gap-2">
-                          {teacher && (
-                            <button
-                              onClick={() => {
-                                setSelectedTeacher(teacher);
-                                setTab("teacher");
-                                setShowReviewForm(false);
-                                setReviewVerdict(null);
-                                window.scrollTo({ top: 0, behavior: "smooth" });
-                              }}
-                              className="px-2.5 py-0.5 bg-emerald-100 hover:bg-emerald-200 border border-slate-900 text-[10px] font-black text-emerald-900 flex items-center gap-1 transition-colors"
-                            >
-                              <IconTag size={10} /> {teacher.name} ({teacher.subject})
-                            </button>
-                          )}
-                          <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(p.created_at)}</span>
-                        </div>
-                      </div>
-
-                      {/* Post Body */}
-                      <div>
-                        <h3 className="font-black text-sm text-slate-900">{p.title}</h3>
-                        <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{p.body}</p>
-                      </div>
-
-                      {/* Multi-Image Gallery */}
-                      {p.images && p.images.length > 0 && (
-                        <div className="pt-2">
-                          <div className={`grid gap-2 ${
-                            p.images.length === 1 ? "grid-cols-1" : p.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
-                          }`}>
-                            {p.images.map((img, i) => (
-                              <div
-                                key={i}
-                                onClick={() => setPreviewImageModal(img)}
-                                className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
-                              >
-                                <img src={img} alt={`مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
-                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
-                                  عرض بالحجم الكامل
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* External Study Links (YouTube & Telegram) */}
-                      {(p.youtubeUrl || p.telegramUrl) && (
-                        <div className="flex items-center gap-2 flex-wrap pt-1">
-                          {p.youtubeUrl && (
-                            <a
-                              href={p.youtubeUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
-                            >
-                              <IconVideo size={13} className="text-red-700" />
-                              <span>شرح يوتيوب</span>
-                            </a>
-                          )}
-                          {p.telegramUrl && (
-                            <a
-                              href={p.telegramUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
-                            >
-                              <IconLink size={13} className="text-blue-700" />
-                              <span>ملزمة / ملف</span>
-                            </a>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Post Actions */}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => votePost(p.id, "like")} className={vbtn(postVote === "like", "like")}>
-                            <IconThumbUp size={13} /> {p.likes}
-                          </button>
-                          <button onClick={() => votePost(p.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
-                            <IconThumbDown size={13} /> {p.dislikes}
-                          </button>
-                          <button
-                            onClick={() => toggleBookmark(p.id, "post", p.title, p.author)}
-                            className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
-                              isBookmarked(p.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
-                            }`}
-                            title={isBookmarked(p.id) ? "إزالة من المحفوظات" : "حفظ المنشور في المحفوظات"}
-                          >
-                            <IconBookmark size={12} fill={isBookmarked(p.id) ? "currentColor" : "none"} />
-                            <span>{isBookmarked(p.id) ? "محفوظ" : "حفظ"}</span>
-                          </button>
-                          <button onClick={() => reportPost(p.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
-                            <IconFlag size={12} /> بلاغ ({p.reports || 0}/20)
-                          </button>
-                        </div>
-                        {canDeletePost && (
-                          <button onClick={() => deletePost(p.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
-                            <IconTrash size={12} /> {session?.username === p.author ? "حذف" : "حذف (إدارة)"}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Comments Section */}
-                      <div className="bg-slate-50 p-3 border border-slate-200 space-y-2 text-xs">
-                        <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1"><IconComment size={12} /> التعليقات ({p.comments?.length || 0}):</div>
-                        {(p.comments || []).map(c => {
-                          const commentVote = getUserVote(`comment_${c.id}`);
-                          return (
-                            <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <button onClick={() => { setViewedUser(c.author); setTab("profile"); }} className="flex items-center gap-1.5 hover:opacity-80 text-right">
-                                  <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
-                                  <span className="font-bold text-teal-800">{c.author}: </span>
-                                  <span>{c.text}</span>
-                                </button>
-                                <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
-                              </div>
-
-                              <div className="flex items-center gap-2 pt-1">
-                                <button onClick={() => voteComment(p.id, c.id, "like")} className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
-                                  <IconThumbUp size={10} /> {c.likes}
-                                </button>
-                                <button onClick={() => voteComment(p.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
-                                  <IconThumbDown size={10} /> {c.dislikes}
-                                </button>
-                                <button onClick={() => reportComment(p.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
-                                  <IconFlag size={9} /> ({c.reports || 0})
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        <div className="flex gap-2 pt-1">
-                          <input type="text" id={`comment-${p.id}`} placeholder="اكتب تعليقاً..." className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none" />
-                          <button onClick={() => addComment(p.id)} className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700">إرسال</button>
-                        </div>
-                      </div>
-                    </div>
+                    <button
+                      key={filterBtn.id}
+                      onClick={() => setSelectedFeedTag(filterBtn.id as any)}
+                      className={`px-3 py-1.5 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                        isSelected
+                          ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                          : "border-slate-300 bg-slate-50 hover:bg-white text-slate-700 hover:border-slate-900"
+                      }`}
+                    >
+                      {filterBtn.icon}
+                      <span>{filterBtn.label}</span>
+                      <span className={`text-[10px] px-1 py-0.2 rounded-full font-bold ${
+                        isSelected ? "bg-slate-700 text-white" : "bg-slate-200 text-slate-700"
+                      }`}>
+                        {filterBtn.count}
+                      </span>
+                    </button>
                   );
                 })}
               </div>
-            )}
+            </div>
+
+            {(() => {
+              const filteredFeedPosts = activePosts.filter(p => {
+                if (selectedFeedTag === "all") return true;
+                if (selectedFeedTag === "discussion") return p.tag === "discussion" || !p.tag;
+                return p.tag === selectedFeedTag;
+              });
+
+              const sortedFeedPosts = [...filteredFeedPosts].sort((a, b) => {
+                const aPin = pinnedPostIds.includes(a.id) || a.pinned;
+                const bPin = pinnedPostIds.includes(b.id) || b.pinned;
+                if (aPin && !bPin) return -1;
+                if (!aPin && bPin) return 1;
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+              });
+
+              if (sortedFeedPosts.length === 0) {
+                return (
+                  <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
+                    {selectedFeedTag === "all" ? t("noPosts") : (siteLang === "ar" ? "لا توجد منشورات مطابقة لهذا التصنيف حتى الآن." : "No posts found for this category yet.")}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-5">
+                  {sortedFeedPosts.map(p => {
+                    const isPinned = pinnedPostIds.includes(p.id) || p.pinned;
+                    const teacher = teachers.find(t => t.id === p.teacherId || t.id === p.teacher_id);
+                    const canDeletePost = session && (session.username === p.author || session.role === "owner" || session.role === "mod");
+                    const postVote = getUserVote(`post_${p.id}`);
+                    const postTagVal = p.tag || "discussion";
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`bg-white border-2 space-y-3 transition-all ${
+                          isPinned
+                            ? "border-amber-500 shadow-[4px_4px_0px_#d97706] ring-2 ring-amber-400 p-5"
+                            : postTagVal === "news"
+                            ? "border-red-600 shadow-[4px_4px_0px_#dc2626] p-5"
+                            : "border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5"
+                        }`}
+                      >
+                        {/* Pinned Top Banner */}
+                        {isPinned && (
+                          <div className="bg-amber-100 border border-amber-600 px-3 py-1 text-[11px] font-black text-amber-950 flex items-center justify-between shadow-[1px_1px_0px_#d97706] -mt-1 mb-2">
+                            <span className="flex items-center gap-1.5">
+                              <IconPin size={13} className="text-amber-800 rotate-45" /> {t("pinnedBadge")}
+                            </span>
+                            {canAdmin && (
+                              <button
+                                onClick={() => togglePinPost(p.id)}
+                                className="text-[10px] text-amber-900 underline hover:text-red-700 font-bold"
+                              >
+                                {t("unpinPost")}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Post Header with Tag Badge */}
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => { setViewedUser(p.author); setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
+                              <Avatar username={p.author} />
+                              <span className="text-xs font-black text-slate-700">{p.author}</span>
+                            </button>
+
+                            {/* Post Tag Badge */}
+                            {postTagVal === "news" && (
+                              <span className="px-2 py-0.5 bg-red-600 text-white font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconBolt size={11} /> {t("tagNews")}
+                              </span>
+                            )}
+                            {postTagVal === "question" && (
+                              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-900 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconHelpCircle size={11} /> {t("tagQuestion")}
+                              </span>
+                            )}
+                            {postTagVal === "tips" && (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-900 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconCheck size={11} /> {t("tagTips")}
+                              </span>
+                            )}
+                            {postTagVal === "booklet" && (
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-900 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconBookmark size={11} /> {t("tagBooklet")}
+                              </span>
+                            )}
+                            {postTagVal === "discussion" && (
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-bold text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconPen size={11} /> {t("tagDiscussion")}
+                              </span>
+                            )}
+                            {postTagVal === "other" && (
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconTag size={11} /> {t("tagOther")}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {teacher && (
+                              <button
+                                onClick={() => {
+                                  setSelectedTeacher(teacher);
+                                  setTab("teacher");
+                                  setShowReviewForm(false);
+                                  setReviewVerdict(null);
+                                  window.scrollTo({ top: 0, behavior: "smooth" });
+                                }}
+                                className="px-2.5 py-0.5 bg-emerald-100 hover:bg-emerald-200 border border-slate-900 text-[10px] font-black text-emerald-900 flex items-center gap-1 transition-colors"
+                              >
+                                <IconTag size={10} /> {teacher.name} ({teacher.subject})
+                              </button>
+                            )}
+                            <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(p.created_at)}</span>
+                          </div>
+                        </div>
+
+                        {/* Post Body */}
+                        <div>
+                          <h3 className="font-black text-sm text-slate-900">{p.title}</h3>
+                          <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{p.body}</p>
+                        </div>
+
+                        {/* Multi-Image Gallery */}
+                        {p.images && p.images.length > 0 && (
+                          <div className="pt-2">
+                            <div className={`grid gap-2 ${
+                              p.images.length === 1 ? "grid-cols-1" : p.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
+                            }`}>
+                              {p.images.map((img, i) => (
+                                <div
+                                  key={i}
+                                  onClick={() => setPreviewImageModal(img)}
+                                  className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
+                                >
+                                  <img src={img} alt={`مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
+                                    عرض بالحجم الكامل
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* External Study Links (YouTube & Telegram) */}
+                        {(p.youtubeUrl || p.telegramUrl) && (
+                          <div className="flex items-center gap-2 flex-wrap pt-1">
+                            {p.youtubeUrl && (
+                              <a
+                                href={p.youtubeUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
+                              >
+                                <IconVideo size={13} className="text-red-700" />
+                                <span>{t("watchYoutube")}</span>
+                              </a>
+                            )}
+                            {p.telegramUrl && (
+                              <a
+                                href={p.telegramUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
+                              >
+                                <IconLink size={13} className="text-blue-700" />
+                                <span>{t("openTelegram")}</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Post Actions */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => votePost(p.id, "like")} className={vbtn(postVote === "like", "like")}>
+                              <IconThumbUp size={13} /> {p.likes}
+                            </button>
+                            <button onClick={() => votePost(p.id, "dislike")} className={vbtn(postVote === "dislike", "dislike")}>
+                              <IconThumbDown size={13} /> {p.dislikes}
+                            </button>
+                            <button
+                              onClick={() => toggleBookmark(p.id, "post", p.title, p.author)}
+                              className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
+                                isBookmarked(p.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                              title={isBookmarked(p.id) ? "إزالة من المحفوظات" : "حفظ المنشور في المحفوظات"}
+                            >
+                              <IconBookmark size={12} fill={isBookmarked(p.id) ? "currentColor" : "none"} />
+                              <span>{isBookmarked(p.id) ? t("bookmarked") : t("bookmark")}</span>
+                            </button>
+
+                            {/* Admin Pin / Unpin Button */}
+                            {canAdmin && (
+                              <button
+                                onClick={() => togglePinPost(p.id)}
+                                className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
+                                  isPinned ? "bg-amber-300 text-slate-950" : "bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                                title={isPinned ? t("unpinPost") : t("pinPost")}
+                              >
+                                <IconPin size={12} className={isPinned ? "rotate-45 text-amber-900" : "text-slate-600"} />
+                                <span>{isPinned ? t("unpinPost") : t("pinPost")}</span>
+                              </button>
+                            )}
+
+                            <button onClick={() => reportPost(p.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
+                              <IconFlag size={12} /> {t("report")} ({p.reports || 0}/20)
+                            </button>
+                          </div>
+                          {canDeletePost && (
+                            <button onClick={() => deletePost(p.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
+                              <IconTrash size={12} /> {session?.username === p.author ? t("delete") : t("deleteAdmin")}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Comments Section */}
+                        <div className="bg-slate-50 p-3 border border-slate-200 space-y-2 text-xs">
+                          <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1">
+                            <IconComment size={12} /> {t("commentsCount")} ({p.comments?.length || 0}):
+                          </div>
+                          {(p.comments || []).map(c => {
+                            const commentVote = getUserVote(`comment_${c.id}`);
+                            return (
+                              <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <button onClick={() => { setViewedUser(c.author); setTab("profile"); }} className="flex items-center gap-1.5 hover:opacity-80 text-right">
+                                    <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
+                                    <span className="font-bold text-teal-800">{c.author}: </span>
+                                    <span>{c.text}</span>
+                                  </button>
+                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
+                                </div>
+
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button onClick={() => voteComment(p.id, c.id, "like")} className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
+                                    <IconThumbUp size={10} /> {c.likes}
+                                  </button>
+                                  <button onClick={() => voteComment(p.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
+                                    <IconThumbDown size={10} /> {c.dislikes}
+                                  </button>
+                                  <button onClick={() => reportComment(p.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
+                                    <IconFlag size={9} /> ({c.reports || 0})
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="flex gap-2 pt-1">
+                            <input type="text" id={`comment-${p.id}`} placeholder={t("writeComment")} className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none" />
+                            <button onClick={() => addComment(p.id)} className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700">{t("send")}</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </section>
         )}
 
@@ -3907,6 +4111,36 @@ export default function Home() {
                   {activeTeachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject} - {t.gov})</option>)}
                 </select>
               </div>
+
+              {/* 1-Click Post Tag Selector (Zero typing needed) */}
+              <div>
+                <label className="block font-bold mb-1.5 text-slate-800">
+                  {t("postTypeLabel")}
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {[
+                    { id: "question", label: t("tagQuestion"), icon: <IconHelpCircle size={13} />, color: "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-500", active: "bg-indigo-600 text-white border-slate-900" },
+                    { id: "discussion", label: t("tagDiscussion"), icon: <IconPen size={13} />, color: "bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-400", active: "bg-slate-900 text-white border-slate-900" },
+                    { id: "news", label: t("tagNews"), icon: <IconBolt size={13} />, color: "bg-red-50 hover:bg-red-100 text-red-900 border-red-500", active: "bg-red-600 text-white border-slate-900" },
+                    { id: "tips", label: t("tagTips"), icon: <IconCheck size={13} />, color: "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-500", active: "bg-emerald-600 text-white border-slate-900" },
+                    { id: "booklet", label: t("tagBooklet"), icon: <IconBookmark size={13} />, color: "bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-500", active: "bg-blue-600 text-white border-slate-900" },
+                    { id: "other", label: t("tagOther"), icon: <IconTag size={13} />, color: "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-400", active: "bg-slate-800 text-white border-slate-900" },
+                  ].map(tItem => (
+                    <button
+                      type="button"
+                      key={tItem.id}
+                      onClick={() => setPostTag(tItem.id as PostTag)}
+                      className={`p-2 border-2 text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px ${
+                        postTag === tItem.id ? `${tItem.active} shadow-[2px_2px_0px_#000]` : tItem.color
+                      }`}
+                    >
+                      {tItem.icon}
+                      <span>{tItem.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label className="block font-bold mb-1">العنوان (حد أقصى ١٠٠ حرف)</label>
                 <input type="text" value={postTitle} onChange={e => setPostTitle(e.target.value)} maxLength={100} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder="عنوان المنشور" />

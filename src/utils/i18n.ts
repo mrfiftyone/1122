@@ -37,7 +37,19 @@ export const T_DICT: TranslationDict = {
   showHonorBoard: { ar: "عرض أفضل ١٠ طلاب", en: "Show Top 10 Students" },
   hideHonorBoard: { ar: "إخفاء لوحة الشرف", en: "Hide Honor Board" },
 
-  // Post Card
+  // Post Card & Tags
+  tagAll: { ar: "الكل", en: "All" },
+  tagQuestion: { ar: "سؤال دراسي", en: "Question" },
+  tagDiscussion: { ar: "نقاش عام", en: "Discussion" },
+  tagNews: { ar: "أخبار وزارية", en: "Ministerial News" },
+  tagTips: { ar: "نصائح وملاحظات", en: "Study Tips" },
+  tagBooklet: { ar: "ملازم وتلخيصات", en: "Booklets & Notes" },
+  tagOther: { ar: "أخرى", en: "Other" },
+  postTypeLabel: { ar: "نوع وتصنيف المنشور:", en: "Post Category & Tag:" },
+  filterByTag: { ar: "تصفية حسب الموضوع:", en: "Filter by Tag:" },
+  pinPost: { ar: "تثبيت في الأعلى", en: "Pin to Top" },
+  unpinPost: { ar: "إلغاء التثبيت", en: "Unpin" },
+  pinnedBadge: { ar: "منشور مثبت", en: "Pinned Post" },
   commentsCount: { ar: "التعليقات", en: "Comments" },
   report: { ar: "بلاغ", en: "Report" },
   delete: { ar: "حذف", en: "Delete" },
