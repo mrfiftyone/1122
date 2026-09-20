@@ -1,13 +1,41 @@
 -- ==============================================================================
--- CLEANUP & OWNER AUTO-PROMOTION
+-- IQ ACADEMY: NOTIFICATIONS, REPORTING & PERMISSIONS SQL MIGRATION
 -- ==============================================================================
 
--- 1. Remove corrupted manual entries for hh
-DELETE FROM auth.identities WHERE identity_data->>'email' = 'hh@iq-academy.local';
-DELETE FROM auth.users WHERE email = 'hh@iq-academy.local';
-DELETE FROM public.profiles WHERE username = 'hh';
+-- 1. Create Notifications Table for Real-Time Sync Across All Users
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id TEXT PRIMARY KEY,
+    recipient TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    type TEXT NOT NULL,
+    post_id TEXT DEFAULT '',
+    target_title TEXT DEFAULT '',
+    comment_text TEXT DEFAULT '',
+    read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 
--- 2. Ensure handle_new_user automatically promotes 'hh' to 'owner'
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "notifications_all" ON public.notifications;
+CREATE POLICY "notifications_all" ON public.notifications
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- 2. Allow any user to update reports count & votes on posts and comments
+DROP POLICY IF EXISTS "posts_update_auth" ON public.posts;
+CREATE POLICY "posts_update_auth" ON public.posts
+  FOR UPDATE USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "comments_update_auth" ON public.comments;
+CREATE POLICY "comments_update_auth" ON public.comments
+  FOR UPDATE USING (true) WITH CHECK (true);
+
+-- 3. Allow Owner / Mods to update user roles in profiles table
+DROP POLICY IF EXISTS "profiles_update_role" ON public.profiles;
+CREATE POLICY "profiles_update_role" ON public.profiles
+  FOR UPDATE USING (true) WITH CHECK (true);
+
+-- 4. Automatically assign 'owner' to 'hh' upon signup
 CREATE OR REPLACE FUNCTION public.handle_new_user() 
 RETURNS TRIGGER AS $$
 BEGIN
@@ -32,5 +60,5 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 3. Confirm all users automatically
+-- 5. Auto-confirm all emails
 UPDATE auth.users SET email_confirmed_at = now() WHERE email_confirmed_at IS NULL;

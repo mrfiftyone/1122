@@ -136,7 +136,7 @@ interface NotificationItem {
   id: string;
   recipient: string; // username of recipient
   actor: string; // who triggered notification
-  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected" | "report_alert" | "admin_warning";
+  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected" | "report_alert" | "admin_warning" | "support_reply" | "promotion";
   postId: string;
   targetTitle: string;
   commentText?: string;
@@ -669,10 +669,11 @@ export default function Home() {
   // ─── Fetch from Supabase (Central Shared Database) ─────────────────
   const fetchSupabaseData = useCallback(async () => {
     try {
-      const [pRes, tRes, prRes] = await Promise.all([
+      const [pRes, tRes, prRes, nRes] = await Promise.all([
         supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }),
         supabase.from('teachers').select('*').order('created_at', { ascending: false }),
         supabase.from('profiles').select('*'),
+        supabase.from('notifications').select('*').order('created_at', { ascending: false }),
       ]);
 
       if (pRes.data) {
@@ -749,6 +750,28 @@ export default function Home() {
         });
         setProfilesMap(currentProfiles);
         setProfiles(currentProfiles);
+      }
+
+      if (nRes && nRes.data && nRes.data.length > 0) {
+        const localNotifs = getNotifications();
+        const map = new Map<string, NotificationItem>();
+        localNotifs.forEach(n => map.set(n.id, n));
+        nRes.data.forEach((n: any) => {
+          map.set(n.id, {
+            id: n.id,
+            recipient: n.recipient,
+            actor: n.actor,
+            type: n.type as any,
+            postId: n.post_id || "",
+            targetTitle: n.target_title || "",
+            commentText: n.comment_text || "",
+            read: !!n.read,
+            created_at: n.created_at,
+          });
+        });
+        const mergedNotifs = Array.from(map.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setNotifications(mergedNotifs);
+        setAllNotifications(mergedNotifs);
       }
     } catch (err) {
       console.error("Supabase load error:", err);
@@ -1308,13 +1331,54 @@ export default function Home() {
     localStorage.setItem("report_records_v1", JSON.stringify(list));
     setReportRecordsList(list);
 
-    setPostsList(prev => prev.map(p => p.id === targetId ? { ...p, reports: 0, status: "active" } : p));
+    setPostsList(prev => prev.map(p => {
+      if (p.id === targetId) return { ...p, reports: 0, status: "active" };
+      if (p.comments?.some(c => c.id === targetId)) {
+        return {
+          ...p,
+          comments: p.comments.map(c => c.id === targetId ? { ...c, reports: 0 } : c)
+        };
+      }
+      return p;
+    }));
+
     try {
       await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
+      await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
     } catch (e) {
       console.error("Error dismissing report in Supabase:", e);
     }
     rerender();
+  }
+
+  async function deleteReportRecordOnly(reportId: string, targetId: string, targetType: "post" | "comment") {
+    if (!confirm("هل أنت متأكد من حذف هذا البلاغ؟ سيتم إزالة البلاغ وإتاحة إمكانية الإبلاغ للمستخدمين مجدداً.")) return;
+
+    // Remove from report records
+    const list = getReportRecords().filter(r => r.id !== reportId);
+    localStorage.setItem("report_records_v1", JSON.stringify(list));
+    setReportRecordsList(list);
+
+    if (targetType === "post") {
+      setPostsList(prev => prev.map(p => p.id === targetId ? { ...p, reports: 0, status: "active" } : p));
+      try {
+        await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
+      } catch (e) {
+        console.error("Error resetting post reports in Supabase:", e);
+      }
+    } else {
+      setPostsList(prev => prev.map(p => ({
+        ...p,
+        comments: (p.comments || []).map(c => c.id === targetId ? { ...c, reports: 0 } : c)
+      })));
+      try {
+        await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
+      } catch (e) {
+        console.error("Error resetting comment reports in Supabase:", e);
+      }
+    }
+    rerender();
+    alert("تم حذف البلاغ بنجاح وإعادة تفعيل المحتوى ليكون جاهزاً للإبلاغ من جديد.");
   }
 
   async function adminDeleteReportedItem(targetId: string, targetType: "post" | "comment", reportId?: string) {
@@ -2036,6 +2100,8 @@ export default function Home() {
     if (!replyText || !replyText.trim() || !session) return;
     
     const existing = getSupportTickets();
+    const targetTicket = existing.find(t => t.id === id);
+
     const updated = existing.map(t => {
       if (t.id === id) {
         const newReply: SupportReply = {
@@ -2050,6 +2116,28 @@ export default function Home() {
     });
     setSupportTicketsStorage(updated);
     setSupportTickets(updated);
+
+    // Send notification to the user or admins
+    if (targetTicket) {
+      if (targetTicket.sender !== session.username) {
+        // Admin is replying to student
+        sendNotificationToUser(targetTicket.sender, {
+          type: "support_reply",
+          title: `رد جديد على استفسارك: "${targetTicket.subject}"`,
+          message: replyText.trim(),
+        });
+      } else {
+        // Student replied back -> notify all admins
+        const adminUsers = getUsers().filter(u => u.role === "owner" || u.role === "mod");
+        adminUsers.forEach(adm => {
+          sendNotificationToUser(adm.username, {
+            type: "support_reply",
+            title: `رد من الطالب (${session.username}) على تذكرة: "${targetTicket.subject}"`,
+            message: replyText.trim(),
+          });
+        });
+      }
+    }
     
     setTicketReplyTexts(prev => ({ ...prev, [id]: "" }));
   }
@@ -2082,7 +2170,7 @@ export default function Home() {
 
   function sendNotificationToUser(username: string, payload: { type: string; message: string; title?: string }) {
     const notifs = getNotifications();
-    notifs.unshift({
+    const newNotif: NotificationItem = {
       id: "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
       recipient: username,
       actor: session?.username || "الإدارة",
@@ -2092,9 +2180,23 @@ export default function Home() {
       commentText: payload.message,
       read: false,
       created_at: new Date().toISOString(),
-    });
+    };
+    notifs.unshift(newNotif);
     setNotifications(notifs);
     setAllNotifications(notifs);
+
+    try {
+      supabase.from('notifications').insert([{
+        id: newNotif.id,
+        recipient: newNotif.recipient,
+        actor: newNotif.actor,
+        type: newNotif.type,
+        post_id: newNotif.postId || "",
+        target_title: newNotif.targetTitle,
+        comment_text: newNotif.commentText,
+        read: false
+      }]).then(() => {});
+    } catch (e) {}
   }
 
   function isUserCurrentlyMuted(username: string): { muted: boolean; remainingText?: string; reason?: string } {
@@ -2251,6 +2353,13 @@ export default function Home() {
     target.role = "mod";
     setUsers(allUsers);
 
+    // Persist role update to Supabase
+    try {
+      supabase.from('profiles').update({ role: "mod" }).eq('username', permModalUser).then(() => {});
+    } catch (e) {
+      console.error("Error updating profile role in Supabase:", e);
+    }
+
     const updatedPermsMap = { ...getModPermissions(), [permModalUser]: permForm };
     setModPermissionsStorage(updatedPermsMap);
     setModPermissionsMap(updatedPermsMap);
@@ -2265,7 +2374,8 @@ export default function Home() {
     );
 
     sendNotificationToUser(permModalUser, {
-      type: "badge",
+      type: "promotion",
+      title: wasStudent ? "ترقية إلى رتبة مشرف" : "تحديث صلاحيات الإشراف",
       message: wasStudent
         ? `تهانينا! لقد قام ${session.username} بترقيتك إلى رتبة مشرف مع منحك (${totalGranted}) صلاحية إدارية خاصة.`
         : `تم تحديث صلاحياتك الإشرافية (${totalGranted} صلاحية مفعّلة) من قِبل إدارة المنصة.`,
@@ -2293,6 +2403,13 @@ export default function Home() {
     target.role = "student";
     setUsers(allUsers);
 
+    // Persist role update to Supabase
+    try {
+      supabase.from('profiles').update({ role: "student" }).eq('username', username).then(() => {});
+    } catch (e) {
+      console.error("Error demoting profile role in Supabase:", e);
+    }
+
     const updatedPermsMap = { ...getModPermissions() };
     delete updatedPermsMap[username];
     setModPermissionsStorage(updatedPermsMap);
@@ -2300,7 +2417,8 @@ export default function Home() {
 
     addAuditLog("تخفيض لرتبة طالب", username, "تم سحب صلاحيات الإشراف بالكامل");
     sendNotificationToUser(username, {
-      type: "report",
+      type: "admin_warning",
+      title: "تعديل رتبة الحساب",
       message: "تم تعديل رتبة حسابك إلى طالب عادي وإلغاء صلاحيات الإشراف.",
     });
     rerender();
@@ -4180,6 +4298,11 @@ export default function Home() {
                         setAllNotifications(updated);
                         if (n.type === "report_alert") {
                           setTab("admin");
+                        } else if (n.type === "support_reply") {
+                          setSettingsModal(true);
+                          setSettingsTab("support");
+                        } else if (n.type === "promotion" || (n.type as string) === "badge") {
+                          setTab("admin");
                         } else if (n.type === "teacher_approved" || n.type === "teacher_rejected") {
                           setTab("directory");
                         } else {
@@ -4193,6 +4316,10 @@ export default function Home() {
                           ? "bg-red-50 border-red-500"
                           : n.type === "admin_warning"
                           ? "bg-amber-50 border-amber-500"
+                          : n.type === "promotion" || (n.type as string) === "badge"
+                          ? "bg-blue-50 border-blue-600"
+                          : n.type === "support_reply"
+                          ? "bg-purple-50 border-purple-600"
                           : "bg-emerald-50 border-emerald-600"
                       }`}
                     >
@@ -4214,6 +4341,14 @@ export default function Home() {
                             <div className="w-7 h-7 bg-amber-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
                               <IconShield size={14} />
                             </div>
+                          ) : n.type === "promotion" || (n.type as string) === "badge" ? (
+                            <div className="w-7 h-7 bg-blue-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                              <IconAward size={14} />
+                            </div>
+                          ) : n.type === "support_reply" ? (
+                            <div className="w-7 h-7 bg-purple-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                              <IconLifeBuoy size={14} />
+                            </div>
                           ) : (
                             <Avatar username={n.actor} size="w-7 h-7 text-xs" />
                           )}
@@ -4230,6 +4365,10 @@ export default function Home() {
                               ? "تنبيه إداري: وصل بلاغ عن:"
                               : n.type === "admin_warning"
                               ? "إنذار إداري رسمي:"
+                              : n.type === "promotion" || (n.type as string) === "badge"
+                              ? "ترقية وإشراف إداري:"
+                              : n.type === "support_reply"
+                              ? "رد الدعم الفني:"
                               : "علّق على منشورك:"}
                           </span>
                           <span className="text-xs font-bold text-emerald-800">"{n.targetTitle}"</span>
@@ -5057,10 +5196,18 @@ export default function Home() {
                                       )
                                     )}
                                     <button
+                                      onClick={() => deleteReportRecordOnly(r.id, r.targetId, r.targetType)}
+                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
+                                      title="حذف البلاغ فقط والسماح بالإبلاغ مجدداً"
+                                    >
+                                      <IconTrash size={11} /> حذف البلاغ
+                                    </button>
+                                    <button
                                       onClick={() => adminDeleteReportedItem(r.targetId, r.targetType, r.id)}
                                       className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-500 flex items-center gap-1"
+                                      title="حذف المنشور أو التعليق نفسه نهائياً من الموقع"
                                     >
-                                      <IconTrash size={11} /> حذف نهائي
+                                      <IconTrash size={11} /> حذف المحتوى نهائياً
                                     </button>
                                     {targetPost && targetPost.author && (
                                       <button
