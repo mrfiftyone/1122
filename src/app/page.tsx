@@ -134,12 +134,47 @@ export default function Home() {
   const [editBio, setEditBio] = useState("");
   const [editColor, setEditColor] = useState("#0d9488");
 
+  // Captcha & Lockout State
+  const [captchaNum1, setCaptchaNum1] = useState(3);
+  const [captchaNum2, setCaptchaNum2] = useState(5);
+  const [captchaInput, setCaptchaInput] = useState("");
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  const refreshCaptcha = useCallback(() => {
+    setCaptchaNum1(Math.floor(Math.random() * 9) + 1);
+    setCaptchaNum2(Math.floor(Math.random() * 9) + 1);
+    setCaptchaInput("");
+  }, []);
+
+  // Check existing lockout on load
   useEffect(() => {
     initStorage();
     setSession(getSession());
-    if (!localStorage.getItem("gradesDone")) setGradeModal(true);
+    const lockExpiry = parseInt(localStorage.getItem("login_lockout_until") || "0");
+    const now = Date.now();
+    if (lockExpiry > now) {
+      setLockoutRemaining(Math.ceil((lockExpiry - now) / 1000));
+    }
+    refreshCaptcha();
     setMounted(true);
-  }, []);
+  }, [refreshCaptcha]);
+
+  // Lockout countdown timer
+  useEffect(() => {
+    if (lockoutRemaining <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          localStorage.removeItem("login_lockout_until");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutRemaining]);
 
   if (!mounted) return null;
 
@@ -149,13 +184,34 @@ export default function Home() {
   // ─── Auth ─────────────────────────────────────────────────────────
   function handleAuth() {
     setAuthError("");
+
+    // 1. Lockout check
+    if (!isRegister && lockoutRemaining > 0) {
+      setAuthError(`تسجيل الدخول مقفل مؤقتاً بسبب كثرة المحاولات. يرجى الانتظار ${lockoutRemaining} ثانية.`);
+      return;
+    }
+
     if (!authUser.trim() || !authPass.trim()) { setAuthError("املأ الحقول المطلوبة."); return; }
+
+    // 2. CAPTCHA human verification
+    if (parseInt(captchaInput.trim()) !== (captchaNum1 + captchaNum2)) {
+      setAuthError("رمز التحقق البشري (CAPTCHA) غير صحيح، يرجى المحاولة مجدداً.");
+      refreshCaptcha();
+      return;
+    }
+
     const users = getUsers();
     if (isRegister) {
       if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
-        setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير."); return;
+        setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير.");
+        refreshCaptcha();
+        return;
       }
-      if (users.find(u => u.username === authUser.trim())) { setAuthError("اسم المستخدم موجود مسبقاً."); return; }
+      if (users.find(u => u.username === authUser.trim())) {
+        setAuthError("اسم المستخدم موجود مسبقاً.");
+        refreshCaptcha();
+        return;
+      }
       const newUser: User = { username: authUser.trim(), pass: authPass, role: "student" };
       users.push(newUser);
       setUsers(users);
@@ -164,13 +220,36 @@ export default function Home() {
       setProfiles(p);
       localStorage.setItem("currentUser", JSON.stringify(newUser));
       setSession(newUser);
+      setAuthModal(false);
+      setAuthUser(""); setAuthPass(""); setCaptchaInput("");
+      // Prompt for grades ONLY for new signups
+      setSelectedGrades([]);
+      setGradeModal(true);
     } else {
       const found = users.find(u => u.username === authUser.trim() && u.pass === authPass);
-      if (!found) { setAuthError("خطأ في اسم المستخدم أو كلمة المرور."); return; }
+      if (!found) {
+        const nextFails = failedAttempts + 1;
+        setFailedAttempts(nextFails);
+        refreshCaptcha();
+        if (nextFails >= 5) {
+          const lockUntil = Date.now() + 60 * 1000;
+          localStorage.setItem("login_lockout_until", lockUntil.toString());
+          setLockoutRemaining(60);
+          setFailedAttempts(0);
+          setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
+        } else {
+          setAuthError(`خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`);
+        }
+        return;
+      }
+      // Successful login: reset failed counters
+      setFailedAttempts(0);
+      localStorage.removeItem("login_lockout_until");
       localStorage.setItem("currentUser", JSON.stringify(found));
       setSession(found);
+      setAuthModal(false); setAuthUser(""); setAuthPass(""); setCaptchaInput("");
     }
-    setAuthModal(false); setAuthUser(""); setAuthPass(""); rerender();
+    rerender();
   }
 
   function logout() {
@@ -676,7 +755,14 @@ export default function Home() {
               <h3 className="font-black text-base">{isRegister ? "إنشاء حساب جديد" : "تسجيل الدخول"}</h3>
               <button onClick={() => setAuthModal(false)}><IconX size={16} /></button>
             </div>
-            {authError && <div className="p-2.5 bg-red-100 border border-red-400 text-red-700 text-xs font-bold">{authError}</div>}
+            {authError && <div className="p-2.5 bg-red-100 border border-red-400 text-red-700 text-xs font-bold leading-relaxed">{authError}</div>}
+            
+            {!isRegister && lockoutRemaining > 0 && (
+              <div className="p-2.5 bg-amber-100 border-2 border-amber-600 text-amber-900 text-xs font-bold text-center">
+                ⏳ تم قفل تسجيل الدخول مؤقتاً! يرجى الانتظار: <span className="font-black text-sm">{lockoutRemaining} ثانية</span>
+              </div>
+            )}
+
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block font-bold mb-1">اسم المستخدم</label>
@@ -693,10 +779,46 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <button onClick={handleAuth} className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">{isRegister ? "حساب جديد" : "دخول"}</button>
+
+              {/* CAPTCHA Human Verification */}
+              <div className="bg-slate-50 border-2 border-slate-900 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800 text-xs flex items-center gap-1">
+                    <span>🛡️ التحقق الأمني (CAPTCHA):</span>
+                  </label>
+                  <button type="button" onClick={refreshCaptcha} className="text-[10px] text-emerald-700 font-bold hover:underline">
+                    مسألة أخرى ↻
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="px-3 py-2 bg-white border-2 border-slate-900 font-black text-sm tracking-widest select-none text-slate-800 shadow-[1px_1px_0px_#000]">
+                    {captchaNum1} + {captchaNum2} = ؟
+                  </div>
+                  <input
+                    type="number"
+                    value={captchaInput}
+                    onChange={e => setCaptchaInput(e.target.value)}
+                    className="flex-1 p-2 bg-white border-2 border-slate-900 font-bold text-center text-sm focus:outline-none"
+                    placeholder="اكتب الناتج هنا"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 font-medium">أثبت أنك إنسان لحماية المنصة من الحسابات الوهمية.</p>
+              </div>
+
+              <button
+                onClick={handleAuth}
+                disabled={!isRegister && lockoutRemaining > 0}
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none"
+              >
+                {!isRegister && lockoutRemaining > 0
+                  ? `مقفل مؤقتاً (${lockoutRemaining} ثانية)`
+                  : isRegister ? "حساب جديد" : "دخول"}
+              </button>
             </div>
             <div className="text-center pt-1">
-              <button onClick={() => setIsRegister(!isRegister)} className="text-xs text-emerald-700 font-bold underline">{isRegister ? "لديك حساب؟ سجل دخولك" : "ليس لديك حساب؟ سجل الآن"}</button>
+              <button onClick={() => { setIsRegister(!isRegister); setAuthError(""); refreshCaptcha(); }} className="text-xs text-emerald-700 font-bold underline">
+                {isRegister ? "لديك حساب؟ سجل دخولك" : "ليس لديك حساب؟ سجل الآن"}
+              </button>
             </div>
           </div>
         </div>
