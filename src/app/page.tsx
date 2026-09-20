@@ -12,6 +12,7 @@ import {
 } from "@/utils/icons";
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
+import { supabase } from "@/utils/supabase";
 
 // ─── Types ─────────────────────────────────────────────────────────
 interface User { username: string; pass: string; role: "student" | "mod" | "owner" }
@@ -25,14 +26,15 @@ interface Comment {
   likes: number; dislikes: number; reports: number;
 }
 interface Post {
-  id: string; author: string; teacherId: string;
+  id: string; author: string; teacherId?: string; teacher_id?: string;
   title: string; body: string; grade_level: string;
   likes: number; dislikes: number; reports: number;
   status: "active" | "hidden"; comments: Comment[];
   created_at: string;
 }
 interface Teacher {
-  id: string; createdBy: string; name: string; normalizedName: string;
+  id: string; createdBy?: string; created_by?: string; name: string;
+  normalizedName?: string; normalized_name?: string;
   gov: string; subject: string; grades: string; img: string;
   likes: number; dislikes: number; status: "active" | "pending_custom";
 }
@@ -61,7 +63,7 @@ const AVATAR_COLORS = [
   "#ea580c", "#0891b2", "#4f46e5", "#be185d",
 ];
 
-// ─── LocalStorage Helpers ──────────────────────────────────────────
+// ─── LocalStorage Cache Helpers ─────────────────────────────────────
 function initStorage() {
   if (typeof window === "undefined") return;
   if (!localStorage.getItem("users")) {
@@ -78,40 +80,10 @@ function initStorage() {
       student1: { avatarColor: "#dc2626", bio: "طالب سادس إعدادي", avatarUrl: "" },
     }));
   }
-  if (!localStorage.getItem("teachers")) {
-    localStorage.setItem("teachers", JSON.stringify([
-      { id: "t1", createdBy: "mod1", name: "أستاذ حيدر وليد", normalizedName: normalizeTeacherName("أستاذ حيدر وليد"), gov: "بغداد", subject: "رياضيات", grades: "السادس الاعدادي", img: "https://images.unsplash.com/photo-1544717305-2782549b5136?w=150&h=150&fit=crop", likes: 142, dislikes: 5, status: "active" },
-      { id: "t2", createdBy: "student1", name: "أستاذ علاء الدين", normalizedName: normalizeTeacherName("أستاذ علاء الدين"), gov: "كركوك", subject: "فيزياء", grades: "السادس الإعدادي", img: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop", likes: 89, dislikes: 12, status: "active" },
-    ]));
-  }
-  if (!localStorage.getItem("posts")) {
-    localStorage.setItem("posts", JSON.stringify([
-      {
-        id: "p1", author: "student1", teacherId: "t1",
-        title: "شنو رأيكم بملزمة الفصل الثالث مالته؟",
-        body: "شباب اليوم شفت المحاضرة الأولى، الأستاذ شرحه كلش زين بس عندي استفسار عن طريقة حل المسائل...",
-        grade_level: "السادس إعدادي", likes: 42, dislikes: 3, reports: 2, status: "active",
-        comments: [{ id: "c1", author: "mod1", text: "اليوتيوب كافي وزيادة بس حل كل الوزاريات وياه.", created_at: new Date(Date.now() - 3600000).toISOString(), likes: 5, dislikes: 0, reports: 0 }],
-        created_at: new Date(Date.now() - 7200000).toISOString(),
-      },
-    ]));
-  }
+  if (!localStorage.getItem("teachers")) localStorage.setItem("teachers", JSON.stringify([]));
+  if (!localStorage.getItem("posts")) localStorage.setItem("posts", JSON.stringify([]));
   if (!localStorage.getItem("votes")) localStorage.setItem("votes", JSON.stringify({}));
-  if (!localStorage.getItem("notifications")) {
-    localStorage.setItem("notifications", JSON.stringify([
-      {
-        id: "notif_1",
-        recipient: "student1",
-        actor: "mod1",
-        type: "comment",
-        postId: "p1",
-        targetTitle: "شنو رأيكم بملزمة الفصل الثالث مالته؟",
-        commentText: "اليوتيوب كافي وزيادة بس حل كل الوزاريات وياه.",
-        read: false,
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-      },
-    ]));
-  }
+  if (!localStorage.getItem("notifications")) localStorage.setItem("notifications", JSON.stringify([]));
 }
 
 function getUsers(): User[] { return JSON.parse(localStorage.getItem("users") || "[]"); }
@@ -135,6 +107,12 @@ export default function Home() {
   const [session, setSession] = useState<User | null>(null);
   const [_, setTick] = useState(0);
   const rerender = useCallback(() => setTick(t => t + 1), []);
+
+  // Live Database States
+  const [posts, setPostsList] = useState<Post[]>([]);
+  const [teachers, setTeachersList] = useState<Teacher[]>([]);
+  const [profiles, setProfilesMap] = useState<Record<string, Profile>>({});
+  const [allNotifications, setAllNotifications] = useState<NotificationItem[]>([]);
 
   // Modals
   const [authModal, setAuthModal] = useState(false);
@@ -175,17 +153,137 @@ export default function Home() {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
-  // Check existing lockout on load
+  // ─── Fetch from Supabase (Central Shared Database) ─────────────────
+  const fetchSupabaseData = useCallback(async () => {
+    try {
+      const [pRes, tRes, prRes] = await Promise.all([
+        supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }),
+        supabase.from('teachers').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*'),
+      ]);
+
+      if (pRes.data) {
+        const formattedPosts: Post[] = pRes.data.map((p: any) => ({
+          id: p.id,
+          author: p.author,
+          teacherId: p.teacher_id,
+          teacher_id: p.teacher_id,
+          title: p.title,
+          body: p.body,
+          grade_level: p.grade_level || "General",
+          likes: p.likes || 0,
+          dislikes: p.dislikes || 0,
+          reports: p.reports || 0,
+          status: p.status || "active",
+          comments: (p.comments || []).map((c: any) => ({
+            id: c.id,
+            author: c.author,
+            text: c.text,
+            created_at: c.created_at,
+            likes: c.likes || 0,
+            dislikes: c.dislikes || 0,
+            reports: c.reports || 0,
+          })).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+          created_at: p.created_at,
+        }));
+        setPostsList(formattedPosts);
+        setPosts(formattedPosts);
+      }
+
+      if (tRes.data) {
+        const formattedTeachers: Teacher[] = tRes.data.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          normalizedName: t.normalized_name || normalizeTeacherName(t.name),
+          normalized_name: t.normalized_name,
+          gov: t.gov,
+          subject: t.subject,
+          grades: t.grades || "",
+          img: t.img,
+          likes: t.likes || 0,
+          dislikes: t.dislikes || 0,
+          status: t.status || "active",
+          createdBy: t.created_by,
+        }));
+        setTeachersList(formattedTeachers);
+        setTeachers(formattedTeachers);
+      }
+
+      if (prRes.data && prRes.data.length > 0) {
+        const currentProfiles = getProfiles();
+        prRes.data.forEach((p: any) => {
+          currentProfiles[p.username] = {
+            avatarColor: p.avatar_color || "#0d9488",
+            avatarUrl: currentProfiles[p.username]?.avatarUrl || "",
+            bio: p.bio || currentProfiles[p.username]?.bio || "",
+          };
+        });
+        setProfilesMap(currentProfiles);
+        setProfiles(currentProfiles);
+      }
+    } catch (err) {
+      console.error("Supabase load error:", err);
+    }
+  }, []);
+
+  // Fetch user's votes from Supabase
+  const fetchVotesFromSupabase = useCallback(async (username: string) => {
+    try {
+      const { data } = await supabase.from('votes').select('*').eq('username', username);
+      if (data) {
+        const vMap = getVotes();
+        data.forEach((v: any) => {
+          vMap[`${username}_${v.target_id}`] = v.vote_type;
+        });
+        setVotes(vMap);
+      }
+    } catch (e) {
+      console.error("Error loading votes:", e);
+    }
+  }, []);
+
+  // Initial load & Realtime subscription
   useEffect(() => {
     initStorage();
-    setSession(getSession());
+    const currUser = getSession();
+    setSession(currUser);
+    setPostsList(getPosts());
+    setTeachersList(getTeachers());
+    setProfilesMap(getProfiles());
+    setAllNotifications(getNotifications());
+
+    // Fetch live data immediately
+    fetchSupabaseData();
+    if (currUser) fetchVotesFromSupabase(currUser.username);
+
+    // Listen to Supabase Realtime updates from any user
+    const channel = supabase
+      .channel('public-global-feed')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+        fetchSupabaseData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+        fetchSupabaseData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, () => {
+        fetchSupabaseData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, () => {
+        fetchSupabaseData();
+      })
+      .subscribe();
+
     const lockExpiry = parseInt(localStorage.getItem("login_lockout_until") || "0");
     const now = Date.now();
     if (lockExpiry > now) {
       setLockoutRemaining(Math.ceil((lockExpiry - now) / 1000));
     }
     setMounted(true);
-  }, []);
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchSupabaseData, fetchVotesFromSupabase]);
 
   // Lockout countdown timer
   useEffect(() => {
@@ -205,14 +303,12 @@ export default function Home() {
 
   if (!mounted) return null;
 
-  const profiles = getProfiles();
   const getProfile = (u: string): Profile => profiles[u] || { avatarColor: "#94a3b8", bio: "", avatarUrl: "" };
 
   // ─── Auth ─────────────────────────────────────────────────────────
   function handleAuth() {
     setAuthError("");
 
-    // 1. Lockout check
     if (!isRegister && lockoutRemaining > 0) {
       setAuthError(`تسجيل الدخول مقفل مؤقتاً بسبب كثرة المحاولات. يرجى الانتظار ${lockoutRemaining} ثانية.`);
       return;
@@ -220,7 +316,6 @@ export default function Home() {
 
     if (!authUser.trim() || !authPass.trim()) { setAuthError("املأ الحقول المطلوبة."); return; }
 
-    // 2. Cloudflare Turnstile verification
     if (!turnstileToken) {
       setAuthError("يرجى إكمال التحقق الأمني من Cloudflare أولاً.");
       return;
@@ -244,11 +339,11 @@ export default function Home() {
       const p = getProfiles();
       p[newUser.username] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
       setProfiles(p);
+      setProfilesMap(p);
       localStorage.setItem("currentUser", JSON.stringify(newUser));
       setSession(newUser);
       setAuthModal(false);
       setAuthUser(""); setAuthPass(""); setTurnstileToken(null);
-      // Prompt for grades ONLY for new signups
       setSelectedGrades([]);
       setGradeModal(true);
     } else {
@@ -268,11 +363,11 @@ export default function Home() {
         }
         return;
       }
-      // Successful login: reset failed counters
       setFailedAttempts(0);
       localStorage.removeItem("login_lockout_until");
       localStorage.setItem("currentUser", JSON.stringify(found));
       setSession(found);
+      fetchVotesFromSupabase(found.username);
       setAuthModal(false); setAuthUser(""); setAuthPass(""); setTurnstileToken(null);
     }
     rerender();
@@ -285,26 +380,25 @@ export default function Home() {
     rerender();
   }
 
-  // ─── Voting (single vote per user per item, changeable) ────────────
-  function castVote(itemKey: string, type: "like" | "dislike", updateFn: (delta: { likes: number; dislikes: number }) => void) {
+  // ─── Voting (Persisted to Supabase & Central Database) ────────────
+  async function castVote(itemKey: string, type: "like" | "dislike", updateFn: (delta: { likes: number; dislikes: number }) => void) {
     if (!session) { setAuthModal(true); return; }
 
-    // Owner super-voting bypass
+    let amount = 1;
     if (session.role === "owner") {
       const val = prompt("أنت المالك. أدخل عدد الأصوات:", "1");
-      const amount = parseInt(val || "1") || 1;
+      amount = parseInt(val || "1") || 1;
       updateFn({ likes: type === "like" ? amount : 0, dislikes: type === "dislike" ? amount : 0 });
-      // Log in votes ledger
-      const votes = getVotes();
-      votes[`${session.username}_${itemKey}`] = type;
-      setVotes(votes);
-      rerender(); return;
+      const votesMap = getVotes();
+      votesMap[`${session.username}_${itemKey}`] = type;
+      setVotes(votesMap);
+      rerender();
+      return;
     }
 
-    const votes = getVotes();
+    const votesMap = getVotes();
     const voteKey = `${session.username}_${itemKey}`;
-    const existing = votes[voteKey];
-
+    const existing = votesMap[voteKey];
     if (existing === type) return;
 
     let delta = { likes: 0, dislikes: 0 };
@@ -313,9 +407,39 @@ export default function Home() {
     }
     if (type === "like") delta.likes += 1; else delta.dislikes += 1;
 
-    votes[voteKey] = type;
-    setVotes(votes);
+    votesMap[voteKey] = type;
+    setVotes(votesMap);
     updateFn(delta);
+
+    // Save to Supabase Central Database
+    try {
+      await supabase.from('votes').upsert([
+        { username: session.username, target_id: itemKey, vote_type: type }
+      ], { onConflict: 'username,target_id' });
+
+      if (itemKey.startsWith("post_")) {
+        const pid = itemKey.replace("post_", "");
+        const target = posts.find(p => p.id === pid);
+        if (target) {
+          await supabase.from('posts').update({
+            likes: Math.max(0, target.likes + delta.likes),
+            dislikes: Math.max(0, target.dislikes + delta.dislikes),
+          }).eq('id', pid);
+        }
+      } else if (itemKey.startsWith("teacher_")) {
+        const tid = itemKey.replace("teacher_", "");
+        const target = teachers.find(t => t.id === tid);
+        if (target) {
+          await supabase.from('teachers').update({
+            likes: Math.max(0, target.likes + delta.likes),
+            dislikes: Math.max(0, target.dislikes + delta.dislikes),
+          }).eq('id', tid);
+        }
+      }
+    } catch (e) {
+      console.error("Error persisting vote to Supabase:", e);
+    }
+
     rerender();
   }
 
@@ -324,149 +448,281 @@ export default function Home() {
     return getVotes()[`${session.username}_${itemKey}`] || null;
   }
 
-  // ─── Post Handlers ────────────────────────────────────────────────
-  function submitPost() {
-    if (!session) return;
-    if (!postTitle.trim() || !postBody.trim()) return;
-    if (!postTeacher) { alert("يجب اختيار مدرس للمنشور."); return; }
+  // ─── Post Handlers (Persisted to Supabase) ─────────────────────────
+  async function submitPost() {
+    if (!session || !postTitle.trim() || !postBody.trim() || !postTeacher) return;
     if (postTitle.length > 100 || postBody.length > 1500) return;
     if (containsProfanity(postTitle) || containsProfanity(postBody)) { alert("المحتوى يحتوي على كلمات غير مسموح بها."); return; }
-    const posts = getPosts();
-    posts.unshift({
-      id: "p_" + Date.now(), author: session.username, teacherId: postTeacher,
-      title: postTitle.trim(), body: postBody.trim(), grade_level: postGrade,
-      likes: 0, dislikes: 0, reports: 0, status: "active",
-      comments: [], created_at: new Date().toISOString(),
-    });
-    setPosts(posts);
+
+    const newPostPayload = {
+      author: session.username,
+      teacher_id: postTeacher,
+      title: postTitle.trim(),
+      body: postBody.trim(),
+      grade_level: postGrade,
+      likes: 0,
+      dislikes: 0,
+      reports: 0,
+      status: "active",
+    };
+
+    // Optimistic UI update
+    const tempPost: Post = {
+      id: "temp_" + Date.now(),
+      author: session.username,
+      teacherId: postTeacher,
+      teacher_id: postTeacher,
+      title: postTitle.trim(),
+      body: postBody.trim(),
+      grade_level: postGrade,
+      likes: 0,
+      dislikes: 0,
+      reports: 0,
+      status: "active",
+      comments: [],
+      created_at: new Date().toISOString(),
+    };
+    setPostsList(prev => [tempPost, ...prev]);
+
+    // Send to Supabase
+    try {
+      const { data, error } = await supabase.from('posts').insert([newPostPayload]).select('*, comments(*)').single();
+      if (!error && data) {
+        fetchSupabaseData();
+      }
+    } catch (e) {
+      console.error("Error creating post in Supabase:", e);
+    }
+
     setPostTitle(""); setPostBody(""); setPostGrade("General"); setPostTeacher("");
     setPostModal(false); rerender();
   }
 
   function votePost(postId: string, type: "like" | "dislike") {
     castVote(`post_${postId}`, type, (delta) => {
-      const posts = getPosts();
-      const p = posts.find(x => x.id === postId);
-      if (!p) return;
-      p.likes += delta.likes; p.dislikes += delta.dislikes;
-      setPosts(posts);
+      setPostsList(prev => prev.map(p => p.id === postId ? { ...p, likes: p.likes + delta.likes, dislikes: p.dislikes + delta.dislikes } : p));
     });
   }
 
-  function reportPost(postId: string) {
+  async function reportPost(postId: string) {
     if (!session) { setAuthModal(true); return; }
-    const posts = getPosts();
     const p = posts.find(x => x.id === postId);
     if (!p) return;
-    p.reports = (p.reports || 0) + 1;
-    if (p.reports >= 20) p.status = "hidden";
-    setPosts(posts); rerender();
+    const newReports = (p.reports || 0) + 1;
+    const newStatus = newReports >= 20 ? "hidden" : p.status;
+
+    setPostsList(prev => prev.map(item => item.id === postId ? { ...item, reports: newReports, status: newStatus as any } : item));
+
+    try {
+      await supabase.from('posts').update({ reports: newReports, status: newStatus }).eq('id', postId);
+    } catch (e) {}
+
+    rerender();
     alert("تم إرسال البلاغ.");
   }
 
-  function addComment(postId: string) {
+  async function addComment(postId: string) {
     if (!session) { setAuthModal(true); return; }
     const input = document.getElementById(`comment-${postId}`) as HTMLInputElement;
     if (!input || !input.value.trim()) return;
     if (containsProfanity(input.value)) { alert("التعليق يحتوي على كلمات غير مسموح بها."); return; }
-    const posts = getPosts();
-    const p = posts.find(x => x.id === postId);
-    if (!p) return;
-    const commentText = input.value.trim();
-    p.comments.push({ id: "c_" + Date.now(), author: session.username, text: commentText, created_at: new Date().toISOString(), likes: 0, dislikes: 0, reports: 0 });
-    setPosts(posts);
 
-    // Trigger Notification if commenting on someone else's post
-    if (p.author !== session.username) {
+    const commentText = input.value.trim();
+
+    // Optimistic UI update
+    const tempComment: Comment = {
+      id: "temp_c_" + Date.now(),
+      author: session.username,
+      text: commentText,
+      created_at: new Date().toISOString(),
+      likes: 0,
+      dislikes: 0,
+      reports: 0,
+    };
+
+    setPostsList(prev => prev.map(p => {
+      if (p.id === postId) {
+        return { ...p, comments: [...(p.comments || []), tempComment] };
+      }
+      return p;
+    }));
+
+    // Trigger notification if replying to another user
+    const targetPost = posts.find(p => p.id === postId);
+    if (targetPost && targetPost.author !== session.username) {
       const notifs = getNotifications();
       notifs.unshift({
         id: "notif_" + Date.now(),
-        recipient: p.author,
+        recipient: targetPost.author,
         actor: session.username,
         type: "comment",
-        postId: p.id,
-        targetTitle: p.title,
+        postId: targetPost.id,
+        targetTitle: targetPost.title,
         commentText: commentText,
         read: false,
         created_at: new Date().toISOString(),
       });
       setNotifications(notifs);
+      setAllNotifications(notifs);
     }
 
-    input.value = ""; rerender();
+    input.value = "";
+
+    // Send to Supabase Central Database
+    try {
+      await supabase.from('comments').insert([{
+        post_id: postId,
+        author: session.username,
+        text: commentText,
+        likes: 0,
+        dislikes: 0,
+        reports: 0,
+      }]);
+      fetchSupabaseData();
+    } catch (e) {
+      console.error("Error creating comment in Supabase:", e);
+    }
+
+    rerender();
   }
 
   function voteComment(postId: string, commentId: string, type: "like" | "dislike") {
     castVote(`comment_${commentId}`, type, (delta) => {
-      const posts = getPosts();
-      const p = posts.find(x => x.id === postId);
-      if (!p) return;
-      const c = p.comments.find(x => x.id === commentId);
-      if (!c) return;
-      c.likes += delta.likes; c.dislikes += delta.dislikes;
-      setPosts(posts);
+      setPostsList(prev => prev.map(p => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            comments: p.comments.map(c => c.id === commentId ? { ...c, likes: c.likes + delta.likes, dislikes: c.dislikes + delta.dislikes } : c),
+          };
+        }
+        return p;
+      }));
     });
   }
 
-  function reportComment(postId: string, commentId: string) {
+  async function reportComment(postId: string, commentId: string) {
     if (!session) { setAuthModal(true); return; }
-    const posts = getPosts();
-    const p = posts.find(x => x.id === postId);
-    if (!p) return;
-    const c = p.comments.find(x => x.id === commentId);
-    if (!c) return;
-    c.reports = (c.reports || 0) + 1;
-    setPosts(posts); rerender();
+    setPostsList(prev => prev.map(p => {
+      if (p.id === postId) {
+        return {
+          ...p,
+          comments: p.comments.map(c => c.id === commentId ? { ...c, reports: (c.reports || 0) + 1 } : c),
+        };
+      }
+      return p;
+    }));
+    try {
+      const targetPost = posts.find(p => p.id === postId);
+      const targetComment = targetPost?.comments.find(c => c.id === commentId);
+      if (targetComment) {
+        await supabase.from('comments').update({ reports: (targetComment.reports || 0) + 1 }).eq('id', commentId);
+      }
+    } catch (e) {}
+    rerender();
     alert("تم إرسال بلاغ التعليق.");
   }
 
-  function deletePost(postId: string) {
-    const posts = getPosts().filter(p => p.id !== postId);
-    setPosts(posts); rerender();
+  async function deletePost(postId: string) {
+    setPostsList(prev => prev.filter(p => p.id !== postId));
+    try {
+      await supabase.from('posts').delete().eq('id', postId);
+      fetchSupabaseData();
+    } catch (e) {
+      console.error("Error deleting post from Supabase:", e);
+    }
+    rerender();
   }
 
-  // ─── Teacher Handlers ─────────────────────────────────────────────
-  function submitTeacher() {
-    if (!session) return;
-    if (!tName.trim() || !tSubject.trim()) return;
-    if (!tImg.trim()) { alert("يجب إضافة رابط صورة المدرس."); return; }
-    const teachers = getTeachers();
+  // ─── Teacher Handlers (Persisted to Supabase) ──────────────────────
+  async function submitTeacher() {
+    if (!session || !tName.trim() || !tSubject.trim() || !tImg.trim()) return;
     const normalized = normalizeTeacherName(tName.trim());
-    const isDupe = teachers.some(t => t.normalizedName === normalized && t.subject === tSubject.trim() && t.gov === tGov);
+    const isDupe = teachers.some(t => (t.normalizedName === normalized || t.normalized_name === normalized) && t.subject === tSubject.trim() && t.gov === tGov);
     if (isDupe) { alert("هذا المدرس موجود مسبقاً في الدليل!"); return; }
-    teachers.push({
-      id: "t_" + Date.now(), createdBy: session.username,
-      name: tName.trim(), normalizedName: normalized,
-      gov: tGov, subject: tSubject.trim(), grades: tGrades, img: tImg.trim(),
-      likes: 0, dislikes: 0, status: "active",
-    });
-    setTeachers(teachers);
+
+    const teacherPayload = {
+      name: tName.trim(),
+      normalized_name: normalized,
+      gov: tGov,
+      subject: tSubject.trim(),
+      grades: tGrades,
+      img: tImg.trim(),
+      status: "active",
+      likes: 0,
+      dislikes: 0,
+      created_by: session.username,
+    };
+
+    // Optimistic UI update
+    const tempTeacher: Teacher = {
+      id: "temp_t_" + Date.now(),
+      createdBy: session.username,
+      name: tName.trim(),
+      normalizedName: normalized,
+      gov: tGov,
+      subject: tSubject.trim(),
+      grades: tGrades,
+      img: tImg.trim(),
+      likes: 0,
+      dislikes: 0,
+      status: "active",
+    };
+    setTeachersList(prev => [tempTeacher, ...prev]);
+
+    // Send to Supabase
+    try {
+      await supabase.from('teachers').insert([teacherPayload]);
+      fetchSupabaseData();
+    } catch (e) {
+      console.error("Error creating teacher in Supabase:", e);
+    }
+
     setTName(""); setTSubject(""); setTGrades(""); setTImg("");
     setTeacherModal(false); rerender();
-    alert("تمت إضافة الأستاذ بنجاح!");
+    alert("تمت إضافة الأستاذ بنجاح للجميع!");
   }
 
   function voteTeacher(teacherId: string, type: "like" | "dislike") {
     castVote(`teacher_${teacherId}`, type, (delta) => {
-      const teachers = getTeachers();
-      const t = teachers.find(x => x.id === teacherId);
-      if (!t) return;
-      t.likes += delta.likes; t.dislikes += delta.dislikes;
-      setTeachers(teachers);
+      setTeachersList(prev => prev.map(t => t.id === teacherId ? { ...t, likes: t.likes + delta.likes, dislikes: t.dislikes + delta.dislikes } : t));
     });
   }
 
-  // ─── Admin ────────────────────────────────────────────────────────
-  function approveTeacher(id: string) { const t = getTeachers(); const x = t.find(i => i.id === id); if (x) x.status = "active"; setTeachers(t); rerender(); }
-  function restorePost(id: string) { const p = getPosts(); const x = p.find(i => i.id === id); if (x) { x.status = "active"; x.reports = 0; } setPosts(p); rerender(); }
-  function hidePost(id: string) { const p = getPosts(); const x = p.find(i => i.id === id); if (x) x.status = "hidden"; setPosts(p); rerender(); }
+  // ─── Admin Handlers ───────────────────────────────────────────────
+  async function approveTeacher(id: string) {
+    setTeachersList(prev => prev.map(t => t.id === id ? { ...t, status: "active" } : t));
+    try {
+      await supabase.from('teachers').update({ status: 'active' }).eq('id', id);
+      fetchSupabaseData();
+    } catch (e) {}
+    rerender();
+  }
 
-  // ─── Profile ──────────────────────────────────────────────────────
+  async function restorePost(id: string) {
+    setPostsList(prev => prev.map(p => p.id === id ? { ...p, status: "active", reports: 0 } : p));
+    try {
+      await supabase.from('posts').update({ status: 'active', reports: 0 }).eq('id', id);
+      fetchSupabaseData();
+    } catch (e) {}
+    rerender();
+  }
+
+  async function hidePost(id: string) {
+    setPostsList(prev => prev.map(p => p.id === id ? { ...p, status: "hidden" } : p));
+    try {
+      await supabase.from('posts').update({ status: 'hidden' }).eq('id', id);
+      fetchSupabaseData();
+    } catch (e) {}
+    rerender();
+  }
+
+  // ─── Profile Handlers ─────────────────────────────────────────────
   function saveProfile() {
     if (!session) return;
     const p = getProfiles();
     p[session.username] = { avatarColor: editColor, bio: editBio, avatarUrl: editPfpUrl };
     setProfiles(p);
+    setProfilesMap(p);
     setProfileModal(false); rerender();
   }
 
@@ -493,10 +749,7 @@ export default function Home() {
   // ─── Grade onboarding ─────────────────────────────────────────────
   function completeGrades() { localStorage.setItem("gradesDone", JSON.stringify(selectedGrades)); setGradeModal(false); }
 
-  // ─── Data ──────────────────────────────────────────────────────────
-  const posts = getPosts();
-  const teachers = getTeachers();
-  const allNotifications = getNotifications();
+  // ─── Data Views ───────────────────────────────────────────────────
   const myNotifications = session ? allNotifications.filter(n => n.recipient === session.username) : [];
   const unreadCount = myNotifications.filter(n => !n.read).length;
 
@@ -504,6 +757,7 @@ export default function Home() {
     if (!session) return;
     const updated = allNotifications.map(n => n.recipient === session.username ? { ...n, read: true } : n);
     setNotifications(updated);
+    setAllNotifications(updated);
     rerender();
   }
 
@@ -701,7 +955,7 @@ export default function Home() {
                 <IconPen size={24} className="text-emerald-primary" />
                 <div>
                   <h2 className="font-black text-base text-slate-900">ساحة النقاش العامة</h2>
-                  <p className="text-xs text-slate-600">اطرح سؤالك أو شارك تجربتك مع بقية الطلاب</p>
+                  <p className="text-xs text-slate-600">اطرح سؤالك أو شارك تجربتك مع بقية الطلاب في عموم العراق</p>
                 </div>
               </div>
               <button onClick={() => { if (!session) { setAuthModal(true); return; } setPostModal(true); }}
@@ -711,11 +965,13 @@ export default function Home() {
             </div>
 
             {activePosts.length === 0 ? (
-              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 text-center text-xs font-bold text-slate-500">لا توجد منشورات حالياً.</div>
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
+                لا توجد منشورات حالياً. كن أول من يطرح نقاشاً!
+              </div>
             ) : (
               <div className="space-y-5">
                 {activePosts.map(p => {
-                  const teacher = teachers.find(t => t.id === p.teacherId);
+                  const teacher = teachers.find(t => t.id === p.teacherId || t.id === p.teacher_id);
                   const canEditPost = session?.username === p.author && isWithinEditWindow(p.created_at);
                   const postVote = getUserVote(`post_${p.id}`);
                   return (
@@ -739,7 +995,7 @@ export default function Home() {
                       {/* Post Body */}
                       <div>
                         <h3 className="font-black text-sm text-slate-900">{p.title}</h3>
-                        <p className="text-xs text-slate-700 mt-1 leading-relaxed">{p.body}</p>
+                        <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{p.body}</p>
                       </div>
 
                       {/* Post Actions */}
@@ -764,8 +1020,8 @@ export default function Home() {
 
                       {/* Comments Section */}
                       <div className="bg-slate-50 p-3 border border-slate-200 space-y-2 text-xs">
-                        <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1"><IconComment size={12} /> التعليقات ({p.comments.length}):</div>
-                        {p.comments.map(c => {
+                        <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1"><IconComment size={12} /> التعليقات ({p.comments?.length || 0}):</div>
+                        {(p.comments || []).map(c => {
                           const commentVote = getUserVote(`comment_${c.id}`);
                           return (
                             <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
@@ -820,7 +1076,9 @@ export default function Home() {
             </div>
 
             {filteredTeachers.length === 0 ? (
-              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 text-center text-xs font-bold">لا توجد نتائج.</div>
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
+                لا توجد نتائج مطابقة للبحث في الدليل.
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredTeachers.map(t => {
@@ -879,9 +1137,9 @@ export default function Home() {
                   <div
                     key={n.id}
                     onClick={() => {
-                      // Mark this one read and go to feed
                       const updated = allNotifications.map(item => item.id === n.id ? { ...item, read: true } : item);
                       setNotifications(updated);
+                      setAllNotifications(updated);
                       setTab("feed");
                     }}
                     className={`p-4 border-2 transition-all cursor-pointer shadow-[2px_2px_0px_#d1dcd6] ${n.read ? "bg-white border-border-subtle" : "bg-emerald-50 border-emerald-600"}`}
@@ -1010,7 +1268,6 @@ export default function Home() {
                     combinedActivities.map(item => (
                       <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-2 relative">
                         <div className="flex items-center justify-between">
-                          {/* Label: Post or Comment */}
                           <span className={`px-2.5 py-0.5 text-[10px] font-black border border-slate-900 uppercase tracking-widest ${
                             item.kind === "post"
                               ? "bg-emerald-100 text-emerald-900"
@@ -1045,7 +1302,7 @@ export default function Home() {
                 <IconShield size={20} className="text-red-700" />
                 <div>
                   <h2 className="font-black text-base text-red-800">لوحة التحكم والإشراف</h2>
-                  <p className="text-xs text-red-600 mt-0.5">إدارة المحتوى المبلغ عنه والطلبات</p>
+                  <p className="text-xs text-red-600 mt-0.5">إدارة المحتوى المبلغ عنه والطلبات على قاعدة البيانات المركزية</p>
                 </div>
               </div>
               <span className="px-3 py-1 bg-red-600 text-white font-black text-[10px] border border-slate-900">صلاحيات المالك</span>
@@ -1057,7 +1314,7 @@ export default function Home() {
                   <h3 className="font-black text-sm flex items-center gap-1"><IconInbox size={14} /> طلبات الأساتذة المعلقة</h3>
                   <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">{pendingTeachers.length}</span>
                 </div>
-                {pendingTeachers.length === 0 ? <div className="text-xs text-slate-400">لا توجد طلبات.</div> : pendingTeachers.map(t => (
+                {pendingTeachers.length === 0 ? <div className="text-xs text-slate-400">لا توجد طلبات معلقة.</div> : pendingTeachers.map(t => (
                   <div key={t.id} className="bg-white p-2 border border-slate-900 text-xs flex justify-between items-center">
                     <span>{t.name} ({t.subject})</span>
                     <button onClick={() => approveTeacher(t.id)} className="px-2 py-1 bg-emerald-600 text-white font-bold">قبول</button>
