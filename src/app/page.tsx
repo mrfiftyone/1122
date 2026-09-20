@@ -13,6 +13,7 @@ import {
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
+  IconKey, IconClock,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -173,12 +174,58 @@ export interface PlatformSettings {
   allowReviews: boolean;
 }
 
+export interface ModPermissions {
+  // Standard Moderation Powers
+  canApproveTeachers: boolean;
+  canModeratePosts: boolean;
+  canManageTickets: boolean;
+  canDisciplineUsers: boolean;
+  canManageWordFilter: boolean;
+  // Owner Delegated Powers
+  canManageAnnouncements: boolean;
+  canViewAuditLog: boolean;
+  canManagePlatformToggles: boolean;
+  canToggleMaintenance: boolean;
+  canExportData: boolean;
+  canManageStaff: boolean;
+}
+
+export const DEFAULT_MOD_PERMISSIONS: ModPermissions = {
+  canApproveTeachers: true,
+  canModeratePosts: true,
+  canManageTickets: true,
+  canDisciplineUsers: true,
+  canManageWordFilter: true,
+  canManageAnnouncements: false,
+  canViewAuditLog: false,
+  canManagePlatformToggles: false,
+  canToggleMaintenance: false,
+  canExportData: false,
+  canManageStaff: false,
+};
+
+export const FULL_OWNER_PERMISSIONS: ModPermissions = {
+  canApproveTeachers: true,
+  canModeratePosts: true,
+  canManageTickets: true,
+  canDisciplineUsers: true,
+  canManageWordFilter: true,
+  canManageAnnouncements: true,
+  canViewAuditLog: true,
+  canManagePlatformToggles: true,
+  canToggleMaintenance: true,
+  canExportData: true,
+  canManageStaff: true,
+};
+
 export interface SiteAnnouncement {
   active: boolean;
   text: string;
   type: "ministerial" | "warning" | "info";
   linkText?: string;
   linkUrl?: string;
+  expiresAt?: number | null;
+  createdAt?: string;
 }
 
 const GRADES = [
@@ -347,6 +394,15 @@ function setCustomBannedWords(w: string[]) {
   localStorage.setItem("custom_banned_words", JSON.stringify(w));
 }
 
+function getModPermissions(): Record<string, ModPermissions> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem("mod_permissions_v1") || "{}"); } catch { return {}; }
+}
+function setModPermissionsStorage(perms: Record<string, ModPermissions>) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem("mod_permissions_v1", JSON.stringify(perms)); } catch {}
+}
+
 
 // ─── Main Component ───────────────────────────────────────────────
 export default function Home() {
@@ -440,11 +496,13 @@ export default function Home() {
     active: false,
     text: "",
     type: "ministerial",
+    expiresAt: null,
   });
   const [auditLogs, setAuditLogsState] = useState<AuditLogItem[]>([]);
   const [mutedUsers, setMutedUsersState] = useState<Record<string, UserMuteInfo>>({});
   const [userStrikes, setUserStrikesState] = useState<Record<string, { count: number; history: UserStrikeItem[] }>>({});
   const [customBannedWords, setCustomBannedWordsState] = useState<string[]>([]);
+  const [modPermissionsMap, setModPermissionsMap] = useState<Record<string, ModPermissions>>({});
   const [adminSubTab, setAdminSubTab] = useState<"moderation" | "announcement" | "audit" | "filter" | "owner">("moderation");
 
   // Admin interactive input states
@@ -456,8 +514,16 @@ export default function Home() {
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementType, setAnnouncementType] = useState<"ministerial" | "warning" | "info">("ministerial");
   const [announcementActive, setAnnouncementActive] = useState(false);
+  const [announcementDuration, setAnnouncementDuration] = useState<"never" | "1h" | "6h" | "12h" | "24h" | "3d" | "7d">("never");
   const [newBannedWordInput, setNewBannedWordInput] = useState("");
   const [filterTestSentence, setFilterTestSentence] = useState("");
+
+  // Staff governance & Granular permissions state
+  const [staffSearchQuery, setStaffSearchQuery] = useState("");
+  const [staffRoleFilter, setStaffRoleFilter] = useState<"all" | "mod" | "student">("all");
+  const [permModalUser, setPermModalUser] = useState<string | null>(null);
+  const [permModalRole, setPermModalRole] = useState<"student" | "mod">("student");
+  const [permForm, setPermForm] = useState<ModPermissions>(DEFAULT_MOD_PERMISSIONS);
 
   // Notifications Filter
   const [notifFilter, setNotifFilter] = useState<"all" | "unread" | "reports">("all");
@@ -496,6 +562,17 @@ export default function Home() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  const canOwner = !!(session && session.role === "owner");
+  const canAdmin = !!(session && (session.role === "owner" || session.role === "mod"));
+
+  function hasPermission(perm: keyof ModPermissions): boolean {
+    if (!session) return false;
+    if (session.role === "owner") return true;
+    if (session.role !== "mod") return false;
+    const perms = modPermissionsMap[session.username] || DEFAULT_MOD_PERMISSIONS;
+    return !!perms[perm];
+  }
 
   // ─── Fetch from Supabase (Central Shared Database) ─────────────────
   const fetchSupabaseData = useCallback(async () => {
@@ -625,6 +702,7 @@ export default function Home() {
     setMutedUsersState(getMutedUsers());
     setUserStrikesState(getUserStrikes());
     setCustomBannedWordsState(getCustomBannedWords());
+    setModPermissionsMap(getModPermissions());
 
     const savedTheme = (localStorage.getItem("iq_site_theme") as any) || "light";
     const savedLang = (localStorage.getItem("iq_site_lang") as any) || "ar";
@@ -634,6 +712,16 @@ export default function Home() {
     // Fetch live data immediately
     fetchSupabaseData();
     if (currUser) fetchVotesFromSupabase(currUser.username);
+
+    // Auto-check announcement expiration every 30 seconds
+    const expireCheckInterval = setInterval(() => {
+      const currentAnn = getSiteAnnouncement();
+      if (currentAnn.active && currentAnn.expiresAt && currentAnn.expiresAt <= Date.now()) {
+        currentAnn.active = false;
+        setSiteAnnouncement(currentAnn);
+        setSiteAnnouncementState({ ...currentAnn });
+      }
+    }, 30000);
 
     // Read profile or user query parameter if present
     try {
@@ -674,6 +762,7 @@ export default function Home() {
     setMounted(true);
 
     return () => {
+      clearInterval(expireCheckInterval);
       supabase.removeChannel(channel);
     };
   }, [fetchSupabaseData, fetchVotesFromSupabase]);
@@ -1897,30 +1986,67 @@ export default function Home() {
     alert(`تم توجيه الإنذار للمستخدم ${username} بنجاح.`);
   }
 
-  function handlePromoteToMod(username: string) {
-    if (!session || session.role !== "owner") {
-      alert("صلاحية تعيين المشرفين مقتصرة حصرياً على مالك المنصة!");
+  function openModPermissionModal(username: string) {
+    if (!session || (!canOwner && !hasPermission("canManageStaff"))) {
+      alert("صلاحية تعيين المشرفين وتحديد الصلاحيات مقتصرة على المالك أو الإداري المفوض!");
       return;
     }
     const allUsers = getUsers();
     const target = allUsers.find(u => u.username === username);
     if (!target) return;
-    if (target.role === "owner") return;
+    if (target.role === "owner") {
+      alert("لا يمكن تعديل صلاحيات مالك المنصة!");
+      return;
+    }
 
+    const currentRole = target.role as "student" | "mod";
+    const existingPerms = modPermissionsMap[username] || (currentRole === "mod" ? DEFAULT_MOD_PERMISSIONS : DEFAULT_MOD_PERMISSIONS);
+
+    setPermModalUser(username);
+    setPermModalRole(currentRole);
+    setPermForm({ ...existingPerms });
+  }
+
+  function handleSaveModPermissions() {
+    if (!session || (!canOwner && !hasPermission("canManageStaff"))) return;
+    if (!permModalUser) return;
+
+    const allUsers = getUsers();
+    const target = allUsers.find(u => u.username === permModalUser);
+    if (!target || target.role === "owner") return;
+
+    const wasStudent = target.role === "student";
     target.role = "mod";
     setUsers(allUsers);
-    addAuditLog("ترقية لرتبة مشرف", username, "تمت الترقية إلى رتبة مشرف (mod) بواسطة المالك");
-    sendNotificationToUser(username, {
+
+    const updatedPermsMap = { ...getModPermissions(), [permModalUser]: permForm };
+    setModPermissionsStorage(updatedPermsMap);
+    setModPermissionsMap(updatedPermsMap);
+
+    const totalGranted = Object.values(permForm).filter(Boolean).length;
+    const hasOwnerPowers = permForm.canManageAnnouncements || permForm.canViewAuditLog || permForm.canManagePlatformToggles || permForm.canToggleMaintenance || permForm.canExportData || permForm.canManageStaff;
+
+    addAuditLog(
+      wasStudent ? "ترقية لرتبة مشرف مع تخصيص الصلاحيات" : "تعديل صلاحيات مشرف",
+      permModalUser,
+      `تم منح (${totalGranted}/11) صلاحية ${hasOwnerPowers ? "شاملة صلاحيات إدارية للمالك" : "إشرافية"}`
+    );
+
+    sendNotificationToUser(permModalUser, {
       type: "badge",
-      message: "تهانينا! لقد قام مالك المنصة بترقيتك إلى رتبة مشرف (Moderator). أصبحت لديك الآن صلاحيات لوحة التحكم.",
+      message: wasStudent
+        ? `تهانينا! لقد قام ${session.username} بترقيتك إلى رتبة مشرف مع منحك (${totalGranted}) صلاحية إدارية خاصة.`
+        : `تم تحديث صلاحياتك الإشرافية (${totalGranted} صلاحية مفعّلة) من قِبل إدارة المنصة.`,
     });
+
+    setPermModalUser(null);
     rerender();
-    alert(`تمت ترقية ${username} إلى رتبة مشرف بنجاح!`);
+    alert(`تم حفظ وتطبيق صلاحيات المشرف (${permModalUser}) بنجاح!`);
   }
 
   function handleDemoteToStudent(username: string) {
-    if (!session || session.role !== "owner") {
-      alert("صلاحية تعديل الرتب مقتصرة حصرياً على مالك المنصة!");
+    if (!session || (!canOwner && !hasPermission("canManageStaff"))) {
+      alert("صلاحية تعديل الرتب مقتصرة على المالك أو الإداري المفوض!");
       return;
     }
     const allUsers = getUsers();
@@ -1930,20 +2056,27 @@ export default function Home() {
       alert("لا يمكن تخفيض رتبة مالك المنصة!");
       return;
     }
+    if (!confirm(`هل أنت متأكد من سحب صلاحيات الإشراف من ${username} وتخفيضه إلى طالب؟`)) return;
 
     target.role = "student";
     setUsers(allUsers);
-    addAuditLog("تخفيض لرتبة طالب", username, "تم سحب صلاحيات الإشراف بواسطة المالك");
+
+    const updatedPermsMap = { ...getModPermissions() };
+    delete updatedPermsMap[username];
+    setModPermissionsStorage(updatedPermsMap);
+    setModPermissionsMap(updatedPermsMap);
+
+    addAuditLog("تخفيض لرتبة طالب", username, "تم سحب صلاحيات الإشراف بالكامل");
     sendNotificationToUser(username, {
       type: "report",
-      message: "تم تعديل رتبة حسابك إلى طالب عادي بواسطة إدارة المنصة.",
+      message: "تم تعديل رتبة حسابك إلى طالب عادي وإلغاء صلاحيات الإشراف.",
     });
     rerender();
     alert(`تم سحب صلاحيات الإشراف من ${username}.`);
   }
 
   function handleSavePlatformSettings(updates: Partial<PlatformSettings>) {
-    if (!session || session.role !== "owner") return;
+    if (!session || (!canOwner && !hasPermission("canManagePlatformToggles") && !hasPermission("canToggleMaintenance"))) return;
     const current = getPlatformSettings();
     const merged: PlatformSettings = { ...current, ...updates };
     setPlatformSettings(merged);
@@ -1952,14 +2085,70 @@ export default function Home() {
     rerender();
   }
 
-  function handleSaveAnnouncement(text: string, type: "ministerial" | "warning" | "info", active: boolean) {
-    if (!session || (session.role !== "owner" && session.role !== "mod")) return;
-    const ann: SiteAnnouncement = { active, text: text.trim(), type };
+  function handleSaveAnnouncement(
+    text: string,
+    type: "ministerial" | "warning" | "info",
+    active: boolean,
+    duration: "never" | "1h" | "6h" | "12h" | "24h" | "3d" | "7d"
+  ) {
+    if (!session || (!canOwner && !hasPermission("canManageAnnouncements"))) {
+      alert("صلاحية إدارة شريط التنبيهات مقتصرة على المالك أو المشرفين المفوضين!");
+      return;
+    }
+    if (!text.trim() && active) {
+      alert("يرجى كتابة نص التنبيه أولاً قبل التفعيل.");
+      return;
+    }
+
+    let expiresAt: number | null = null;
+    if (duration === "1h") expiresAt = Date.now() + 60 * 60 * 1000;
+    else if (duration === "6h") expiresAt = Date.now() + 6 * 60 * 60 * 1000;
+    else if (duration === "12h") expiresAt = Date.now() + 12 * 60 * 60 * 1000;
+    else if (duration === "24h") expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    else if (duration === "3d") expiresAt = Date.now() + 3 * 24 * 60 * 60 * 1000;
+    else if (duration === "7d") expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+    const ann: SiteAnnouncement = {
+      active,
+      text: text.trim(),
+      type,
+      expiresAt,
+      createdAt: new Date().toISOString(),
+    };
     setSiteAnnouncement(ann);
     setSiteAnnouncementState(ann);
-    addAuditLog("تحديث شريط التنبيهات", "إعلان الموقع", active ? `تفعيل إعلان (${type}): ${text.slice(0, 35)}...` : "إلغاء تفعيل الإعلان");
+    addAuditLog(
+      "تحديث شريط التنبيهات",
+      "إعلان الموقع",
+      active
+        ? `تفعيل إعلان (${type}): ${text.slice(0, 35)}... ${expiresAt ? `(ينتهي بعد ${duration})` : "(بدون انتهاء تلقائي)"}`
+        : "إلغاء تفعيل الإعلان"
+    );
     rerender();
-    alert(active ? "تم تفعيل ونشر التنبيه العام في أعلى الموقع!" : "تم إيقاف التنبيه العام.");
+    alert(active ? "تم تفعيل ونشر التنبيه العام في أعلى الموقع بنجاح!" : "تم إيقاف التنبيه العام.");
+  }
+
+  function handleDeleteAnnouncement() {
+    if (!session || (!canOwner && !hasPermission("canManageAnnouncements"))) {
+      alert("صلاحية حذف شريط التنبيهات مقتصرة على المالك أو المشرفين المفوضين!");
+      return;
+    }
+    if (!confirm("هل أنت متأكد من حذف التنبيه العام نهائياً وإزالته من المنصة؟")) return;
+
+    const emptyAnn: SiteAnnouncement = {
+      active: false,
+      text: "",
+      type: "ministerial",
+      expiresAt: null,
+    };
+    setSiteAnnouncement(emptyAnn);
+    setSiteAnnouncementState(emptyAnn);
+    setAnnouncementText("");
+    setAnnouncementActive(false);
+    setAnnouncementDuration("never");
+    addAuditLog("حذف شريط التنبيهات", "إعلان الموقع", "تم حذف التنبيه العام نهائياً");
+    rerender();
+    alert("تم حذف التنبيه العام نهائياً.");
   }
 
   function handleAddBannedWord(word: string) {
@@ -2208,8 +2397,6 @@ export default function Home() {
 
   const pendingTeachers = teachers.filter(t => t.status === "pending" || t.status === "pending_custom");
   const reportedPosts = posts.filter(p => p.status === "hidden" || (p.reports && p.reports > 0));
-  const canAdmin = !!(session && (session.role === "owner" || session.role === "mod"));
-  const canOwner = !!(session && session.role === "owner");
 
 
   // Helper: render avatar
@@ -2448,47 +2635,58 @@ export default function Home() {
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
         {/* Site-Wide Urgent Announcement Banner */}
-        {siteAnnouncement.active && siteAnnouncement.text && (
-          <div className={`p-4 border-2 border-slate-900 shadow-[4px_4px_0px_#000] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all ${
-            siteAnnouncement.type === "ministerial"
-              ? "bg-blue-900 text-white"
-              : siteAnnouncement.type === "warning"
-              ? "bg-amber-400 text-slate-950"
-              : "bg-emerald-600 text-white"
-          }`}>
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className={`p-2 border-2 border-slate-900 shrink-0 shadow-[2px_2px_0px_#000] ${
-                siteAnnouncement.type === "ministerial"
-                  ? "bg-blue-950 text-white"
-                  : siteAnnouncement.type === "warning"
-                  ? "bg-amber-500 text-slate-950"
-                  : "bg-emerald-700 text-white"
-              }`}>
-                {siteAnnouncement.type === "ministerial" ? <IconPalmTree size={20} /> : siteAnnouncement.type === "warning" ? <IconAlertTriangle size={20} /> : <IconCheck size={20} />}
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 border border-slate-900 bg-white/20">
-                    {siteAnnouncement.type === "ministerial"
-                      ? (siteLang === "en" ? "Official Ministerial Notice" : "بيان وزاري رسمي")
-                      : siteAnnouncement.type === "warning"
-                      ? (siteLang === "en" ? "Urgent Student Alert" : "تنبيه دراسي عاجل")
-                      : (siteLang === "en" ? "Platform Announcement" : "إعلان المنصة")}
-                  </span>
+        {(() => {
+          const isExpired = !!(siteAnnouncement.expiresAt && siteAnnouncement.expiresAt <= Date.now());
+          if (!siteAnnouncement.active || !siteAnnouncement.text || isExpired) return null;
+
+          return (
+            <div className={`p-4 border-2 border-slate-900 shadow-[4px_4px_0px_#000] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all ${
+              siteAnnouncement.type === "ministerial"
+                ? "bg-blue-900 text-white"
+                : siteAnnouncement.type === "warning"
+                ? "bg-amber-400 text-slate-950"
+                : "bg-emerald-600 text-white"
+            }`}>
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`p-2 border-2 border-slate-900 shrink-0 shadow-[2px_2px_0px_#000] ${
+                  siteAnnouncement.type === "ministerial"
+                    ? "bg-blue-950 text-white"
+                    : siteAnnouncement.type === "warning"
+                    ? "bg-amber-500 text-slate-950"
+                    : "bg-emerald-700 text-white"
+                }`}>
+                  {siteAnnouncement.type === "ministerial" ? <IconPalmTree size={20} /> : siteAnnouncement.type === "warning" ? <IconAlertTriangle size={20} /> : <IconCheck size={20} />}
                 </div>
-                <p className="font-black text-xs sm:text-sm leading-relaxed">{siteAnnouncement.text}</p>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 border border-slate-900 bg-white/20">
+                      {siteAnnouncement.type === "ministerial"
+                        ? (siteLang === "en" ? "Official Ministerial Notice" : "بيان وزاري رسمي")
+                        : siteAnnouncement.type === "warning"
+                        ? (siteLang === "en" ? "Urgent Student Alert" : "تنبيه دراسي عاجل")
+                        : (siteLang === "en" ? "Platform Announcement" : "إعلان المنصة")}
+                    </span>
+                    {siteAnnouncement.expiresAt && (
+                      <span className="text-[9px] font-bold opacity-80 flex items-center gap-1">
+                        <IconClock size={11} />
+                        <span>ينتهي خلال {Math.max(1, Math.ceil((siteAnnouncement.expiresAt - Date.now()) / (1000 * 60 * 60)))} ساعة</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-black text-xs sm:text-sm leading-relaxed">{siteAnnouncement.text}</p>
+                </div>
               </div>
+              {(canOwner || hasPermission("canManageAnnouncements")) && (
+                <button
+                  onClick={() => { setTab("admin"); setAdminSubTab("announcement"); }}
+                  className="text-xs font-black underline opacity-85 hover:opacity-100 shrink-0 self-end sm:self-center"
+                >
+                  {siteLang === "en" ? "Manage Announcement" : "إدارة التنبيه"}
+                </button>
+              )}
             </div>
-            {canAdmin && (
-              <button
-                onClick={() => { setTab("admin"); setAdminSubTab("announcement"); }}
-                className="text-xs font-black underline opacity-85 hover:opacity-100 shrink-0 self-end sm:self-center"
-              >
-                {siteLang === "en" ? "Manage Announcement" : "إدارة التنبيه"}
-              </button>
-            )}
-          </div>
-        )}
+          );
+        })()}
 
         {/* Maintenance Mode Screen for Non-Staff */}
         {platformSettings.maintenanceMode && (!session || (session.role !== "owner" && session.role !== "mod")) ? (
@@ -4348,65 +4546,77 @@ export default function Home() {
 
             {/* Admin Sub-Tabs Navigation */}
             <div className="bg-white border-2 border-slate-900 shadow-[3px_3px_0px_#000] p-1.5 flex items-center gap-1.5 overflow-x-auto">
-              <button
-                onClick={() => setAdminSubTab("moderation")}
-                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
-                  adminSubTab === "moderation"
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
-                    : "border-transparent text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                <IconShield size={14} />
-                <span>{t("adminSubMod")}</span>
-                {(pendingTeachers.length > 0 || reportedPosts.length > 0) && (
-                  <span className="px-1.5 py-0.2 bg-red-600 text-white text-[9px] font-black rounded-full">
-                    {pendingTeachers.length + reportedPosts.length}
-                  </span>
-                )}
-              </button>
+              {(canOwner || hasPermission("canApproveTeachers") || hasPermission("canModeratePosts") || hasPermission("canManageTickets") || hasPermission("canDisciplineUsers")) && (
+                <button
+                  onClick={() => setAdminSubTab("moderation")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "moderation"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconShield size={14} />
+                  <span>{t("adminSubMod")}</span>
+                  {(pendingTeachers.length > 0 || reportedPosts.length > 0) && (
+                    <span className="px-1.5 py-0.2 bg-red-600 text-white text-[9px] font-black rounded-full">
+                      {pendingTeachers.length + reportedPosts.length}
+                    </span>
+                  )}
+                </button>
+              )}
 
-              <button
-                onClick={() => setAdminSubTab("announcement")}
-                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
-                  adminSubTab === "announcement"
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
-                    : "border-transparent text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                <IconPalmTree size={14} />
-                <span>{t("adminSubBanner")}</span>
-                {siteAnnouncement.active && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                )}
-              </button>
+              {/* Subtab 2: Announcement - Owner & Authorized Staff Only */}
+              {(canOwner || hasPermission("canManageAnnouncements")) && (
+                <button
+                  onClick={() => setAdminSubTab("announcement")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "announcement"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconPalmTree size={14} />
+                  <span>{t("adminSubBanner")}</span>
+                  {siteAnnouncement.active && (!siteAnnouncement.expiresAt || siteAnnouncement.expiresAt > Date.now()) && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  )}
+                </button>
+              )}
 
-              <button
-                onClick={() => setAdminSubTab("audit")}
-                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
-                  adminSubTab === "audit"
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
-                    : "border-transparent text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                <IconActivity size={14} />
-                <span>{t("adminSubAudit")}</span>
-                <span className="text-[10px] text-slate-400 font-bold">({auditLogs.length})</span>
-              </button>
+              {/* Subtab 3: Audit Log - Owner & Authorized Staff Only */}
+              {(canOwner || hasPermission("canViewAuditLog")) && (
+                <button
+                  onClick={() => setAdminSubTab("audit")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "audit"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconActivity size={14} />
+                  <span>{t("adminSubAudit")}</span>
+                  <span className="text-[10px] text-slate-400 font-bold">({auditLogs.length})</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setAdminSubTab("filter")}
-                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
-                  adminSubTab === "filter"
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
-                    : "border-transparent text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                <IconSlash size={14} />
-                <span>{t("adminSubFilter")}</span>
-                <span className="text-[10px] text-slate-400 font-bold">({customBannedWords.length})</span>
-              </button>
+              {/* Subtab 4: Word Blacklist Filter */}
+              {(canOwner || hasPermission("canManageWordFilter")) && (
+                <button
+                  onClick={() => setAdminSubTab("filter")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "filter"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconSlash size={14} />
+                  <span>{t("adminSubFilter")}</span>
+                  <span className="text-[10px] text-slate-400 font-bold">({customBannedWords.length})</span>
+                </button>
+              )}
 
-              {canOwner && (
+              {/* Subtab 5: Owner & Delegated Authority */}
+              {(canOwner || hasPermission("canManageStaff") || hasPermission("canManagePlatformToggles") || hasPermission("canToggleMaintenance") || hasPermission("canExportData")) && (
                 <button
                   onClick={() => setAdminSubTab("owner")}
                   className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
@@ -4934,6 +5144,40 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* Auto-Expiration Duration Selector */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <IconClock size={14} className="text-slate-700" />
+                        <span>مدة صلاحية الإعلان قبل الإيقاف التلقائي (Auto-Expiration):</span>
+                      </label>
+                      {siteAnnouncement.expiresAt && (
+                        <span className={`text-[10px] font-black px-2 py-0.5 border border-slate-900 ${
+                          siteAnnouncement.expiresAt <= Date.now()
+                            ? "bg-red-200 text-red-950"
+                            : "bg-amber-200 text-amber-950"
+                        }`}>
+                          {siteAnnouncement.expiresAt <= Date.now()
+                            ? "انتهت صلاحية الإعلان تلقائياً"
+                            : `ينتهي خلال: ${Math.max(1, Math.ceil((siteAnnouncement.expiresAt - Date.now()) / (1000 * 60 * 60)))} ساعة`}
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={announcementDuration}
+                      onChange={e => setAnnouncementDuration(e.target.value as any)}
+                      className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none focus:bg-white"
+                    >
+                      <option value="never">بدون انتهاء تلقائي (يبقى نشطاً حتى حذفه يدوياً)</option>
+                      <option value="1h">ساعة واحدة (1 Hour)</option>
+                      <option value="6h">6 ساعات (6 Hours)</option>
+                      <option value="12h">12 ساعة (12 Hours)</option>
+                      <option value="24h">24 ساعة / يوم واحد (24 Hours)</option>
+                      <option value="3d">3 أيام (3 Days)</option>
+                      <option value="7d">أسبوع كامل (7 Days)</option>
+                    </select>
+                  </div>
+
                   {/* Text input */}
                   <div className="space-y-1">
                     <label className="block text-xs font-bold text-slate-800">نص التنبيه أو القرار:</label>
@@ -4974,12 +5218,21 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
                     <button
-                      onClick={() => handleSaveAnnouncement(announcementText, announcementType, announcementActive)}
-                      className="px-6 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                      onClick={() => handleSaveAnnouncement(announcementText, announcementType, announcementActive, announcementDuration)}
+                      className="w-full sm:w-auto px-6 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
                     >
                       حفظ وتطبيق شريط التنبيه فوراً
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDeleteAnnouncement}
+                      className="w-full sm:w-auto px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-800 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#991b1b] flex items-center justify-center gap-1.5 active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                    >
+                      <IconTrash size={14} />
+                      <span>حذف التنبيه نهائياً (Delete Banner)</span>
                     </button>
                   </div>
                 </div>
@@ -5148,8 +5401,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* ═══════ SUB-TAB 5: OWNER EXCLUSIVE CONTROLS ═══════ */}
-            {adminSubTab === "owner" && canOwner && (() => {
+            {/* ═══════ SUB-TAB 5: OWNER & DELEGATED GOVERNANCE ═══════ */}
+            {adminSubTab === "owner" && (canOwner || hasPermission("canManageStaff") || hasPermission("canManagePlatformToggles") || hasPermission("canToggleMaintenance") || hasPermission("canExportData")) && (() => {
               const allUsers = getUsers();
               const ownerCount = allUsers.filter(u => u.role === "owner").length;
               const modCount = allUsers.filter(u => u.role === "mod").length;
@@ -5274,57 +5527,176 @@ export default function Home() {
 
                   {/* Section 2: Staff & Role Management */}
                   <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#000] p-5 space-y-3">
-                    <div className="border-b-2 border-slate-200 pb-2 flex items-center justify-between">
-                      <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
-                        <IconShield size={16} className="text-blue-600" />
-                        <span>إدارة طاقم المشرفين والرتب (Staff & Role Governance)</span>
-                      </h4>
-                      <span className="text-xs font-bold text-slate-500">
+                    <div className="border-b-2 border-slate-200 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                          <IconShield size={16} className="text-blue-600" />
+                          <span>إدارة طاقم المشرفين والصلاحيات المخصصة (Staff & Granular Permissions)</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                          ابحث عن أي مستخدم لترقيته إلى مشرف، أو تخصيص وتعديل صلاحياته بما فيها صلاحيات المالك
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-slate-600 shrink-0">
                         {ownerCount} مالك • {modCount} مشرف • {studentCount} طالب
                       </span>
                     </div>
 
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                      {allUsers.map(u => (
-                        <div key={u.username} className="p-3 bg-slate-50 border border-slate-300 flex items-center justify-between gap-3 shadow-[1px_1px_0px_#000]">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar username={u.username} size="w-8 h-8 text-xs" />
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-black text-xs text-slate-900">{u.username}</span>
-                                <span className={`px-2 py-0.2 text-[9px] font-black border border-slate-900 ${
-                                  u.role === "owner" ? "bg-amber-400 text-slate-950" : u.role === "mod" ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-800"
-                                }`}>
-                                  {u.role === "owner" ? "مالك المنصة" : u.role === "mod" ? "مشرف عام" : "طالب"}
-                                </span>
-                              </div>
-                            </div>
+                    {/* User Search & Role Filters Bar */}
+                    <div className="space-y-2 pt-1">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={staffSearchQuery}
+                            onChange={e => setStaffSearchQuery(e.target.value)}
+                            placeholder="ابحث بالاسم عن أي طالب أو مشرف لترقيته أو تعديل صلاحياته..."
+                            className="w-full pr-8 pl-8 py-2 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
+                          />
+                          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                            <IconSearch size={14} />
                           </div>
-
-                          <div className="flex items-center gap-2">
-                            {u.role === "owner" ? (
-                              <span className="text-[10px] text-amber-900 font-bold px-2 py-1 bg-amber-100 border border-amber-400">
-                                محمي (المالك)
-                              </span>
-                            ) : u.role === "mod" ? (
-                              <button
-                                onClick={() => handleDemoteToStudent(u.username)}
-                                className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400"
-                              >
-                                تخفيض إلى طالب
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handlePromoteToMod(u.username)}
-                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000]"
-                              >
-                                ترقية إلى مشرف
-                              </button>
-                            )}
-                          </div>
+                          {staffSearchQuery && (
+                            <button
+                              onClick={() => setStaffSearchQuery("")}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                            >
+                              <IconX size={13} />
+                            </button>
+                          )}
                         </div>
-                      ))}
+
+                        <div className="flex items-center gap-1 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setStaffRoleFilter("all")}
+                            className={`px-3 py-2 font-bold border transition-all ${
+                              staffRoleFilter === "all"
+                                ? "bg-slate-900 text-white border-slate-900 shadow-[1px_1px_0px_#000]"
+                                : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"
+                            }`}
+                          >
+                            الكل ({allUsers.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStaffRoleFilter("mod")}
+                            className={`px-3 py-2 font-bold border transition-all ${
+                              staffRoleFilter === "mod"
+                                ? "bg-blue-600 text-white border-slate-900 shadow-[1px_1px_0px_#000]"
+                                : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"
+                            }`}
+                          >
+                            مشرفين ({modCount})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStaffRoleFilter("student")}
+                            className={`px-3 py-2 font-bold border transition-all ${
+                              staffRoleFilter === "student"
+                                ? "bg-slate-900 text-white border-slate-900 shadow-[1px_1px_0px_#000]"
+                                : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"
+                            }`}
+                          >
+                            طلاب ({studentCount})
+                          </button>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Filtered Users List */}
+                    {(() => {
+                      const q = staffSearchQuery.trim().toLowerCase();
+                      const filteredUsers = allUsers.filter(u => {
+                        const matchesQuery = !q || u.username.toLowerCase().includes(q);
+                        if (staffRoleFilter === "mod") return matchesQuery && u.role === "mod";
+                        if (staffRoleFilter === "student") return matchesQuery && u.role === "student";
+                        return matchesQuery;
+                      });
+
+                      if (filteredUsers.length === 0) {
+                        return (
+                          <div className="text-xs text-slate-400 py-8 text-center font-bold border-2 border-dashed border-slate-200">
+                            لا يوجد أي مستخدم يطابق البحث: "{staffSearchQuery}"
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                          {filteredUsers.map(u => {
+                            const userPerms = modPermissionsMap[u.username] || DEFAULT_MOD_PERMISSIONS;
+                            const grantedCount = Object.values(userPerms).filter(Boolean).length;
+                            const hasOwnerPowers = userPerms.canManageAnnouncements || userPerms.canViewAuditLog || userPerms.canManagePlatformToggles || userPerms.canToggleMaintenance || userPerms.canExportData || userPerms.canManageStaff;
+
+                            return (
+                              <div key={u.username} className="p-3 bg-slate-50 border-2 border-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-[2px_2px_0px_#000]">
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar username={u.username} size="w-9 h-9 text-xs" />
+                                  <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-black text-xs text-slate-900">{u.username}</span>
+                                      <span className={`px-2 py-0.2 text-[9px] font-black border border-slate-900 ${
+                                        u.role === "owner" ? "bg-amber-400 text-slate-950" : u.role === "mod" ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-800"
+                                      }`}>
+                                        {u.role === "owner" ? "مالك المنصة" : u.role === "mod" ? "مشرف" : "طالب"}
+                                      </span>
+                                      {u.role === "mod" && (
+                                        <span className={`px-2 py-0.2 text-[9px] font-bold border border-slate-900 ${
+                                          hasOwnerPowers ? "bg-amber-200 text-amber-950" : "bg-blue-100 text-blue-900"
+                                        }`}>
+                                          {grantedCount === 11 ? "كامل الصلاحيات (11/11)" : `${grantedCount} صلاحيات`}
+                                          {hasOwnerPowers && " • تشمل أدوات المالك"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                                      {u.role === "owner"
+                                        ? "المالك الأساسي للنظام بصلاحيات كاملة غير قابلة للتعديل"
+                                        : u.role === "mod"
+                                        ? `مشرف في المنصة (${grantedCount} صلاحية مفعلة)`
+                                        : "طالب مسجل في المنصة"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 self-end sm:self-center">
+                                  {u.role === "owner" ? (
+                                    <span className="text-[10px] text-amber-900 font-black px-2.5 py-1 bg-amber-100 border border-amber-400 flex items-center gap-1">
+                                      <IconCrown size={12} /> محمي (المالك)
+                                    </span>
+                                  ) : u.role === "mod" ? (
+                                    <>
+                                      <button
+                                        onClick={() => openModPermissionModal(u.username)}
+                                        className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all"
+                                      >
+                                        <IconSliders size={13} />
+                                        <span>تعديل الصلاحيات</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleDemoteToStudent(u.username)}
+                                        className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 active:translate-x-px active:translate-y-px transition-all"
+                                      >
+                                        تخفيض إلى طالب
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => openModPermissionModal(u.username)}
+                                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1.5 active:translate-x-px active:translate-y-px transition-all"
+                                    >
+                                      <IconKey size={13} />
+                                      <span>ترقية وتعيين الصلاحيات</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Section 3: Growth & Platform Analytics Dashboard */}
@@ -6028,6 +6400,285 @@ export default function Home() {
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#7f1d1d] disabled:bg-slate-300 disabled:shadow-none transition-all active:translate-x-0.5 active:translate-y-0.5"
                 >
                   إرسال البلاغ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ MOD PERMISSIONS & PROMOTION MODAL ═══════ */}
+      {permModalUser && (
+        <div className="fixed inset-0 z-[75] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white border-3 border-slate-900 shadow-[8px_8px_0px_#000] w-full max-w-2xl my-auto max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b-2 border-slate-900 bg-slate-50 flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-black text-base sm:text-lg text-slate-900 flex items-center gap-2">
+                    <IconKey size={20} className="text-amber-500" />
+                    <span>تخصيص وتعيين صلاحيات المشرف:</span>
+                    <span className="text-emerald-primary">{permModalUser}</span>
+                  </h3>
+                  <span className={`px-2 py-0.5 text-[10px] font-black border border-slate-900 ${
+                    permModalRole === "mod" ? "bg-blue-600 text-white" : "bg-amber-400 text-slate-950"
+                  }`}>
+                    {permModalRole === "mod" ? "مشرف حالي" : "طالب (ترقية جديدة)"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 font-semibold">
+                  حدد بدقة ما يُسمح لهذا المشرف تنفيذه في لوحة التحكم، بما في ذلك الصلاحيات الحساسة الخاصة بالمالك
+                </p>
+              </div>
+              <button
+                onClick={() => setPermModalUser(null)}
+                className="p-1 hover:bg-slate-200 border-2 border-slate-900 shadow-[1px_1px_0px_#000] shrink-0 active:translate-x-px active:translate-y-px"
+              >
+                <IconX size={16} />
+              </button>
+            </div>
+
+            {/* Quick Presets Bar */}
+            <div className="px-4 sm:px-5 py-3 bg-slate-100 border-b-2 border-slate-200 flex items-center justify-between gap-2 flex-wrap text-xs font-bold">
+              <span className="text-slate-600 font-black">قوالب الصلاحيات السريعة:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setPermForm({ ...DEFAULT_MOD_PERMISSIONS })}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-900 border border-slate-900 shadow-[1px_1px_0px_#000] text-[11px] font-black"
+                >
+                  مشرف قياسي (افتراضي)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPermForm({ ...FULL_OWNER_PERMISSIONS })}
+                  className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000] text-[11px] font-black flex items-center gap-1"
+                >
+                  <IconCrown size={12} />
+                  <span>كامل الصلاحيات (شريك / Super Mod)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allFalse: ModPermissions = {
+                      canApproveTeachers: false,
+                      canModeratePosts: false,
+                      canManageTickets: false,
+                      canDisciplineUsers: false,
+                      canManageWordFilter: false,
+                      canManageAnnouncements: false,
+                      canViewAuditLog: false,
+                      canManagePlatformToggles: false,
+                      canToggleMaintenance: false,
+                      canExportData: false,
+                      canManageStaff: false,
+                    };
+                    setPermForm(allFalse);
+                  }}
+                  className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-400 text-[11px]"
+                >
+                  إلغاء الكل
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Checkbox Groups */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-5 text-xs">
+              {/* Group 1: Standard Moderation Powers */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 border-b-2 border-slate-200 pb-1.5">
+                  <IconShield size={16} className="text-blue-600" />
+                  <h4 className="font-black text-xs text-slate-900 uppercase">
+                    1. الصلاحيات الإشرافية الأساسية (Standard Moderation)
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-slate-50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canApproveTeachers}
+                      onChange={e => setPermForm(prev => ({ ...prev, canApproveTeachers: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">قبول ورفض المدرسين</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">مراجعة طلبات إضافة المدرسين في قائمة الانتظار واعتمادها</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-slate-50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canModeratePosts}
+                      onChange={e => setPermForm(prev => ({ ...prev, canModeratePosts: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">إدارة المنشورات والبلاغات</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">حذف أو إخفاء المنشورات والتعليقات ومعالجة البلاغات</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-slate-50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canManageTickets}
+                      onChange={e => setPermForm(prev => ({ ...prev, canManageTickets: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">تذاكر الدعم الفني</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">معالجة وحذف استفسارات وتذاكر الدعم الفني للطلاب</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-slate-50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canDisciplineUsers}
+                      onChange={e => setPermForm(prev => ({ ...prev, canDisciplineUsers: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">الانضباط وحظر المستخدمين</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">توجيه إنذارات رسمية وحظر حسابات الطلاب مؤقتاً أو نهائياً</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-slate-50 transition-all select-none sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canManageWordFilter}
+                      onChange={e => setPermForm(prev => ({ ...prev, canManageWordFilter: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">فلتر الكلمات المحظورة</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">إضافة وإزالة الكلمات المحظورة من فلتر الحظر التلقائي</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Group 2: Owner Delegated Powers */}
+              <div className="p-4 border-2 border-amber-400 bg-amber-50/70 space-y-3">
+                <div className="flex items-center justify-between gap-2 border-b-2 border-amber-300 pb-2">
+                  <div className="flex items-center gap-2">
+                    <IconCrown size={18} className="text-amber-700" />
+                    <h4 className="font-black text-xs text-amber-950 uppercase">
+                      2. صلاحيات المالك الحصرية والمفوضة (Owner Delegated Powers)
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 bg-amber-300 text-amber-950 border border-slate-900">
+                    أدوات حساسة
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-900 font-semibold">
+                  تحذير: تفعيل هذه الصلاحيات يمنح المشرف وصولاً لأدوات الإدارة العليا للمنصة، شريط التنبيهات، مفاتيح الطوارئ، والصيانة
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-amber-100/50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canManageAnnouncements}
+                      onChange={e => setPermForm(prev => ({ ...prev, canManageAnnouncements: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-amber-500"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">شريط التنبيهات العام (Announcements)</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">نشر وتعديل وحذف التنبيهات والبيانات الوزارية في أعلى الموقع</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-amber-100/50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canViewAuditLog}
+                      onChange={e => setPermForm(prev => ({ ...prev, canViewAuditLog: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-amber-500"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">الاطلاع على سجل العمليات (Audit Log)</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">مراجعة تقرير وتاريخ تصرفات المشرفين والأنشطة الإدارية</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-amber-100/50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canManagePlatformToggles}
+                      onChange={e => setPermForm(prev => ({ ...prev, canManagePlatformToggles: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-amber-500"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">مفاتيح طوارئ المنصة (Emergency Toggles)</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">تعليق أو تفعيل التسجيل، النشر، واقتراح المدرسين</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-amber-100/50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canToggleMaintenance}
+                      onChange={e => setPermForm(prev => ({ ...prev, canToggleMaintenance: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-amber-500"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">وضع الصيانة العام (Maintenance Mode)</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">تفعيل شاشة الصيانة وحجب التصفح عن عامة الطلاب</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-amber-100/50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canExportData}
+                      onChange={e => setPermForm(prev => ({ ...prev, canExportData: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-amber-500"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">تصدير النسخة الاحتياطية (Backup)</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">تحميل ملف JSON الشامل لجميع بيانات المنصة</span>
+                    </div>
+                  </label>
+
+                  <label className="p-3 border-2 border-slate-900 bg-white flex items-start gap-2.5 cursor-pointer shadow-[2px_2px_0px_#000] hover:bg-amber-100/50 transition-all select-none">
+                    <input
+                      type="checkbox"
+                      checked={permForm.canManageStaff}
+                      onChange={e => setPermForm(prev => ({ ...prev, canManageStaff: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-amber-500"
+                    />
+                    <div>
+                      <span className="font-black text-slate-900 block">إدارة وترقية المشرفين (Staff Governance)</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">ترقية طلاب آخرين وتعديل صلاحيات باقي الكادر</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-5 border-t-2 border-slate-900 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs font-bold text-slate-600">
+                الصلاحيات المحددة: <strong className="text-slate-950 font-black">{Object.values(permForm).filter(Boolean).length}</strong> من 11
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setPermModalUser(null)}
+                  className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs border border-slate-900 transition-all"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveModPermissions}
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+                >
+                  حفظ وتطبيق الصلاحيات فوراً
                 </button>
               </div>
             </div>
