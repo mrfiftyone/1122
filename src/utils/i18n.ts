@@ -56,6 +56,7 @@ export const T_DICT: TranslationDict = {
   deleteAdmin: { ar: "حذف (إدارة)", en: "Delete (Admin)" },
   bookmark: { ar: "حفظ", en: "Save" },
   bookmarked: { ar: "محفوظ", en: "Saved" },
+  views: { ar: "مشاهدة", en: "views" },
   watchYoutube: { ar: "شرح يوتيوب", en: "YouTube Lesson" },
   openTelegram: { ar: "ملزمة / ملف", en: "Booklet / PDF" },
   writeComment: { ar: "اكتب تعليقاً...", en: "Write a comment..." },
