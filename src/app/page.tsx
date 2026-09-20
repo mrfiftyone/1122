@@ -606,8 +606,15 @@ export default function Home() {
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileServerVerified, setTurnstileServerVerified] = useState(false);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken(null);
+    setTurnstileServerVerified(false);
+    setTurnstileResetKey(prev => prev + 1);
+  }, []);
 
   const handleTurnstileVerify = useCallback(async (token: string) => {
     setTurnstileToken(token);
@@ -626,14 +633,12 @@ export default function Home() {
   }, []);
 
   const handleTurnstileExpire = useCallback(() => {
-    setTurnstileToken(null);
-    setTurnstileServerVerified(false);
-  }, []);
+    resetTurnstile();
+  }, [resetTurnstile]);
 
   const handleTurnstileError = useCallback(() => {
-    setTurnstileToken(null);
-    setTurnstileServerVerified(false);
-  }, []);
+    resetTurnstile();
+  }, [resetTurnstile]);
 
   const canOwner = !!(session && session.role === "owner");
   const canAdmin = !!(session && (session.role === "owner" || session.role === "mod"));
@@ -903,17 +908,14 @@ export default function Home() {
     if (isRegister) {
       if (!platformSettings.allowRegistration) {
         setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "تم تعليق إنشاء الحسابات الجديدة مؤقتاً بأمر من إدارة المنصة.");
-        setTurnstileToken(null); setTurnstileServerVerified(false);
         return;
       }
       if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
         setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير.");
-        setTurnstileToken(null); setTurnstileServerVerified(false);
         return;
       }
       if (users.find(u => u.username === cleanUsername)) {
         setAuthError("اسم المستخدم موجود مسبقاً.");
-        setTurnstileToken(null); setTurnstileServerVerified(false);
         return;
       }
       // Phase 2: Hash the password with a unique salt
@@ -931,7 +933,7 @@ export default function Home() {
       localStorage.setItem("currentUser", JSON.stringify(sessionUser));
       setSession(sessionUser);
       setAuthModal(false);
-      setAuthUser(""); setAuthPass(""); setTurnstileToken(null); setTurnstileServerVerified(false);
+      setAuthUser(""); setAuthPass(""); resetTurnstile();
       setSelectedGrades([]);
       setGradeModal(true);
     } else {
@@ -940,12 +942,12 @@ export default function Home() {
       if (!userRecord) {
         const nextFails = failedAttempts + 1;
         setFailedAttempts(nextFails);
-        setTurnstileToken(null); setTurnstileServerVerified(false);
         if (nextFails >= 5) {
           const lockUntil = Date.now() + 60 * 1000;
           localStorage.setItem("login_lockout_until", lockUntil.toString());
           setLockoutRemaining(60);
           setFailedAttempts(0);
+          resetTurnstile();
           setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
         } else {
           setAuthError(`خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`);
@@ -972,12 +974,12 @@ export default function Home() {
       if (!passwordValid) {
         const nextFails = failedAttempts + 1;
         setFailedAttempts(nextFails);
-        setTurnstileToken(null); setTurnstileServerVerified(false);
         if (nextFails >= 5) {
           const lockUntil = Date.now() + 60 * 1000;
           localStorage.setItem("login_lockout_until", lockUntil.toString());
           setLockoutRemaining(60);
           setFailedAttempts(0);
+          resetTurnstile();
           setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
         } else {
           setAuthError(`خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`);
@@ -996,7 +998,7 @@ export default function Home() {
       localStorage.setItem("currentUser", JSON.stringify(sessionUser));
       setSession(sessionUser);
       fetchVotesFromSupabase(userRecord.username);
-      setAuthModal(false); setAuthUser(""); setAuthPass(""); setTurnstileToken(null); setTurnstileServerVerified(false);
+      setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
     }
     rerender();
   }
@@ -2779,9 +2781,9 @@ export default function Home() {
 
             {!session ? (
               <>
-                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); setTurnstileToken(null); setTurnstileServerVerified(false); }}
+                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
                   className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000]">{t("login")}</button>
-                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); setTurnstileToken(null); setTurnstileServerVerified(false); }}
+                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
                   className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]">{t("register")}</button>
               </>
             ) : (
@@ -5957,7 +5959,7 @@ export default function Home() {
           <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
               <h3 className="font-black text-base">{isRegister ? "إنشاء حساب جديد" : "تسجيل الدخول"}</h3>
-              <button onClick={() => setAuthModal(false)}><IconX size={16} /></button>
+              <button onClick={() => { setAuthModal(false); resetTurnstile(); }}><IconX size={16} /></button>
             </div>
             {authError && <div className="p-2.5 bg-red-100 border border-red-400 text-red-700 text-xs font-bold leading-relaxed">{authError}</div>}
             
@@ -5991,9 +5993,19 @@ export default function Home() {
                     <span>التحقق الأمني (Cloudflare Turnstile):</span>
                   </label>
                   {turnstileServerVerified ? (
-                    <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
-                      <IconCheck size={12} className="text-emerald-700" /> تم التحقق بنجاح
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
+                        <IconCheck size={12} className="text-emerald-700" /> تم التحقق بنجاح
+                      </span>
+                      <button
+                        type="button"
+                        onClick={resetTurnstile}
+                        className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold"
+                        title="إعادة تعيين التحقق الأمني"
+                      >
+                        (إعادة التحقق)
+                      </button>
+                    </div>
                   ) : turnstileToken ? (
                     <span className="text-[10px] text-amber-600 font-semibold animate-pulse">جاري التحقق من الخادم...</span>
                   ) : (
@@ -6001,6 +6013,8 @@ export default function Home() {
                   )}
                 </div>
                 <Turnstile
+                  key={`turnstile_${turnstileResetKey}`}
+                  resetKey={turnstileResetKey}
                   onVerify={handleTurnstileVerify}
                   onExpire={handleTurnstileExpire}
                   onError={handleTurnstileError}
@@ -6018,7 +6032,17 @@ export default function Home() {
               </button>
             </div>
             <div className="text-center pt-1">
-              <button onClick={() => { setIsRegister(!isRegister); setAuthError(""); setTurnstileToken(null); setTurnstileServerVerified(false); }} className="text-xs text-emerald-700 font-bold underline">
+              <button
+                onClick={() => {
+                  setIsRegister(!isRegister);
+                  setAuthError("");
+                  // Preserve verification if already verified; otherwise reset cleanly
+                  if (!turnstileServerVerified) {
+                    resetTurnstile();
+                  }
+                }}
+                className="text-xs text-emerald-700 font-bold underline"
+              >
                 {isRegister ? "لديك حساب؟ سجل دخولك" : "ليس لديك حساب؟ سجل الآن"}
               </button>
             </div>

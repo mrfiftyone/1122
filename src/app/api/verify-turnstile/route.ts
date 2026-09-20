@@ -24,9 +24,11 @@ export async function POST(req: NextRequest) {
     formData.append("secret", secretKey);
     formData.append("response", token);
 
-    // Forward the client IP for additional security (optional)
-    const ip = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "";
-    if (ip) formData.append("remoteip", ip);
+    // Forward client IP if it's a valid public IP (avoid localhost loopback IPs like ::1 or 127.0.0.1)
+    const rawIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || "";
+    if (rawIp && !rawIp.includes("127.0.0.1") && !rawIp.includes("::1") && !rawIp.startsWith("192.168.") && !rawIp.startsWith("10.")) {
+      formData.append("remoteip", rawIp);
+    }
 
     const cfResponse = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
       method: "POST",

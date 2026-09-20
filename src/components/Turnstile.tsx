@@ -7,6 +7,7 @@ interface TurnstileProps {
   onVerify: (token: string) => void;
   onExpire?: () => void;
   onError?: () => void;
+  resetKey?: string | number;
 }
 
 declare global {
@@ -30,10 +31,21 @@ declare global {
   }
 }
 
-function Turnstile({ siteKey, onVerify, onExpire, onError }: TurnstileProps) {
+function Turnstile({ siteKey, onVerify, onExpire, onError, resetKey }: TurnstileProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // When resetKey changes, explicitly reset the Cloudflare widget
+  useEffect(() => {
+    if (resetKey !== undefined && widgetIdRef.current && window.turnstile) {
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+      } catch (e) {
+        console.error("Turnstile reset error:", e);
+      }
+    }
+  }, [resetKey]);
 
   // Keep latest callbacks in refs so changing prop references do NOT trigger widget destruction
   const onVerifyRef = useRef(onVerify);
