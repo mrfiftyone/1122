@@ -1,0 +1,19 @@
+{
+  "0": "app/page.tsx",
+  "1": "Home",
+  "2": "package.json",
+  "3": "compilerOptions",
+  "4": "next",
+  "5": "dependencies",
+  "6": "devDependencies",
+  "7": "handleAuth",
+  "8": "Turnstile.tsx",
+  "9": "README.md",
+  "10": "normalizeTeacherName",
+  "11": "feedAlgorithm.ts",
+  "12": "AGENTS.md",
+  "13": "postcss.config.mjs",
+  "14": "image.ts",
+  "15": "vercel.json",
+  "16": "CLAUDE.md"
+}
