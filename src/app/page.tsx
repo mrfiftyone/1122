@@ -42,12 +42,24 @@ interface NotificationItem {
   id: string;
   recipient: string; // username of recipient
   actor: string; // who triggered notification
-  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected";
+  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected" | "report_alert" | "admin_warning";
   postId: string;
   targetTitle: string;
   commentText?: string;
   read: boolean;
   created_at: string;
+}
+
+interface ReportRecord {
+  id: string;
+  targetId: string;
+  targetType: "post" | "comment";
+  targetTitle?: string;
+  reporter: string;
+  reason: "inappropriate" | "wrong_info" | "other";
+  note?: string;
+  created_at: string;
+  status?: "pending" | "dismissed" | "resolved";
 }
 
 // Vote map: "username_itemId" -> "like" | "dislike"
@@ -161,10 +173,12 @@ export default function Home() {
   const [tSelectedGrades, setTSelectedGrades] = useState<string[]>([]);
   const [tImg, setTImg] = useState("");
 
-  // Search & Filters for Teachers section
+  // Search, Filters & Sorting for Teachers section
   const [dirSearch, setDirSearch] = useState("");
   const [filterGov, setFilterGov] = useState("all");
   const [filterSubject, setFilterSubject] = useState("all");
+  const [filterGrade, setFilterGrade] = useState("all");
+  const [sortTeacherBy, setSortTeacherBy] = useState<"likes" | "rating" | "reviews" | "newest">("likes");
 
   // Selected Teacher Dedicated View & Review states
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
@@ -179,10 +193,16 @@ export default function Home() {
   // Profile Comments Expansion State
   const [expandedProfileComments, setExpandedProfileComments] = useState<Record<string, boolean>>({});
 
-  // Report Modal State
+  // Report Modal & Admin Moderation State
   const [reportTarget, setReportTarget] = useState<{ id: string; type: "post" | "comment"; title?: string; parentPostId?: string } | null>(null);
   const [reportReason, setReportReason] = useState<"inappropriate" | "wrong_info" | "other">("inappropriate");
   const [reportNote, setReportNote] = useState("");
+  const [adminReportFilter, setAdminReportFilter] = useState<"all" | "pending" | "resolved">("pending");
+  const [reportRecordsList, setReportRecordsList] = useState<ReportRecord[]>([]);
+
+  // Notifications Filter
+  const [notifFilter, setNotifFilter] = useState<"all" | "unread" | "reports">("all");
+
 
   // Profile Edit
   const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
@@ -294,6 +314,7 @@ export default function Home() {
     setTeachersList(getTeachers());
     setProfilesMap(getProfiles());
     setAllNotifications(getNotifications());
+    setReportRecordsList(getReportRecords());
 
     // Fetch live data immediately
     fetchSupabaseData();
@@ -558,21 +579,28 @@ export default function Home() {
   function votePost(postId: string, type: "like" | "dislike") {
     castVote(`post_${postId}`, type, (delta) => {
       setPostsList(prev => prev.map(p => p.id === postId ? { ...p, likes: p.likes + delta.likes, dislikes: p.dislikes + delta.dislikes } : p));
+      if (type === "like" && delta.likes > 0 && session) {
+        const p = posts.find(item => item.id === postId);
+        if (p && p.author !== session.username) {
+          const notifs = getNotifications();
+          notifs.unshift({
+            id: "notif_like_" + Date.now(),
+            recipient: p.author,
+            actor: session.username,
+            type: "like",
+            postId: p.id,
+            targetTitle: p.title,
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+          setNotifications(notifs);
+          setAllNotifications(notifs);
+        }
+      }
     });
   }
 
-  // ─── Report Records Local Storage ─────────────────────────────────
-  interface ReportRecord {
-    id: string;
-    targetId: string;
-    targetType: "post" | "comment";
-    targetTitle?: string;
-    reporter: string;
-    reason: "inappropriate" | "wrong_info" | "other";
-    note?: string;
-    created_at: string;
-  }
-
+  // ─── Report Records & Moderation Functions ─────────────────────────
   function getReportRecords(): ReportRecord[] {
     if (typeof window === "undefined") return [];
     try {
@@ -589,7 +617,74 @@ export default function Home() {
       const list = getReportRecords();
       list.unshift(r);
       localStorage.setItem("report_records_v1", JSON.stringify(list.slice(0, 200)));
+      setReportRecordsList(list);
     } catch {}
+  }
+
+  async function dismissReport(reportId: string, targetId: string) {
+    const list = getReportRecords().map(r => r.id === reportId ? { ...r, status: "dismissed" as const } : r);
+    localStorage.setItem("report_records_v1", JSON.stringify(list));
+    setReportRecordsList(list);
+
+    setPostsList(prev => prev.map(p => p.id === targetId ? { ...p, reports: 0, status: "active" } : p));
+    try {
+      await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
+    } catch (e) {
+      console.error("Error dismissing report in Supabase:", e);
+    }
+    rerender();
+  }
+
+  async function adminDeleteReportedItem(targetId: string, targetType: "post" | "comment", reportId?: string) {
+    if (!confirm("هل أنت متأكد من الحذف النهائي لهذا المحتوى؟")) return;
+
+    if (targetType === "post") {
+      deletePost(targetId);
+    } else {
+      const parentPost = posts.find(p => p.comments?.some(c => c.id === targetId));
+      if (parentPost) {
+        setPostsList(prev => prev.map(p => {
+          if (p.id === parentPost.id) {
+            return {
+              ...p,
+              comments: p.comments.filter(c => c.id !== targetId),
+            };
+          }
+          return p;
+        }));
+        try {
+          await supabase.from('comments').delete().eq('id', targetId);
+        } catch (e) {
+          console.error("Error deleting comment in Supabase:", e);
+        }
+      }
+    }
+
+    if (reportId) {
+      const list = getReportRecords().map(r => r.id === reportId ? { ...r, status: "resolved" as const } : r);
+      localStorage.setItem("report_records_v1", JSON.stringify(list));
+      setReportRecordsList(list);
+    }
+    rerender();
+  }
+
+  function sendAdminWarning(authorUsername: string, targetTitle?: string) {
+    if (!session) return;
+    const notifs = getNotifications();
+    notifs.unshift({
+      id: "notif_warn_" + Date.now(),
+      recipient: authorUsername,
+      actor: "إدارة المنصة",
+      type: "admin_warning",
+      postId: "",
+      targetTitle: targetTitle || "محتوى مخالف",
+      commentText: "تنبيه إداري رسمي: تلقى حسابك تحذيراً بشأن محتوى مخالف لسياسات المنصة. يُرجى الالتزام بالقواعد لتجنب حظر الحساب نهائياً.",
+      read: false,
+      created_at: new Date().toISOString(),
+    });
+    setNotifications(notifs);
+    setAllNotifications(notifs);
+    alert(`تم توجيه إنذار إداري رسمي للمستخدم: ${authorUsername}`);
   }
 
   function getWordCount(str: string): number {
@@ -660,7 +755,7 @@ export default function Home() {
       }
     }
 
-    saveReportRecord({
+    const record: ReportRecord = {
       id: "rep_" + Date.now(),
       targetId: reportTarget.id,
       targetType: reportTarget.type,
@@ -669,14 +764,37 @@ export default function Home() {
       reason: reportReason,
       note: reportNote.trim(),
       created_at: new Date().toISOString(),
+      status: "pending",
+    };
+    saveReportRecord(record);
+
+    // Notify all moderators and owners of this incoming report
+    const adminUsers = getUsers().filter(u => u.role === "owner" || u.role === "mod");
+    const notifs = getNotifications();
+    const reasonArabic = reportReason === "inappropriate" ? "محتوى غير لائق ومسيء" : reportReason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
+    adminUsers.forEach(adm => {
+      notifs.unshift({
+        id: "notif_rep_" + Date.now() + "_" + adm.username,
+        recipient: adm.username,
+        actor: session.username,
+        type: "report_alert",
+        postId: reportTarget.id,
+        targetTitle: reportTarget.title || "محتوى",
+        commentText: `بلاغ جديد [${reasonArabic}]: ${reportNote.trim() || "بدون ملاحظة إضافية"}`,
+        read: false,
+        created_at: new Date().toISOString(),
+      });
     });
+    setNotifications(notifs);
+    setAllNotifications(notifs);
 
     setReportTarget(null);
     setReportNote("");
     setReportReason("inappropriate");
     rerender();
-    alert("تم تسجيل بلاغك بنجاح وسيقوم المشرفون بمراجعته.");
+    alert("تم تسجيل بلاغك بنجاح وسيقوم المشرفون بمراجعته في لوحة التحكم.");
   }
+
 
   async function addComment(postId: string, textOverride?: string) {
     if (!session) { setAuthModal(true); return; }
@@ -1140,8 +1258,27 @@ export default function Home() {
       (t.grades && t.grades.toLowerCase().includes(q));
     const matchesGov = filterGov === "all" || t.gov === filterGov;
     const matchesSubject = filterSubject === "all" || t.subject === filterSubject;
-    return matchesSearch && matchesGov && matchesSubject;
+    const matchesGrade = filterGrade === "all" || (t.grades && t.grades.includes(filterGrade));
+    return matchesSearch && matchesGov && matchesSubject && matchesGrade;
+  }).sort((a, b) => {
+    if (sortTeacherBy === "likes") {
+      return (b.likes - b.dislikes) - (a.likes - a.dislikes);
+    }
+    if (sortTeacherBy === "rating") {
+      const aTotal = a.likes + a.dislikes;
+      const bTotal = b.likes + b.dislikes;
+      const aPct = aTotal > 0 ? a.likes / aTotal : 0;
+      const bPct = bTotal > 0 ? b.likes / bTotal : 0;
+      return bPct - aPct;
+    }
+    if (sortTeacherBy === "reviews") {
+      const aReviews = posts.filter(p => p.teacher_id === a.id || p.teacherId === a.id).length;
+      const bReviews = posts.filter(p => p.teacher_id === b.id || p.teacherId === b.id).length;
+      return bReviews - aReviews;
+    }
+    return 0; // newest / default order
   });
+
   const pendingTeachers = teachers.filter(t => t.status === "pending" || t.status === "pending_custom");
   const reportedPosts = posts.filter(p => p.status === "hidden" || (p.reports && p.reports > 0));
   const canAdmin = session && (session.role === "owner" || session.role === "mod");
@@ -1498,57 +1635,105 @@ export default function Home() {
             </div>
 
             {/* Search & Filters Bar */}
-            <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 flex flex-col md:flex-row items-center gap-3">
-              {/* Search text */}
-              <div className="w-full md:flex-1 relative">
-                <IconSearch size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={dirSearch}
-                  onChange={e => setDirSearch(e.target.value)}
-                  placeholder="ابحث باسم المدرس، المادة، أو المحافظة..."
-                  className="w-full pr-9 pl-4 py-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
-                />
+            <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-3">
+              {/* Row 1: Search, Governorate, Subject, Grade */}
+              <div className="flex flex-col md:flex-row items-center gap-3">
+                {/* Search text */}
+                <div className="w-full md:flex-1 relative">
+                  <IconSearch size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={dirSearch}
+                    onChange={e => setDirSearch(e.target.value)}
+                    placeholder="ابحث باسم المدرس، المادة، أو المحافظة..."
+                    className="w-full pr-9 pl-4 py-2 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
+                  />
+                </div>
+
+                {/* Filter by Governorate */}
+                <div className="w-full md:w-36">
+                  <select
+                    value={filterGov}
+                    onChange={e => setFilterGov(e.target.value)}
+                    className="w-full py-2 px-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">كل المحافظات</option>
+                    {GOVERNORATES.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter by Subject */}
+                <div className="w-full md:w-36">
+                  <select
+                    value={filterSubject}
+                    onChange={e => setFilterSubject(e.target.value)}
+                    className="w-full py-2 px-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">كل المواد</option>
+                    {SUBJECT_OPTIONS.filter(s => s !== "أخرى").map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter by Grade */}
+                <div className="w-full md:w-36">
+                  <select
+                    value={filterGrade}
+                    onChange={e => setFilterGrade(e.target.value)}
+                    className="w-full py-2 px-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">كل المراحل</option>
+                    {GRADES.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              {/* Filter by Governorate */}
-              <div className="w-full md:w-48">
-                <select
-                  value={filterGov}
-                  onChange={e => setFilterGov(e.target.value)}
-                  className="w-full py-2.5 px-3 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="all">كل المحافظات</option>
-                  {GOVERNORATES.map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Row 2: Sort Buttons & Clear Filters */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-500 text-[11px] ml-1">ترتيب حسب:</span>
+                  <button
+                    onClick={() => setSortTeacherBy("likes")}
+                    className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "likes" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
+                  >
+                    الأكثر إعجاباً
+                  </button>
+                  <button
+                    onClick={() => setSortTeacherBy("rating")}
+                    className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "rating" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
+                  >
+                    الأعلى قبولاً %
+                  </button>
+                  <button
+                    onClick={() => setSortTeacherBy("reviews")}
+                    className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "reviews" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
+                  >
+                    الأكثر مراجعات
+                  </button>
+                  <button
+                    onClick={() => setSortTeacherBy("newest")}
+                    className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "newest" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
+                  >
+                    الأحدث
+                  </button>
+                </div>
 
-              {/* Filter by Subject */}
-              <div className="w-full md:w-44">
-                <select
-                  value={filterSubject}
-                  onChange={e => setFilterSubject(e.target.value)}
-                  className="w-full py-2.5 px-3 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="all">كل المواد</option>
-                  {SUBJECT_OPTIONS.filter(s => s !== "أخرى").map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                {(dirSearch || filterGov !== "all" || filterSubject !== "all" || filterGrade !== "all" || sortTeacherBy !== "likes") && (
+                  <button
+                    onClick={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); setFilterGrade("all"); setSortTeacherBy("likes"); }}
+                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] border border-slate-900"
+                  >
+                    إعادة ضبط الفلاتر
+                  </button>
+                )}
               </div>
-
-              {/* Clear filters */}
-              {(dirSearch || filterGov !== "all" || filterSubject !== "all") && (
-                <button
-                  onClick={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); }}
-                  className="w-full md:w-auto px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border-2 border-slate-900 shrink-0"
-                >
-                  إعادة ضبط
-                </button>
-              )}
             </div>
+
 
             {/* Results Count & Grid */}
             {filteredTeachers.length === 0 ? (
@@ -1594,8 +1779,20 @@ export default function Home() {
                               <span className="px-2 py-0.5 bg-blue-100 border border-slate-900 text-[10px] font-black text-blue-900">
                                 {t.gov}
                               </span>
+                              {t.likes + t.dislikes > 0 && (
+                                <span className={`px-2 py-0.5 border border-slate-900 text-[10px] font-black ${
+                                  Math.round((t.likes / (t.likes + t.dislikes)) * 100) >= 70
+                                    ? "bg-emerald-200 text-emerald-950"
+                                    : Math.round((t.likes / (t.likes + t.dislikes)) * 100) >= 50
+                                    ? "bg-amber-100 text-amber-950"
+                                    : "bg-red-100 text-red-950"
+                                }`}>
+                                  {Math.round((t.likes / (t.likes + t.dislikes)) * 100)}% قبول
+                                </span>
+                              )}
                             </div>
                             {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
+
                           </div>
                         </div>
 
@@ -1986,17 +2183,43 @@ export default function Home() {
         {/* ──── TAB 3: NOTIFICATIONS (الإشعارات) ──── */}
         {tab === "notifications" && (
           <section className="space-y-6">
-            <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex items-center justify-between">
+            <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <IconBell size={24} className="text-emerald-primary" />
                 <div>
                   <h2 className="font-black text-base text-slate-900">صندوق الإشعارات</h2>
-                  <p className="text-xs text-slate-600">التفاعلات والردود والتعليقات على منشوراتك</p>
+                  <p className="text-xs text-slate-600">التفاعلات، الردود، والتقارير الإدارية الخاصة بحسابك</p>
                 </div>
               </div>
-              {myNotifications.length > 0 && (
-                <button onClick={markAllNotifsRead} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-900">
-                  تحديد الكل كمقروء ✓
+              <div className="flex items-center gap-2 flex-wrap">
+                {myNotifications.length > 0 && (
+                  <button onClick={markAllNotifsRead} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-900">
+                    تحديد الكل كمقروء ✓
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <button
+                onClick={() => setNotifFilter("all")}
+                className={`px-3 py-1 font-bold border transition-all ${notifFilter === "all" ? "bg-slate-900 text-white border-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"}`}
+              >
+                الكل ({myNotifications.length})
+              </button>
+              <button
+                onClick={() => setNotifFilter("unread")}
+                className={`px-3 py-1 font-bold border transition-all ${notifFilter === "unread" ? "bg-slate-900 text-white border-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"}`}
+              >
+                غير مقروءة ({unreadCount})
+              </button>
+              {canAdmin && (
+                <button
+                  onClick={() => setNotifFilter("reports")}
+                  className={`px-3 py-1 font-bold border transition-all ${notifFilter === "reports" ? "bg-red-700 text-white border-red-900 shadow-[1px_1px_0px_#000]" : "bg-white text-red-700 border-red-300 hover:border-red-600"}`}
+                >
+                  بلاغات الإشراف ({myNotifications.filter(n => n.type === "report_alert").length})
                 </button>
               )}
             </div>
@@ -2007,50 +2230,89 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-3">
-                {myNotifications.map(n => (
-                  <div
-                    key={n.id}
-                    onClick={() => {
-                      const updated = allNotifications.map(item => item.id === n.id ? { ...item, read: true } : item);
-                      setNotifications(updated);
-                      setAllNotifications(updated);
-                      if (n.type === "teacher_approved") {
-                        setTab("directory");
-                      } else {
-                        setTab("feed");
-                      }
-                    }}
-                    className={`p-4 border-2 transition-all cursor-pointer shadow-[2px_2px_0px_#d1dcd6] ${n.read ? "bg-white border-border-subtle" : "bg-emerald-50 border-emerald-600"}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {n.type === "teacher_approved" ? (
-                          <div className="w-7 h-7 bg-emerald-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
-                            <IconBook size={14} />
-                          </div>
-                        ) : (
-                          <Avatar username={n.actor} size="w-7 h-7 text-xs" />
-                        )}
-                        <span className="font-black text-xs text-slate-800">{n.actor}</span>
-                        <span className="text-xs text-slate-600">
-                          {n.type === "teacher_approved" ? "وافق على طلب إضافة المدرس:" : "علّق على منشورك:"}
-                        </span>
-                        <span className="text-xs font-bold text-emerald-800">"{n.targetTitle}"</span>
+                {myNotifications
+                  .filter(n => {
+                    if (notifFilter === "unread") return !n.read;
+                    if (notifFilter === "reports") return n.type === "report_alert";
+                    return true;
+                  })
+                  .map(n => (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        const updated = allNotifications.map(item => item.id === n.id ? { ...item, read: true } : item);
+                        setNotifications(updated);
+                        setAllNotifications(updated);
+                        if (n.type === "report_alert") {
+                          setTab("admin");
+                        } else if (n.type === "teacher_approved" || n.type === "teacher_rejected") {
+                          setTab("directory");
+                        } else {
+                          setTab("feed");
+                        }
+                      }}
+                      className={`p-4 border-2 transition-all cursor-pointer shadow-[2px_2px_0px_#d1dcd6] ${
+                        n.read
+                          ? "bg-white border-border-subtle"
+                          : n.type === "report_alert"
+                          ? "bg-red-50 border-red-500"
+                          : n.type === "admin_warning"
+                          ? "bg-amber-50 border-amber-500"
+                          : "bg-emerald-50 border-emerald-600"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          {n.type === "teacher_approved" ? (
+                            <div className="w-7 h-7 bg-emerald-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                              <IconBook size={14} />
+                            </div>
+                          ) : n.type === "report_alert" ? (
+                            <div className="w-7 h-7 bg-red-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                              <IconFlag size={14} />
+                            </div>
+                          ) : n.type === "like" ? (
+                            <div className="w-7 h-7 bg-emerald-100 border border-emerald-600 flex items-center justify-center text-emerald-800 text-xs shrink-0">
+                              <IconThumbUp size={14} />
+                            </div>
+                          ) : n.type === "admin_warning" ? (
+                            <div className="w-7 h-7 bg-amber-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                              <IconShield size={14} />
+                            </div>
+                          ) : (
+                            <Avatar username={n.actor} size="w-7 h-7 text-xs" />
+                          )}
+
+                          <span className="font-black text-xs text-slate-800">{n.actor}</span>
+                          <span className="text-xs text-slate-600">
+                            {n.type === "teacher_approved"
+                              ? "تمت الموافقة على إضافة المدرس:"
+                              : n.type === "teacher_rejected"
+                              ? "تم رفض طلب إضافة المدرس:"
+                              : n.type === "like"
+                              ? "أعجب بمنشورك:"
+                              : n.type === "report_alert"
+                              ? "تنبيه إداري: وصل بلاغ عن:"
+                              : n.type === "admin_warning"
+                              ? "إنذار إداري رسمي:"
+                              : "علّق على منشورك:"}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-800">"{n.targetTitle}"</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 shrink-0">{getRelativeTime(n.created_at)}</span>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(n.created_at)}</span>
+                      {n.commentText && (
+                        <p className="text-xs font-medium text-slate-700 mt-2 pr-9 bg-white/80 p-2.5 border border-slate-200 leading-relaxed">
+                          {n.commentText}
+                        </p>
+                      )}
                     </div>
-                    {n.commentText && (
-                      <p className="text-xs font-medium text-slate-700 mt-2 pr-9 bg-white/70 p-2 border border-slate-200">
-                        {n.commentText}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
-
           </section>
         )}
+
 
         {/* ──── TAB 4: PROFILE (الملف الشخصي) ──── */}
         {tab === "profile" && (
@@ -2401,69 +2663,236 @@ export default function Home() {
         {/* ──── TAB 5: ADMIN (الإدارة) ──── */}
         {tab === "admin" && canAdmin && (
           <section className="space-y-6">
-            <div className="bg-red-50 border-2 border-red-600 shadow-[4px_4px_0px_#dc2626] p-5 flex items-center justify-between">
+            <div className="bg-red-50 border-2 border-red-600 shadow-[4px_4px_0px_#dc2626] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <IconShield size={20} className="text-red-700" />
                 <div>
                   <h2 className="font-black text-base text-red-800">لوحة التحكم والإشراف</h2>
-                  <p className="text-xs text-red-600 mt-0.5">إدارة المحتوى المبلغ عنه والطلبات على قاعدة البيانات المركزية</p>
+                  <p className="text-xs text-red-600 mt-0.5">إدارة البلاغات ومراجعة المحتوى والطلبات على قاعدة البيانات المركزية</p>
                 </div>
               </div>
-              <span className="px-3 py-1 bg-red-600 text-white font-black text-[10px] border border-slate-900">صلاحيات المالك</span>
+              <span className="px-3 py-1 bg-red-600 text-white font-black text-[10px] border border-slate-900 self-start sm:self-auto">
+                {session?.role === "owner" ? "صلاحيات المالك" : "صلاحيات مشرف"}
+              </span>
+            </div>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
+                <div className="text-2xl font-black text-amber-700">{pendingTeachers.length}</div>
+                <div className="text-xs font-bold text-slate-600 mt-0.5">طلبات مدرسين معلقة</div>
+              </div>
+              <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
+                <div className="text-2xl font-black text-red-600">{reportedPosts.length}</div>
+                <div className="text-xs font-bold text-slate-600 mt-0.5">منشورات عليها بلاغات</div>
+              </div>
+              <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
+                <div className="text-2xl font-black text-blue-700">{reportRecordsList.length}</div>
+                <div className="text-xs font-bold text-slate-600 mt-0.5">إجمالي تقارير البلاغات</div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Column 1: Teacher Requests */}
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
                 <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
-                  <h3 className="font-black text-sm flex items-center gap-1.5"><IconInbox size={16} /> طلبات إضافة المدرسين (قائمة الانتظار)</h3>
-                  <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">{pendingTeachers.length}</span>
+                  <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
+                    <IconInbox size={16} className="text-emerald-primary" />
+                    <span>طلبات إضافة المدرسين</span>
+                  </h3>
+                  <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">
+                    {pendingTeachers.length} معلق
+                  </span>
                 </div>
+
                 {pendingTeachers.length === 0 ? (
-                  <div className="text-xs text-slate-400 py-4 text-center font-semibold">لا توجد طلبات معلقة حالياً في قائمة الانتظار.</div>
+                  <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
+                    لا توجد طلبات معلقة حالياً في قائمة الانتظار.
+                  </div>
                 ) : (
-                  pendingTeachers.map(t => (
-                    <div key={t.id} className="bg-slate-50 p-3 border-2 border-slate-900 shadow-[2px_2px_0px_#000] space-y-2">
-                      <div className="flex items-start gap-3">
-                        <img src={t.img} alt={t.name} className="w-14 h-14 border-2 border-slate-900 object-cover shrink-0 bg-white" />
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-black text-sm text-slate-900">{t.name}</h4>
-                          <p className="text-xs text-emerald-800 font-bold">{t.subject} • {t.gov}</p>
-                          {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
-                          <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                            مُرسل الطلب: <span className="font-bold text-slate-800">{t.createdBy || t.created_by || "مستخدم"}</span>
-                          </p>
+                  <div className="space-y-3">
+                    {pendingTeachers.map(t => (
+                      <div key={t.id} className="bg-slate-50 p-3 border-2 border-slate-900 shadow-[2px_2px_0px_#000] space-y-2">
+                        <div className="flex items-start gap-3">
+                          <img src={t.img} alt={t.name} className="w-14 h-14 border-2 border-slate-900 object-cover shrink-0 bg-white" />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-black text-sm text-slate-900">{t.name}</h4>
+                            <p className="text-xs text-emerald-800 font-bold">{t.subject} • {t.gov}</p>
+                            {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
+                            <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                              مُرسل الطلب: <span className="font-bold text-slate-800">{t.createdBy || t.created_by || "مستخدم"}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                          <button onClick={() => approveTeacher(t.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border border-slate-900 flex items-center gap-1 shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px transition-all">
+                            ✓ قبول ونشر
+                          </button>
+                          <button onClick={() => rejectTeacher(t.id)} className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all">
+                            ✕ رفض
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-                        <button onClick={() => approveTeacher(t.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border border-slate-900 flex items-center gap-1">
-                          ✓ قبول ونشر
-                        </button>
-                        <button onClick={() => rejectTeacher(t.id)} className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 flex items-center gap-1">
-                          ✕ رفض
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
               </div>
 
+              {/* Column 2: Reports & Moderation Queue */}
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
                 <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
-                  <h3 className="font-black text-sm flex items-center gap-1"><IconFlag size={14} /> المحتوى المبلغ عنه</h3>
-                  <span className="px-2 py-0.5 bg-red-200 text-red-900 font-bold text-xs border border-slate-900">{reportedPosts.length}</span>
-                </div>
-                {reportedPosts.length === 0 ? <div className="text-xs text-slate-400">لا يوجد محتوى مبلغ عنه.</div> : reportedPosts.map(p => (
-                  <div key={p.id} className="bg-white p-2 border border-slate-900 text-xs flex justify-between items-center gap-2">
-                    <div><span className="font-bold">{p.title}</span><span className="text-slate-400 mr-2">({p.reports} — {p.status === "hidden" ? "مخفي" : "مرئي"})</span></div>
-                    <div className="flex gap-1">
-                      {p.status === "hidden" ? <button onClick={() => restorePost(p.id)} className="px-2 py-1 bg-blue-600 text-white font-bold">إعادة</button> : <button onClick={() => hidePost(p.id)} className="px-2 py-1 bg-red-600 text-white font-bold">إخفاء</button>}
-                    </div>
+                  <h3 className="font-black text-sm flex items-center gap-1 text-slate-900">
+                    <IconFlag size={14} className="text-red-600" />
+                    <span>مركز مراجعة البلاغات والملاحظات</span>
+                  </h3>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <button
+                      onClick={() => setAdminReportFilter("pending")}
+                      className={`px-2 py-0.5 font-bold border transition-all ${adminReportFilter === "pending" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-300"}`}
+                    >
+                      معلقة
+                    </button>
+                    <button
+                      onClick={() => setAdminReportFilter("all")}
+                      className={`px-2 py-0.5 font-bold border transition-all ${adminReportFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-300"}`}
+                    >
+                      الكل
+                    </button>
                   </div>
-                ))}
+                </div>
+
+                {reportRecordsList.length === 0 && reportedPosts.length === 0 ? (
+                  <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
+                    لا يوجد محتوى تم الإبلاغ عنه حالياً.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                    {/* 1. Detailed Submissions */}
+                    {reportRecordsList
+                      .filter(r => adminReportFilter === "all" || (r.status || "pending") === adminReportFilter)
+                      .map(r => {
+                        const targetPost = posts.find(p => p.id === r.targetId);
+                        const reasonLabel = r.reason === "inappropriate" ? "محتوى غير لائق ومسيء" : r.reason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
+                        const isResolved = r.status === "resolved" || r.status === "dismissed";
+
+                        return (
+                          <div key={r.id} className={`p-3.5 border-2 space-y-2.5 transition-all ${isResolved ? "bg-slate-50/70 border-slate-200 opacity-75" : "bg-white border-slate-900 shadow-[2px_2px_0px_#000]"}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
+                                  r.reason === "inappropriate"
+                                    ? "bg-red-100 text-red-900 border-red-400"
+                                    : r.reason === "wrong_info"
+                                    ? "bg-amber-100 text-amber-900 border-amber-400"
+                                    : "bg-slate-100 text-slate-800 border-slate-400"
+                                }`}>
+                                  {reasonLabel}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-bold">
+                                  من قِبل: <span className="text-slate-800">{r.reporter}</span>
+                                </span>
+                              </div>
+                              <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(r.created_at)}</span>
+                            </div>
+
+                            {/* Content Preview */}
+                            <div className="bg-slate-50 p-2 border border-slate-200 text-xs">
+                              <div className="font-black text-slate-900">{r.targetTitle || targetPost?.title || "محتوى محدد"}</div>
+                              {targetPost?.body && (
+                                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{targetPost.body}</p>
+                              )}
+                              {targetPost && (
+                                <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
+                                  <span>الكاتب: <strong className="text-teal-800">{targetPost.author}</strong></span>
+                                  <span>الحالة: <strong className={targetPost.status === "hidden" ? "text-red-600" : "text-emerald-700"}>{targetPost.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 50-word reporter note */}
+                            {r.note && (
+                              <div className="text-xs bg-amber-50 border border-amber-200 p-2 text-amber-950">
+                                <span className="font-bold block text-[10px] text-amber-800 mb-0.5">ملاحظة المُبلغ للمشرفين:</span>
+                                <p className="text-[11px] leading-relaxed font-semibold">"{r.note}"</p>
+                              </div>
+                            )}
+
+                            {/* Moderation Actions */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
+                              <div className="flex items-center gap-1.5">
+                                {targetPost && (
+                                  targetPost.status === "hidden" ? (
+                                    <button
+                                      onClick={() => restorePost(targetPost.id)}
+                                      className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] border border-emerald-500"
+                                    >
+                                      إعادة إظهار
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => hidePost(targetPost.id)}
+                                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] border border-amber-500"
+                                    >
+                                      إخفاء المحتوى
+                                    </button>
+                                  )
+                                )}
+                                <button
+                                  onClick={() => adminDeleteReportedItem(r.targetId, r.targetType, r.id)}
+                                  className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-500 flex items-center gap-1"
+                                >
+                                  <IconTrash size={11} /> حذف نهائي
+                                </button>
+                                {targetPost && targetPost.author && (
+                                  <button
+                                    onClick={() => sendAdminWarning(targetPost.author, r.targetTitle)}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] border border-slate-400"
+                                    title="توجيه تنبيه رسمي لكاتب المنشور"
+                                  >
+                                    إنذار الكاتب
+                                  </button>
+                                )}
+                              </div>
+
+                              {!isResolved && (
+                                <button
+                                  onClick={() => dismissReport(r.id, r.targetId)}
+                                  className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline"
+                                >
+                                  تجاهل وتبرئة
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {/* 2. Flagged Posts Without Separate Report Record */}
+                    {reportedPosts.filter(p => !reportRecordsList.some(r => r.targetId === p.id)).map(p => (
+                      <div key={p.id} className="p-3 border-2 border-slate-300 bg-slate-50 text-xs flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-bold text-slate-900">{p.title}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            عدد البلاغات: <strong className="text-red-600">{p.reports}</strong> • الحالة: {p.status === "hidden" ? "مخفي" : "نشط"}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {p.status === "hidden" ? (
+                            <button onClick={() => restorePost(p.id)} className="px-2 py-1 bg-emerald-600 text-white font-bold text-[10px]">إظهار</button>
+                          ) : (
+                            <button onClick={() => hidePost(p.id)} className="px-2 py-1 bg-amber-600 text-white font-bold text-[10px]">إخفاء</button>
+                          )}
+                          <button onClick={() => deletePost(p.id)} className="px-2 py-1 bg-red-600 text-white font-bold text-[10px]">حذف</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </section>
         )}
+
       </main>
 
       {/* ═══════ MOBILE BOTTOM NAVIGATION BAR ═══════ */}
