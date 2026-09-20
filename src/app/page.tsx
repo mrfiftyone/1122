@@ -671,11 +671,11 @@ export default function Home() {
   const fetchSupabaseData = useCallback(async () => {
     try {
       const [pRes, tRes, prRes, nRes, repRes] = await Promise.all([
-        supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }),
-        supabase.from('teachers').select('*').order('created_at', { ascending: false }),
-        supabase.from('profiles').select('*'),
-        supabase.from('notifications').select('*').order('created_at', { ascending: false }),
-        supabase.from('reports').select('*').order('created_at', { ascending: false }),
+        supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }).limit(40),
+        supabase.from('teachers').select('*').order('created_at', { ascending: false }).limit(40),
+        supabase.from('profiles').select('username, role, avatar_color, bio, avatar_url'),
+        supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(40),
+        supabase.from('reports').select('*').order('created_at', { ascending: false }).limit(40),
       ]);
 
       if (pRes.data) {
@@ -903,21 +903,22 @@ export default function Home() {
       // ignore
     }
 
-    // Listen to Supabase Realtime updates from any user
+    // Listen to Supabase Realtime updates with smart debouncing (prevents flooding queries)
+    let debounceTimer: any = null;
+    const scheduleFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchSupabaseData();
+      }, 1200);
+    };
+
     const channel = supabase
       .channel('public-global-feed')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
-        fetchSupabaseData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
-        fetchSupabaseData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, () => {
-        fetchSupabaseData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, () => {
-        fetchSupabaseData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, scheduleFetch)
       .subscribe();
 
     const lockExpiry = parseInt(localStorage.getItem("login_lockout_until") || "0");
@@ -929,6 +930,7 @@ export default function Home() {
 
     return () => {
       clearInterval(expireCheckInterval);
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchSupabaseData, fetchVotesFromSupabase]);
@@ -1258,11 +1260,11 @@ export default function Home() {
     setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
     setPostModal(false); rerender();
 
-    // Send to Supabase
+    // Send to Supabase in background
     try {
-      const { data, error } = await supabase.from('posts').insert([newPostPayload]).select('*, comments(*)').single();
+      const { data, error } = await supabase.from('posts').insert([newPostPayload]).select('id').single();
       if (!error && data) {
-        fetchSupabaseData();
+        setPostsList(prev => prev.map(p => p.id === tempPost.id ? { ...p, id: data.id } : p));
       }
     } catch (e) {
       console.error("Error creating post in Supabase:", e);
@@ -1657,7 +1659,6 @@ export default function Home() {
         dislikes: 0,
         reports: 0,
       }]);
-      fetchSupabaseData();
     } catch (e) {
       console.error("Error creating comment in Supabase:", e);
     }

@@ -1,12 +1,12 @@
 # Graph Report - 1122  (2026-09-20)
 
 ## Corpus Check
-- 28 files · ~40,436 words
+- 28 files · ~40,710 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 3 file(s) not represented in the graph (top: (none) 1, .ico 1, .css 1)
 
 ## Summary
-- 309 nodes · 546 edges · 23 communities (16 shown, 7 thin omitted)
+- 309 nodes · 545 edges · 23 communities (16 shown, 7 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
@@ -18,7 +18,7 @@
 - next
 - normalizeTeacherName
 - icons.tsx
-- sendNotificationToUser
+- setNotifications
 - toggleBookmark
 - README.md
 - getSupportTickets
@@ -39,10 +39,10 @@
 3. `compilerOptions` - 16 edges
 4. `exportPlatformBackup()` - 12 edges
 5. `getUsers()` - 10 edges
-6. `setNotifications()` - 10 edges
-7. `getNotifications()` - 9 edges
-8. `sendNotificationToUser()` - 9 edges
-9. `next` - 8 edges
+6. `sendNotificationToUser()` - 10 edges
+7. `setNotifications()` - 9 edges
+8. `next` - 8 edges
+9. `getNotifications()` - 8 edges
 10. `handleMuteUser()` - 8 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -67,8 +67,8 @@ Cohesion: 0.05
 Nodes (36): AuditLogItem, AVATAR_COLORS, BookmarkItem, Comment, DEFAULT_MOD_PERMISSIONS, FULL_OWNER_PERMISSIONS, GOVERNORATES, GRADE_OPTIONS (+28 more)
 
 ### Community 1 - "Home"
-Cohesion: 0.05
-Nodes (63): getAuditLogs(), getCustomBannedWords(), getModPermissions(), getNotifications(), getPlatformSettings(), getPosts(), getProfiles(), getSession() (+55 more)
+Cohesion: 0.06
+Nodes (58): getAuditLogs(), getCustomBannedWords(), getModPermissions(), getMutedUsers(), getPlatformSettings(), getPosts(), getProfiles(), getSession() (+50 more)
 
 ### Community 2 - "package.json"
 Cohesion: 0.05
@@ -90,9 +90,9 @@ Nodes (3): submitTeacher(), checkIsDuplicate(), normalizeTeacherName()
 Cohesion: 0.05
 Nodes (36): IconAlertTriangle(), IconAward(), IconBell(), IconBolt(), IconBookmark(), IconChevronDown(), IconChevronUp(), IconClock (+28 more)
 
-### Community 7 - "sendNotificationToUser"
-Cohesion: 0.36
-Nodes (9): getMutedUsers(), getUserStrikes(), handleIssueWarning(), handleMuteUser(), handleUnmuteUser(), isUserCurrentlyMuted(), sendNotificationToUser(), setMutedUsers() (+1 more)
+### Community 7 - "setNotifications"
+Cohesion: 0.21
+Nodes (12): getNotifications(), getVotes(), approveTeacher(), castVote(), getUserVote(), markAllNotifsRead(), rejectTeacher(), sendAdminWarning() (+4 more)
 
 ### Community 8 - "toggleBookmark"
 Cohesion: 0.67
@@ -111,8 +111,8 @@ Cohesion: 0.33
 Nodes (4): IconArrowRight(), IconBook(), IconHome(), IconShield()
 
 ### Community 18 - "security.ts"
-Cohesion: 0.12
-Nodes (18): addComment(), submitPost(), submitTeacherReview(), voteTeacher(), BLOCKED_WORDS, containsProfanity(), getBlockedWordsList(), ALLOWED_TELEGRAM_PATTERNS (+10 more)
+Cohesion: 0.11
+Nodes (20): addComment(), isUserCurrentlyMuted(), submitPost(), submitTeacherReview(), voteTeacher(), setMutedUsers(), BLOCKED_WORDS, containsProfanity() (+12 more)
 
 ### Community 19 - "i18n.ts"
 Cohesion: 0.40
@@ -134,8 +134,8 @@ Nodes (3): getPinnedPostIds(), togglePinPost(), setPinnedPostIdsStorage()
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Home()` connect `Home` to `app/page.tsx`, `normalizeTeacherName`, `sendNotificationToUser`, `toggleBookmark`, `getSupportTickets`, `security.ts`, `i18n.ts`, `time.ts`, `getPinnedPostIds`?**
-  _High betweenness centrality (0.240) - this node is a cross-community bridge._
+- **Why does `Home()` connect `Home` to `app/page.tsx`, `normalizeTeacherName`, `setNotifications`, `toggleBookmark`, `getSupportTickets`, `security.ts`, `i18n.ts`, `time.ts`, `getPinnedPostIds`?**
+  _High betweenness centrality (0.241) - this node is a cross-community bridge._
 - **Why does `next` connect `next` to `app/page.tsx`, `not-found.tsx`, `package.json`?**
   _High betweenness centrality (0.173) - this node is a cross-community bridge._
 - **Why does `react` connect `package.json` to `app/page.tsx`?**
@@ -145,6 +145,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `app/page.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.05405405405405406 - nodes in this community are weakly interconnected._
 - **Should `Home` be split into smaller, more focused modules?**
-  _Cohesion score 0.05405405405405406 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.059676044330775786 - nodes in this community are weakly interconnected._
 - **Should `package.json` be split into smaller, more focused modules?**
   _Cohesion score 0.05405405405405406 - nodes in this community are weakly interconnected._
