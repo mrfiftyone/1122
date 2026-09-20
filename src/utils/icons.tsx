@@ -395,6 +395,21 @@ export function IconPin({ size = 18, className = "" }: IconProps) {
   );
 }
 
+export function IconPalmTree({ size = 18, className = "" }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M13 8c0-2.76-2.46-5-5.5-5a5.5 5.5 0 0 0-4.5 2.38" />
+      <path d="M13 8c0-2.76 2.46-5 5.5-5a5.5 5.5 0 0 1 4.5 2.38" />
+      <path d="M13 7.5a6 6 0 0 0-6 5.5" />
+      <path d="M13 7.5a6 6 0 0 1 6 5.5" />
+      <path d="M13 8v13" />
+      <path d="M10 13c1 .8 2 .8 3 0" />
+      <path d="M10 17c1 .8 2 .8 3 0" />
+    </svg>
+  );
+}
+
+
 
 
 

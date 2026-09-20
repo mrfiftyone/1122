@@ -11,13 +11,21 @@ import {
   IconArrowRight, IconHome, IconBell, IconHistory, IconBookmark,
   IconImage, IconLink, IconAward, IconVideo, IconMonitor, IconFlame,
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
-  IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin,
+  IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
 import { supabase } from "@/utils/supabase";
+
+function isValidYoutubeUrl(url: string): boolean {
+  if (!url || !url.trim()) return true;
+  const trimmed = url.trim();
+  // Validates standard YouTube watch URLs, short youtu.be, shorts, embeds, and playlists
+  const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|embed\/|playlist\?list=)|youtu\.be\/)[\w\-?&=]+/;
+  return ytRegex.test(trimmed);
+}
 
 // ─── Types ─────────────────────────────────────────────────────────
 interface User { username: string; pass: string; role: "student" | "mod" | "owner" }
@@ -243,6 +251,7 @@ export default function Home() {
   const [postBody, setPostBody] = useState("");
   const [postGrade, setPostGrade] = useState("General");
   const [postTeacher, setPostTeacher] = useState("");
+  const [postTeacherSearch, setPostTeacherSearch] = useState("");
   const [postImages, setPostImages] = useState<string[]>([]);
   const [postYoutube, setPostYoutube] = useState("");
   const [postTelegram, setPostTelegram] = useState("");
@@ -661,19 +670,27 @@ export default function Home() {
 
   // ─── Post Handlers (Persisted to Supabase) ─────────────────────────
   async function submitPost() {
-    if (!session || !postTitle.trim() || !postBody.trim() || !postTeacher) return;
+    if (!session || !postTitle.trim() || !postBody.trim()) return;
     if (postTitle.length > 100 || postBody.length > 1500) return;
+
+    // Strict YouTube link validation
+    if (postYoutube.trim() && !isValidYoutubeUrl(postYoutube.trim())) {
+      alert(siteLang === "en"
+        ? "Please enter a valid YouTube link (e.g., https://youtube.com/watch?v=... or https://youtu.be/...)"
+        : "يرجى إدخال رابط يوتيوب صحيح (مثل https://youtube.com/watch?v=... أو https://youtu.be/...)");
+      return;
+    }
+
     const meta: any = {};
     if (postTag) meta.tag = postTag;
     if (postImages.length > 0) meta.images = postImages;
     if (postYoutube.trim()) meta.youtubeUrl = postYoutube.trim();
-    if (postTelegram.trim()) meta.telegramUrl = postTelegram.trim();
     const hasMeta = Object.keys(meta).length > 0;
     const metaSuffix = hasMeta ? `\n\n<!--meta:${JSON.stringify(meta)}-->` : "";
 
     const newPostPayload = {
       author: session.username,
-      teacher_id: postTeacher,
+      teacher_id: postTeacher.trim() || undefined,
       title: postTitle.trim(),
       body: postBody.trim() + metaSuffix,
       grade_level: postGrade,
@@ -687,8 +704,8 @@ export default function Home() {
     const tempPost: Post = {
       id: "temp_" + Date.now(),
       author: session.username,
-      teacherId: postTeacher,
-      teacher_id: postTeacher,
+      teacherId: postTeacher.trim() || undefined,
+      teacher_id: postTeacher.trim() || undefined,
       title: postTitle.trim(),
       body: postBody.trim(),
       grade_level: postGrade,
@@ -700,7 +717,7 @@ export default function Home() {
       status: "active",
       images: postImages,
       youtubeUrl: postYoutube.trim(),
-      telegramUrl: postTelegram.trim(),
+      telegramUrl: "",
       comments: [],
       created_at: new Date().toISOString(),
     };
@@ -717,6 +734,7 @@ export default function Home() {
     }
 
     setPostTitle(""); setPostBody(""); setPostGrade("General"); setPostTeacher("");
+    setPostTeacherSearch("");
     setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
     setPostModal(false); rerender();
   }
@@ -2056,7 +2074,7 @@ export default function Home() {
                 {[
                   { id: "all", label: t("tagAll"), icon: null, count: activePosts.length },
                   { id: "question", label: t("tagQuestion"), icon: <IconHelpCircle size={12} />, count: activePosts.filter(p => p.tag === "question").length },
-                  { id: "news", label: t("tagNews"), icon: <IconBolt size={12} />, count: activePosts.filter(p => p.tag === "news").length },
+                  { id: "news", label: t("tagNews"), icon: <IconPalmTree size={12} />, count: activePosts.filter(p => p.tag === "news").length },
                   { id: "discussion", label: t("tagDiscussion"), icon: <IconPen size={12} />, count: activePosts.filter(p => p.tag === "discussion" || !p.tag).length },
                   { id: "tips", label: t("tagTips"), icon: <IconCheck size={12} />, count: activePosts.filter(p => p.tag === "tips").length },
                   { id: "booklet", label: t("tagBooklet"), icon: <IconBookmark size={12} />, count: activePosts.filter(p => p.tag === "booklet").length },
@@ -2125,7 +2143,7 @@ export default function Home() {
                           isPinned
                             ? "border-amber-500 shadow-[4px_4px_0px_#d97706] ring-2 ring-amber-400 p-5"
                             : postTagVal === "news"
-                            ? "border-red-600 shadow-[4px_4px_0px_#dc2626] p-5"
+                            ? "border-blue-900 shadow-[4px_4px_0px_#1e3a8a] p-5"
                             : "border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5"
                         }`}
                       >
@@ -2156,8 +2174,8 @@ export default function Home() {
 
                             {/* Post Tag Badge */}
                             {postTagVal === "news" && (
-                              <span className="px-2 py-0.5 bg-red-600 text-white font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
-                                <IconBolt size={11} /> {t("tagNews")}
+                              <span className="px-2 py-0.5 bg-blue-900 text-white font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconPalmTree size={11} /> {t("tagNews")}
                               </span>
                             )}
                             {postTagVal === "question" && (
@@ -4105,11 +4123,68 @@ export default function Home() {
             </div>
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold mb-1">اختر المدرس <span className="text-red-500">*</span></label>
-                <select value={postTeacher} onChange={e => setPostTeacher(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none">
-                  <option value="">-- اختر مدرس --</option>
-                  {activeTeachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject} - {t.gov})</option>)}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-800">
+                    {siteLang === "en" ? "Related Teacher (Optional)" : "المدرس المعني (اختياري)"}
+                  </label>
+                  {postTeacher && (
+                    <button
+                      type="button"
+                      onClick={() => setPostTeacher("")}
+                      className="text-[10px] text-red-600 hover:underline font-bold"
+                    >
+                      {siteLang === "en" ? "Clear selection" : "إلغاء التحديد"}
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={postTeacherSearch}
+                      onChange={e => setPostTeacherSearch(e.target.value)}
+                      placeholder={siteLang === "en" ? "Search teacher by name, subject, or city..." : "ابحث عن المدرس بالاسم، المادة أو المحافظة..."}
+                      className="w-full p-2 ps-8 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none"
+                    />
+                    <span className="absolute start-2.5 top-2.5 text-slate-500 pointer-events-none">
+                      <IconSearch size={13} />
+                    </span>
+                    {postTeacherSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setPostTeacherSearch("")}
+                        className="absolute end-2.5 top-2 text-xs text-slate-400 hover:text-slate-700 font-bold"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <select
+                    value={postTeacher}
+                    onChange={e => setPostTeacher(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none text-xs"
+                  >
+                    <option value="">
+                      {siteLang === "en" ? "-- No Teacher (General / Ministerial Post) --" : "-- بدون مدرس (منشور عام / وزاري) --"}
+                    </option>
+                    {activeTeachers
+                      .filter(t => {
+                        if (!postTeacherSearch.trim()) return true;
+                        const q = postTeacherSearch.trim().toLowerCase();
+                        return (
+                          t.name.toLowerCase().includes(q) ||
+                          t.subject.toLowerCase().includes(q) ||
+                          t.gov.toLowerCase().includes(q)
+                        );
+                      })
+                      .map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.subject} - {t.gov})
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
               {/* 1-Click Post Tag Selector (Zero typing needed) */}
@@ -4121,7 +4196,7 @@ export default function Home() {
                   {[
                     { id: "question", label: t("tagQuestion"), icon: <IconHelpCircle size={13} />, color: "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-500", active: "bg-indigo-600 text-white border-slate-900" },
                     { id: "discussion", label: t("tagDiscussion"), icon: <IconPen size={13} />, color: "bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-400", active: "bg-slate-900 text-white border-slate-900" },
-                    { id: "news", label: t("tagNews"), icon: <IconBolt size={13} />, color: "bg-red-50 hover:bg-red-100 text-red-900 border-red-500", active: "bg-red-600 text-white border-slate-900" },
+                    { id: "news", label: t("tagNews"), icon: <IconPalmTree size={13} />, color: "bg-blue-50 hover:bg-blue-100 text-blue-950 border-blue-900", active: "bg-blue-900 text-white border-slate-900" },
                     { id: "tips", label: t("tagTips"), icon: <IconCheck size={13} />, color: "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-500", active: "bg-emerald-600 text-white border-slate-900" },
                     { id: "booklet", label: t("tagBooklet"), icon: <IconBookmark size={13} />, color: "bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-500", active: "bg-blue-600 text-white border-slate-900" },
                     { id: "other", label: t("tagOther"), icon: <IconTag size={13} />, color: "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-400", active: "bg-slate-800 text-white border-slate-900" },
@@ -4203,37 +4278,41 @@ export default function Home() {
 
               {/* YouTube URL */}
               <div>
-                <label className="block font-bold mb-1 text-slate-800 flex items-center gap-1">
-                  <IconVideo size={13} className="text-red-600" />
-                  <span>رابط شرح يوتيوب (اختياري)</span>
+                <label className="block font-bold mb-1 text-slate-800 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <IconVideo size={13} className="text-red-600" />
+                    <span>{siteLang === "en" ? "YouTube Explanation Link (Optional)" : "رابط شرح يوتيوب (اختياري)"}</span>
+                  </span>
+                  {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
+                    <span className="text-[10px] text-red-600 font-bold">
+                      {siteLang === "en" ? "Invalid YouTube URL" : "رابط يوتيوب غير صالح"}
+                    </span>
+                  )}
                 </label>
                 <input
                   type="url"
                   value={postYoutube}
                   onChange={e => setPostYoutube(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none"
-                  placeholder="https://youtube.com/watch?v=..."
+                  className={`w-full p-2.5 bg-slate-50 border-2 font-semibold focus:outline-none ${
+                    postYoutube.trim() && !isValidYoutubeUrl(postYoutube)
+                      ? "border-red-600 bg-red-50 text-red-900"
+                      : "border-slate-900"
+                  }`}
+                  placeholder="https://youtube.com/watch?v=... أو https://youtu.be/..."
                 />
+                {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
+                  <p className="text-[10px] text-red-600 font-bold mt-1">
+                    {siteLang === "en" ? "Must be a valid YouTube link (youtube.com or youtu.be)" : "يجب أن يكون الرابط من موقع يوتيوب (youtube.com أو youtu.be)"}
+                  </p>
+                )}
               </div>
 
-              {/* Telegram / File URL */}
-              <div>
-                <label className="block font-bold mb-1 text-slate-800 flex items-center gap-1">
-                  <IconLink size={13} className="text-blue-600" />
-                  <span>رابط ملزمة أو قناة تيليجرام أو ملف (اختياري)</span>
-                </label>
-                <input
-                  type="url"
-                  value={postTelegram}
-                  onChange={e => setPostTelegram(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none"
-                  placeholder="https://t.me/..."
-                />
-              </div>
-
-              <button onClick={submitPost} disabled={!postTitle.trim() || !postBody.trim() || !postTeacher}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-                نشر المنشور
+              <button
+                onClick={submitPost}
+                disabled={!postTitle.trim() || !postBody.trim() || (!!postYoutube.trim() && !isValidYoutubeUrl(postYoutube))}
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+              >
+                {siteLang === "en" ? "Publish Post" : "نشر المنشور"}
               </button>
             </div>
           </div>

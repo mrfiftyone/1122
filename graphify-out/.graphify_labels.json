@@ -19,11 +19,5 @@
   "17": "not-found.tsx",
   "18": "Turnstile.tsx",
   "19": "i18n.ts",
-  "20": "time.ts",
-  "21": "setNotifications",
-  "22": "castVote",
-  "23": "getSupportTickets",
-  "24": "getReportRecords",
-  "25": "containsProfanity",
-  "26": "getPinnedPostIds"
+  "20": "time.ts"
 }
