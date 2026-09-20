@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 interface TurnstileProps {
   siteKey?: string;
@@ -30,15 +30,25 @@ declare global {
   }
 }
 
-export default function Turnstile({ siteKey, onVerify, onExpire, onError }: TurnstileProps) {
+function Turnstile({ siteKey, onVerify, onExpire, onError }: TurnstileProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Keep latest callbacks in refs so changing prop references do NOT trigger widget destruction
+  const onVerifyRef = useRef(onVerify);
+  onVerifyRef.current = onVerify;
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   // Official Cloudflare Turnstile Key for 1122
   const effectiveKey = siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAE9W7TZB_raO43cA";
 
   useEffect(() => {
+    let isCancelled = false;
+
     // 1. Check if script is already present
     const SCRIPT_ID = "cf-turnstile-script";
     let script = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
@@ -53,18 +63,19 @@ export default function Turnstile({ siteKey, onVerify, onExpire, onError }: Turn
     }
 
     const initWidget = () => {
+      if (isCancelled) return;
       if (window.turnstile && containerRef.current && !widgetIdRef.current) {
         try {
           const id = window.turnstile.render(containerRef.current, {
             sitekey: effectiveKey,
             callback: (token: string) => {
-              onVerify(token);
+              onVerifyRef.current(token);
             },
             "expired-callback": () => {
-              onExpire?.();
+              onExpireRef.current?.();
             },
             "error-callback": () => {
-              onError?.();
+              onErrorRef.current?.();
             },
             theme: "light",
             size: "flexible",
@@ -86,10 +97,14 @@ export default function Turnstile({ siteKey, onVerify, onExpire, onError }: Turn
           initWidget();
         }
       }, 100);
-      return () => clearInterval(interval);
+      return () => {
+        isCancelled = true;
+        clearInterval(interval);
+      };
     }
 
     return () => {
+      isCancelled = true;
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.remove(widgetIdRef.current);
@@ -97,7 +112,7 @@ export default function Turnstile({ siteKey, onVerify, onExpire, onError }: Turn
         widgetIdRef.current = null;
       }
     };
-  }, [effectiveKey, onVerify, onExpire, onError]);
+  }, [effectiveKey]);
 
   return (
     <div className="w-full flex flex-col items-center justify-center min-h-[65px] bg-slate-50 border border-slate-300 p-2 rounded">
@@ -110,3 +125,5 @@ export default function Turnstile({ siteKey, onVerify, onExpire, onError }: Turn
     </div>
   );
 }
+
+export default memo(Turnstile);

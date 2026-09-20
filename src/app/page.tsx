@@ -13,7 +13,7 @@ import {
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
-  IconKey, IconClock,
+  IconKey, IconClock, IconStar,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -562,6 +562,18 @@ export default function Home() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setTurnstileToken(token);
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken(null);
+  }, []);
+
+  const handleTurnstileError = useCallback(() => {
+    setTurnstileToken(null);
+  }, []);
 
   const canOwner = !!(session && session.role === "owner");
   const canAdmin = !!(session && (session.role === "owner" || session.role === "mod"));
@@ -2324,22 +2336,35 @@ export default function Home() {
     .sort((a, b) => b.trendScore - a.trendScore)
     .slice(0, 5);
 
-  // Top students ranked by total likes received on posts, reviews, and comments
-  const topHonorStudents = Object.keys(profiles).map(username => {
+  // Top students ranked by total likes and rating received on posts, reviews, and comments (No limit)
+  const allStudentUsernames = Array.from(
+    new Set([
+      ...Object.keys(profiles),
+      ...posts.map(p => p.author).filter(Boolean),
+      ...getUsers().map((u: User) => u.username).filter(Boolean),
+    ])
+  );
+  const topHonorStudents = allStudentUsernames.map(username => {
     const userPosts = posts.filter(p => p.author === username);
-    const userLikes = userPosts.reduce((sum, p) => sum + p.likes, 0);
-    const userReviews = userPosts.filter(p => p.grade_level?.includes("تقييم أستاذ")).length;
+    const userLikes = userPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
+    const userDislikes = userPosts.reduce((sum, p) => sum + (p.dislikes || 0), 0);
+    const userReviews = userPosts.filter(p => p.grade_level?.includes("تقييم أستاذ") || p.teacher_id || p.teacherId).length;
+    const totalVotes = userLikes + userDislikes;
+    const approvalRate = totalVotes > 0 
+      ? Math.round((userLikes / totalVotes) * 100) 
+      : (userLikes > 0 ? 100 : (userPosts.length > 0 ? 95 : 0));
     return {
       username,
       profile: profiles[username] || { avatarColor: "#0d9488", bio: "" },
       totalLikes: userLikes,
+      totalDislikes: userDislikes,
       reviewsCount: userReviews,
       postsCount: userPosts.length,
+      approvalRate,
     };
   })
   .filter(s => s.postsCount > 0 || s.totalLikes > 0)
-  .sort((a, b) => b.totalLikes - a.totalLikes || b.postsCount - a.postsCount)
-  .slice(0, 10);
+  .sort((a, b) => b.totalLikes - a.totalLikes || b.approvalRate - a.approvalRate || b.postsCount - a.postsCount);
 
   // Teacher Badges & Milestones Helper
   function getTeacherBadges(t: Teacher): { label: string; cls: string; type: "favorite" | "top_subject" | "active" }[] {
@@ -2798,34 +2823,49 @@ export default function Home() {
                   onClick={() => setShowHonorBoard(!showHonorBoard)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold border border-slate-900 shadow-[1px_1px_0px_#000] transition-all"
                 >
-                  {showHonorBoard ? "إخفاء لوحة الشرف" : "عرض أفضل ١٠ طلاب"}
+                  {showHonorBoard ? "إخفاء لوحة الشرف" : `عرض الطلاب المتميزين (${topHonorStudents.length})`}
                 </button>
               </div>
 
               {showHonorBoard && (
-                <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
-                  {topHonorStudents.map((s, idx) => (
-                    <div
-                      key={s.username}
-                      onClick={() => { setViewedUser(s.username); setTab("profile"); }}
-                      className="p-2 border border-slate-900 bg-slate-50 hover:bg-amber-50/60 shadow-[1px_1px_0px_#000] cursor-pointer transition-all flex items-center gap-2"
-                    >
-                      <div className={`font-black text-[10px] px-1 py-0.5 border border-slate-900 shrink-0 ${
-                        idx === 0 ? "bg-amber-300 text-slate-950" : idx === 1 ? "bg-slate-300 text-slate-900" : idx === 2 ? "bg-amber-700 text-white" : "bg-white text-slate-700"
-                      }`}>
-                        #{idx + 1}
-                      </div>
-                      <Avatar username={s.username} size="w-7 h-7 text-xs" />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-black text-xs text-slate-900 truncate">{s.username}</div>
-                        <div className="text-[9px] text-slate-500 font-bold flex items-center gap-1">
-                          <span className="text-emerald-700 flex items-center gap-0.5"><IconThumbUp size={9} /> {s.totalLikes}</span>
-                          <span>•</span>
-                          <span>{s.postsCount} مشاركة</span>
+                <div className="pt-2.5 border-t border-slate-200">
+                  {topHonorStudents.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-500 font-bold">لا يوجد طلاب متفاعلون حالياً</div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 max-h-[460px] overflow-y-auto pr-1">
+                      {topHonorStudents.map((s, idx) => (
+                        <div
+                          key={s.username}
+                          onClick={() => { setViewedUser(s.username); setTab("profile"); }}
+                          className="p-2 border border-slate-900 bg-slate-50 hover:bg-amber-50/70 shadow-[1px_1px_0px_#000] cursor-pointer transition-all flex items-center gap-2"
+                        >
+                          <div className={`font-black text-[10px] px-1.5 py-0.5 border border-slate-900 shrink-0 ${
+                            idx === 0 ? "bg-amber-300 text-slate-950 font-black shadow-[1px_1px_0px_#000]" : 
+                            idx === 1 ? "bg-slate-300 text-slate-900 font-black shadow-[1px_1px_0px_#000]" : 
+                            idx === 2 ? "bg-amber-700 text-white font-black shadow-[1px_1px_0px_#000]" : 
+                            "bg-white text-slate-700"
+                          }`}>
+                            #{idx + 1}
+                          </div>
+                          <Avatar username={s.username} size="w-7 h-7 text-xs" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-black text-xs text-slate-900 truncate">{s.username}</span>
+                              <span className="text-[10px] font-black px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-500 rounded flex items-center gap-0.5 shrink-0">
+                                <IconStar size={9} fill="currentColor" className="text-amber-600" />
+                                {s.approvalRate}%
+                              </span>
+                            </div>
+                            <div className="text-[9px] text-slate-500 font-bold flex items-center gap-1.5 mt-0.5">
+                              <span className="text-emerald-700 flex items-center gap-0.5"><IconThumbUp size={9} /> {s.totalLikes}</span>
+                              <span>•</span>
+                              <span>{s.postsCount} مشاركة</span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -5808,15 +5848,17 @@ export default function Home() {
                     <span>التحقق الأمني (Cloudflare Turnstile):</span>
                   </label>
                   {turnstileToken ? (
-                    <span className="text-[10px] text-emerald-700 font-black">✓ تم التحقق بنجاح</span>
+                    <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
+                      <IconCheck size={12} className="text-emerald-700" /> تم التحقق بنجاح
+                    </span>
                   ) : (
                     <span className="text-[10px] text-slate-500 font-semibold">مطلوب للتحقق</span>
                   )}
                 </div>
                 <Turnstile
-                  onVerify={(token) => setTurnstileToken(token)}
-                  onExpire={() => setTurnstileToken(null)}
-                  onError={() => setTurnstileToken(null)}
+                  onVerify={handleTurnstileVerify}
+                  onExpire={handleTurnstileExpire}
+                  onError={handleTurnstileError}
                 />
               </div>
 

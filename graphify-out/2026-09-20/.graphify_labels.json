@@ -9,7 +9,7 @@
   "7": "addAuditLog",
   "8": "toggleBookmark",
   "9": "README.md",
-  "10": "devDependencies",
+  "10": "normalizeTeacherName",
   "11": "feedAlgorithm.ts",
   "12": "AGENTS.md",
   "13": "postcss.config.mjs",
@@ -17,6 +17,7 @@
   "15": "vercel.json",
   "16": "CLAUDE.md",
   "17": "not-found.tsx",
+  "18": "moderation.ts",
   "19": "i18n.ts",
   "20": "time.ts"
 }

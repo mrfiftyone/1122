@@ -1,13 +1,13 @@
 # Graph Report - 1122  (2026-09-20)
 
 ## Corpus Check
-- 23 files · ~36,342 words
+- 23 files · ~36,558 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 3 file(s) not represented in the graph (top: (none) 1, .ico 1, .css 1)
 
 ## Summary
 - 287 nodes · 499 edges · 21 communities (13 shown, 8 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
+- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -70,7 +70,7 @@ Nodes (43): getNotifications(), getPinnedPostIds(), getSession(), getSupportTick
 
 ### Community 2 - "package.json"
 Cohesion: 0.05
-Nodes (37): eslintConfig, devDependencies, eslint, eslint-config-next, tailwindcss, @tailwindcss/postcss, @types/node, @types/react (+29 more)
+Nodes (36): eslintConfig, devDependencies, eslint, eslint-config-next, tailwindcss, @tailwindcss/postcss, @types/node, @types/react (+28 more)
 
 ### Community 3 - "compilerOptions"
 Cohesion: 0.11
@@ -86,7 +86,7 @@ Nodes (9): dependencies, clsx, lucide-react, next, react, react-dom, @supabase/s
 
 ### Community 6 - "icons.tsx"
 Cohesion: 0.05
-Nodes (35): IconActivity(), IconAward(), IconBell(), IconBolt(), IconCamera(), IconChevronDown(), IconChevronUp(), IconComment() (+27 more)
+Nodes (36): IconActivity(), IconAward(), IconBell(), IconBolt(), IconCamera(), IconChevronDown(), IconChevronUp(), IconClock (+28 more)
 
 ### Community 7 - "addAuditLog"
 Cohesion: 0.09
@@ -125,7 +125,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `next` connect `next` to `app/page.tsx`, `not-found.tsx`, `package.json`?**
   _High betweenness centrality (0.162) - this node is a cross-community bridge._
 - **Why does `react` connect `package.json` to `app/page.tsx`?**
-  _High betweenness centrality (0.100) - this node is a cross-community bridge._
+  _High betweenness centrality (0.101) - this node is a cross-community bridge._
 - **What connects `eslintConfig`, `nextConfig`, `name` to the rest of the system?**
   _93 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app/page.tsx` be split into smaller, more focused modules?**
