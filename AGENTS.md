@@ -11,3 +11,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Project Rules & Standards
 - **STRICT ZERO-EMOJI RULE:** NEVER use Unicode emojis (e.g., 😀, 💬, ⚠️, ❌, etc.) anywhere in the application (UI elements, buttons, alerts, copy, badges, etc.). ALWAYS use or create custom vector SVG icon components in `src/utils/icons.tsx`.
 - **COMMUNICATION LANGUAGE:** ALWAYS talk to the user in English.
+- **HUMAN-FIRST ENGLISH STYLE:**
+  - **No AI clichés or buzzwords:** Avoid "delve", "testament", "tapestry", "beacon", "pivotal", "plethora", "crucial", "seamless", "game-changer", "landscape", "foster", "robust".
+  - **No sycophantic openers:** Never start with "Certainly!", "Sure thing!", "Great question!", "In today's fast-paced world...", "When it comes to...".
+  - **No robotic closings:** Never end with "In conclusion", "Ultimately", "At the end of the day", or generic customer-support sign-offs.
+  - **Vary sentence cadence:** Mix short punchy sentences with longer ones. Drop filler adverbs like "Moreover", "Furthermore", "Additionally". Avoid triads of three adjectives.
+  - **Direct tone:** Use active voice, clear stance, and state what things are directly without over-hedging.
