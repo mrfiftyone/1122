@@ -2251,8 +2251,8 @@ export default function Home() {
     const { data: { session: supaSession } } = await supabase.auth.getSession();
     if (!supaSession?.user) {
       alert(siteLang === "en" 
-        ? "⚠️ Your account is using legacy login! Please log out and sign up again using this exact same username to secure your account before saving." 
-        : "⚠️ حسابك يستخدم نظام تسجيل الدخول القديم! يرجى تسجيل الخروج وإنشاء حساب جديد بنفس اسم المستخدم بالضبط لتأمين حسابك قبل الحفظ.");
+        ? "Your account is using legacy login! Please log out and sign up again using this exact same username to secure your account before saving." 
+        : "حسابك يستخدم نظام تسجيل الدخول القديم! يرجى تسجيل الخروج وإنشاء حساب جديد بنفس اسم المستخدم بالضبط لتأمين حسابك قبل الحفظ.");
       return;
     }
 
@@ -4427,7 +4427,7 @@ export default function Home() {
                         title={isBookmarked(selectedTeacher.id) ? "إزالة من المحفوظات" : "حفظ المدرس في المحفوظات"}
                       >
                         <IconBookmark size={13} fill={isBookmarked(selectedTeacher.id) ? "currentColor" : "none"} />
-                        <span>{isBookmarked(selectedTeacher.id) ? "محفوظ في المحفوظات ✓" : "حفظ المدرس في المحفوظات"}</span>
+                        <span>{isBookmarked(selectedTeacher.id) ? "محفوظ في المحفوظات" : "حفظ المدرس في المحفوظات"}</span>
                       </button>
                     </div>
                   </div>
@@ -4738,8 +4738,9 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {myNotifications.length > 0 && (
-                  <button onClick={markAllNotifsRead} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-900">
-                    تحديد الكل كمقروء ✓
+                  <button onClick={markAllNotifsRead} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-900 flex items-center gap-1.5 shadow-[1px_1px_0px_#000]">
+                    <IconCheck size={12} className="text-emerald-700" />
+                    <span>تحديد الكل كمقروء</span>
                   </button>
                 )}
               </div>
@@ -5576,10 +5577,12 @@ export default function Home() {
                             </div>
                             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                               <button onClick={() => approveTeacher(t.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border border-slate-900 flex items-center gap-1 shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px transition-all">
-                                ✓ قبول ونشر
+                                <IconCheck size={12} />
+                                <span>قبول ونشر</span>
                               </button>
                               <button onClick={() => rejectTeacher(t.id)} className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all">
-                                ✕ رفض
+                                <IconX size={12} />
+                                <span>رفض</span>
                               </button>
                             </div>
                           </div>
@@ -5698,8 +5701,9 @@ export default function Home() {
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="px-2.5 py-0.5 text-xs font-black border uppercase tracking-wider bg-red-600 text-white border-slate-900 shadow-[1px_1px_0px_#000]">
-                                      ⚠️ {r.reportCount} {r.reportCount > 1 ? "بلاغات" : "بلاغ"}
+                                    <span className="px-2.5 py-0.5 text-xs font-black border uppercase tracking-wider bg-red-600 text-white border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                      <IconAlertTriangle size={12} className="shrink-0" />
+                                      <span>{r.reportCount} {r.reportCount > 1 ? "بلاغات" : "بلاغ"}</span>
                                     </span>
                                     <span className={`px-2 py-0.5 text-[10px] font-black border ${
                                       r.reason === "inappropriate"
@@ -5829,7 +5833,9 @@ export default function Home() {
                         <IconSearch size={14} />
                       </span>
                       {adminUserSearch && (
-                        <button onClick={() => setAdminUserSearch("")} className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700">✕</button>
+                        <button onClick={() => setAdminUserSearch("")} className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700" title="مسح البحث">
+                          <IconX size={12} />
+                        </button>
                       )}
                     </div>
                     <div>
@@ -6357,10 +6363,10 @@ export default function Home() {
                             <span>{w}</span>
                             <button
                               onClick={() => handleRemoveBannedWord(w)}
-                              className="text-red-500 hover:text-red-800 font-black text-xs"
+                              className="text-red-500 hover:text-red-800 font-black text-xs p-0.5"
                               title="إزالة الكلمة من الحظر"
                             >
-                              ✕
+                              <IconX size={11} />
                             </button>
                           </span>
                         ))}
@@ -6400,12 +6406,12 @@ export default function Home() {
                         {containsProfanity(filterTestSentence, customBannedWords) ? (
                           <div className="p-2.5 bg-red-100 border border-red-600 text-red-900 text-xs font-black flex items-center gap-1.5">
                             <IconSlash size={14} />
-                            <span>✕ سيتم حظر هذه الجملة تلقائياً لاحتوائها على كلمة محظورة!</span>
+                            <span>سيتم حظر هذه الجملة تلقائياً لاحتوائها على كلمة محظورة!</span>
                           </div>
                         ) : (
                           <div className="p-2.5 bg-emerald-100 border border-emerald-600 text-emerald-900 text-xs font-black flex items-center gap-1.5">
                             <IconCheck size={14} />
-                            <span>✓ الجملة سليمة ومقبولة للنشر وفق المعايير.</span>
+                            <span>الجملة سليمة ومقبولة للنشر وفق المعايير.</span>
                           </div>
                         )}
                       </div>
@@ -6858,10 +6864,19 @@ export default function Home() {
                   placeholder="••••••••"
                 />
                 {isRegister && authPass.length > 0 && (
-                  <div className="mt-2 space-y-0.5 text-[11px] font-bold">
-                    <p className={authPass.length >= 8 ? "text-emerald-600" : "text-slate-400"}>{authPass.length >= 8 ? "✓" : "○"} ٨ أحرف على الأقل</p>
-                    <p className={/[0-9]/.test(authPass) ? "text-emerald-600" : "text-slate-400"}>{/[0-9]/.test(authPass) ? "✓" : "○"} يحتوي على رقم</p>
-                    <p className={/[A-Z]/.test(authPass) ? "text-emerald-600" : "text-slate-400"}>{/[A-Z]/.test(authPass) ? "✓" : "○"} يحتوي على حرف كبير</p>
+                  <div className="mt-2 space-y-1 text-[11px] font-bold">
+                    <p className={`flex items-center gap-1.5 ${authPass.length >= 8 ? "text-emerald-600" : "text-slate-400"}`}>
+                      {authPass.length >= 8 ? <IconCheck size={12} /> : <span className="w-2.5 h-2.5 rounded-full border border-current inline-block" />}
+                      <span>٨ أحرف على الأقل</span>
+                    </p>
+                    <p className={`flex items-center gap-1.5 ${/[0-9]/.test(authPass) ? "text-emerald-600" : "text-slate-400"}`}>
+                      {/[0-9]/.test(authPass) ? <IconCheck size={12} /> : <span className="w-2.5 h-2.5 rounded-full border border-current inline-block" />}
+                      <span>يحتوي على رقم</span>
+                    </p>
+                    <p className={`flex items-center gap-1.5 ${/[A-Z]/.test(authPass) ? "text-emerald-600" : "text-slate-400"}`}>
+                      {/[A-Z]/.test(authPass) ? <IconCheck size={12} /> : <span className="w-2.5 h-2.5 rounded-full border border-current inline-block" />}
+                      <span>يحتوي على حرف كبير</span>
+                    </p>
                   </div>
                 )}
               </div>
@@ -6908,9 +6923,14 @@ export default function Home() {
                 disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken}
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed"
               >
-                {!isRegister && lockoutRemaining > 0
-                  ? `مقفل مؤقتاً (${lockoutRemaining} ثانية)`
-                  : isRegister ? "إنشاء حساب جديد ✓" : "تسجيل الدخول →"}
+                {!isRegister && lockoutRemaining > 0 ? (
+                  <span>مقفل مؤقتاً ({lockoutRemaining} ثانية)</span>
+                ) : (
+                  <span className="flex items-center justify-center gap-1.5">
+                    {isRegister ? <IconCheck size={14} /> : <IconArrowRight size={14} className="rtl:rotate-180" />}
+                    <span>{isRegister ? "إنشاء حساب جديد" : "تسجيل الدخول"}</span>
+                  </span>
+                )}
               </button>
             </div>
             <div className="text-center pt-1 border-t border-slate-200">
@@ -6971,9 +6991,10 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setPostTeacherSearch("")}
-                        className="absolute end-2.5 top-2 text-xs text-slate-400 hover:text-slate-700 font-bold"
+                        className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700"
+                        title="مسح"
                       >
-                        ✕
+                        <IconX size={12} />
                       </button>
                     )}
                   </div>
@@ -7085,7 +7106,7 @@ export default function Home() {
                             className="absolute -top-1.5 -left-1.5 bg-red-600 text-white w-4 h-4 text-[10px] font-black rounded-full flex items-center justify-center border border-slate-900 hover:bg-red-700"
                             title="حذف الصورة"
                           >
-                            ✕
+                            <IconX size={10} />
                           </button>
                         </div>
                       ))}
@@ -7240,7 +7261,7 @@ export default function Home() {
                         }`}
                       >
                         <span>{g}</span>
-                        <span>{isSelected ? "✓" : "+"}</span>
+                        <span>{isSelected ? <IconCheck size={12} /> : <IconPlus size={12} />}</span>
                       </button>
                     );
                   })}
@@ -7269,7 +7290,7 @@ export default function Home() {
                     }`}
                   >
                     <span>حضوري (معاهد وقاعات)</span>
-                    <span>{tTeachingModes.includes("حضوري") ? "✓" : "+"}</span>
+                    <span>{tTeachingModes.includes("حضوري") ? <IconCheck size={12} /> : <IconPlus size={12} />}</span>
                   </button>
                   <button
                     type="button"
@@ -7287,7 +7308,7 @@ export default function Home() {
                     }`}
                   >
                     <span>إلكتروني (دورات أونلاين)</span>
-                    <span>{tTeachingModes.includes("إلكتروني") ? "✓" : "+"}</span>
+                    <span>{tTeachingModes.includes("إلكتروني") ? <IconCheck size={12} /> : <IconPlus size={12} />}</span>
                   </button>
                 </div>
               </div>
@@ -7314,7 +7335,10 @@ export default function Home() {
                         className="w-20 h-20 border-2 border-slate-900 object-cover shadow-[2px_2px_0px_#000] bg-white"
                       />
                       <div className="text-right space-y-1">
-                        <span className="text-xs font-black text-emerald-800 block">✓ تم رفع الصورة بنجاح</span>
+                        <span className="text-xs font-black text-emerald-800 flex items-center gap-1">
+                          <IconCheck size={13} className="text-emerald-700" />
+                          <span>تم رفع الصورة بنجاح</span>
+                        </span>
                         <label
                           htmlFor="teacher-img-file"
                           className="inline-block px-3 py-1 bg-white border border-slate-900 text-xs font-bold cursor-pointer hover:bg-slate-100 shadow-[1px_1px_0px_#000]"
@@ -7526,8 +7550,9 @@ export default function Home() {
             <div className="bg-slate-50 border-2 border-slate-900 p-3.5 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black text-slate-900 text-sm">{inspectingReport.targetTitle}</span>
-                <span className="px-2.5 py-0.5 bg-red-600 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000]">
-                  ⚠️ {inspectingReport.reportCount || inspectingReport.reportsList?.length || 1} بلاغات
+                <span className="px-2.5 py-0.5 bg-red-600 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                  <IconAlertTriangle size={12} className="shrink-0" />
+                  <span>{inspectingReport.reportCount || inspectingReport.reportsList?.length || 1} بلاغات</span>
                 </span>
               </div>
               {(() => {
@@ -7971,7 +7996,7 @@ export default function Home() {
                     <button key={c} onClick={() => setEditColor(c)}
                       className={`w-9 h-9 border-2 flex items-center justify-center font-black text-white text-xs ${editColor === c ? "border-slate-900 shadow-[2px_2px_0px_#000]" : "border-slate-300"}`}
                       style={{ backgroundColor: c }}>
-                      {editColor === c ? "✓" : session.username.substring(0, 1).toUpperCase()}
+                      {editColor === c ? <IconCheck size={14} className="text-white" /> : session.username.substring(0, 1).toUpperCase()}
                     </button>
                   ))}
                 </div>
@@ -8173,7 +8198,10 @@ export default function Home() {
                   else setSelectedGrades([...selectedGrades, g]);
                 }}
                   className={`border-2 py-3 text-xs font-bold transition-all ${selectedGrades.includes(g) ? "border-slate-900 bg-emerald-primary text-white shadow-none translate-x-[1px] translate-y-[1px]" : "border-slate-900 bg-white text-slate-700 shadow-[2px_2px_0px_#000] hover:bg-slate-50"}`}>
-                  {selectedGrades.includes(g) ? "✓ " : ""}{g}
+                  <span className="flex items-center justify-center gap-1.5">
+                    {selectedGrades.includes(g) && <IconCheck size={13} className="text-white shrink-0" />}
+                    <span>{g}</span>
+                  </span>
                 </button>
               ))}
             </div>
@@ -8199,9 +8227,10 @@ export default function Home() {
               <span className="text-xs font-black text-slate-800">معاينة الصورة بالحجم الكامل</span>
               <button
                 onClick={() => setPreviewImageModal(null)}
-                className="px-2.5 py-1 bg-red-600 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] hover:bg-red-700"
+                className="px-2.5 py-1 bg-red-600 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] hover:bg-red-700 flex items-center gap-1"
               >
-                إغلاق ✕
+                <span>إغلاق</span>
+                <IconX size={12} />
               </button>
             </div>
             <img

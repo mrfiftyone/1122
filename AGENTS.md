@@ -7,3 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Project Rules & Standards
+- **STRICT ZERO-EMOJI RULE:** NEVER use Unicode emojis (e.g., 😀, 💬, ⚠️, ❌, etc.) anywhere in the application (UI elements, buttons, alerts, copy, badges, etc.). ALWAYS use or create custom vector SVG icon components in `src/utils/icons.tsx`.
+- **COMMUNICATION LANGUAGE:** ALWAYS talk to the user in English.
