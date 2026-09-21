@@ -482,4 +482,25 @@ export function IconReply({ size = 18, className = "" }: IconProps) {
   );
 }
 
+export function IconReplies({ size = 18, className = "" }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M7 12H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1.5" />
+      <path d="M19 7H9a2 2 0 0 0-2 2v8l3-2.5H19a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+      <line x1="11" y1="11" x2="16.5" y2="11" />
+    </svg>
+  );
+}
+
+export function IconThread({ size = 18, className = "" }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="6" cy="6" r="3" />
+      <path d="M6 9v9a3 3 0 0 0 3 3h9" />
+      <circle cx="18" cy="18" r="3" />
+    </svg>
+  );
+}
+
+
 

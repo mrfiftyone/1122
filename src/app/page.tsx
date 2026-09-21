@@ -13,7 +13,7 @@ import {
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
-  IconKey, IconClock, IconStar, IconReply,
+  IconKey, IconClock, IconStar, IconReply, IconReplies,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -3239,9 +3239,10 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setReplyingToCommentId(null)}
-                  className="text-slate-400 hover:text-slate-700 text-xs"
+                  className="text-slate-400 hover:text-slate-700 p-0.5"
+                  title="إلغاء"
                 >
-                  ✕
+                  <IconX size={12} />
                 </button>
               </div>
               <div className="flex gap-1.5">
@@ -3284,15 +3285,16 @@ export default function Home() {
                 onClick={() => toggleCommentReplies(c.id)}
                 className="text-[11px] font-black text-teal-700 hover:text-teal-900 flex items-center gap-1.5 py-0.5 px-2 bg-teal-50/80 hover:bg-teal-100 border border-teal-200 transition-all rounded-xs"
               >
+                <IconReplies size={13} className="text-teal-700 shrink-0" />
+                <span>
+                  {isExpanded
+                    ? "إخفاء الردود"
+                    : `${totalReplies} ${totalReplies === 1 ? "رد" : totalReplies === 2 ? "ردان" : "ردود"} (اضغط للمشاهدة)`}
+                </span>
                 <IconChevronDown
                   size={12}
                   className={`transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
                 />
-                <span>
-                  {isExpanded
-                    ? "إخفاء الردود"
-                    : `💬 ${totalReplies} ${totalReplies === 1 ? "رد" : totalReplies === 2 ? "ردان" : "ردود"} (اضغط للمشاهدة)`}
-                </span>
               </button>
             </div>
           )}
