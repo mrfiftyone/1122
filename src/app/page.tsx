@@ -673,7 +673,7 @@ export default function Home() {
       const [pRes, tRes, prRes, nRes, repRes] = await Promise.all([
         supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }).limit(40),
         supabase.from('teachers').select('*').order('created_at', { ascending: false }).limit(40),
-        supabase.from('profiles').select('username, role, avatar_color, bio, avatar_url'),
+        supabase.from('profiles').select('username, role, avatar_color, bio, avatar_url, banner_url, banner_pattern'),
         supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(40),
         supabase.from('reports').select('*').order('created_at', { ascending: false }).limit(40),
       ]);
@@ -746,7 +746,9 @@ export default function Home() {
         prRes.data.forEach((p: any) => {
           currentProfiles[p.username] = {
             avatarColor: p.avatar_color || "#0d9488",
-            avatarUrl: currentProfiles[p.username]?.avatarUrl || "",
+            avatarUrl: p.avatar_url || currentProfiles[p.username]?.avatarUrl || "",
+            bannerUrl: p.banner_url || currentProfiles[p.username]?.bannerUrl || "",
+            bannerPattern: p.banner_pattern || currentProfiles[p.username]?.bannerPattern || "none",
             bio: p.bio || currentProfiles[p.username]?.bio || "",
             role: p.role || "student",
           };
@@ -2093,7 +2095,7 @@ export default function Home() {
   }
 
   // ─── Profile Handlers ─────────────────────────────────────────────
-  function saveProfile() {
+  async function saveProfile() {
     if (!session) return;
     const p = getProfiles();
     p[session.username] = {
@@ -2107,6 +2109,20 @@ export default function Home() {
     };
     setProfiles(p);
     setProfilesMap(p);
+    
+    // Save to Supabase Central Database
+    try {
+      await supabase.from('profiles').update({
+        avatar_color: editColor,
+        bio: editBio,
+        avatar_url: editPfpUrl,
+        banner_url: editBannerUrl,
+        banner_pattern: editBannerPattern
+      }).eq('username', session.username);
+    } catch (e) {
+      console.error("Error saving profile to Supabase:", e);
+    }
+
     setProfileModal(false); rerender();
   }
 
