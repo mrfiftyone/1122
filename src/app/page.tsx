@@ -1176,34 +1176,53 @@ export default function Home() {
       return;
     }
 
-    let amount = 1;
-    if (session.role === "owner") {
-      const val = prompt("أنت المالك. أدخل عدد الأصوات:", "1");
-      amount = parseInt(val || "1") || 1;
-      updateFn({ likes: type === "like" ? amount : 0, dislikes: type === "dislike" ? amount : 0 });
-      const votesMap = getVotes();
-      votesMap[`${session.username}_${itemKey}`] = type;
-      setVotes(votesMap);
-      rerender();
-      return;
+    // 1. Query the real 'votes' table in Supabase to check if the user already voted on this item
+    let existing: "like" | "dislike" | null = null;
+    try {
+      const { data: voteData, error: voteErr } = await supabase
+        .from('votes')
+        .select('vote_type')
+        .eq('username', session.username)
+        .eq('target_id', itemKey)
+        .maybeSingle();
+
+      if (!voteErr && voteData?.vote_type) {
+        existing = voteData.vote_type as "like" | "dislike";
+      }
+    } catch (err) {
+      console.error("Error checking existing vote in Supabase:", err);
     }
 
-    const votesMap = getVotes();
-    const voteKey = `${session.username}_${itemKey}`;
-    const existing = votesMap[voteKey];
-    if (existing === type) return;
+    // Fallback to local storage if network query did not return a vote
+    if (!existing) {
+      const votesMap = getVotes();
+      existing = votesMap[`${session.username}_${itemKey}`] || null;
+    }
 
     let delta = { likes: 0, dislikes: 0 };
-    if (existing) {
-      if (existing === "like") delta.likes = -1; else delta.dislikes = -1;
-    }
-    if (type === "like") delta.likes += 1; else delta.dislikes += 1;
 
+    if (session.role === "owner") {
+      const val = prompt("أنت المالك. أدخل عدد الأصوات:", "1");
+      if (val === null) return;
+      const amount = parseInt(val || "1") || 1;
+      delta = { likes: type === "like" ? amount : 0, dislikes: type === "dislike" ? amount : 0 };
+    } else {
+      if (existing === type) return;
+
+      if (existing) {
+        if (existing === "like") delta.likes -= 1; else delta.dislikes -= 1;
+      }
+      if (type === "like") delta.likes += 1; else delta.dislikes += 1;
+    }
+
+    // Update local cache and UI
+    const votesMap = getVotes();
+    const voteKey = `${session.username}_${itemKey}`;
     votesMap[voteKey] = type;
     setVotes(votesMap);
     updateFn(delta);
 
-    // Save to Supabase Central Database
+    // Save to Supabase Central Database (persists for both regular users and owner)
     try {
       await supabase.from('votes').upsert([
         { username: session.username, target_id: itemKey, vote_type: type }
@@ -1226,6 +1245,19 @@ export default function Home() {
             likes: Math.max(0, target.likes + delta.likes),
             dislikes: Math.max(0, target.dislikes + delta.dislikes),
           }).eq('id', tid);
+        }
+      } else if (itemKey.startsWith("comment_")) {
+        const cid = itemKey.replace("comment_", "");
+        let targetComment: any = null;
+        for (const p of posts) {
+          const c = p.comments?.find(x => x.id === cid);
+          if (c) { targetComment = c; break; }
+        }
+        if (targetComment) {
+          await supabase.from('comments').update({
+            likes: Math.max(0, targetComment.likes + delta.likes),
+            dislikes: Math.max(0, targetComment.dislikes + delta.dislikes),
+          }).eq('id', cid);
         }
       }
     } catch (e) {
