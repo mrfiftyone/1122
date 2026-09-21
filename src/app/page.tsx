@@ -2419,8 +2419,16 @@ export default function Home() {
       alert("صلاحية تعيين المشرفين وتحديد الصلاحيات مقتصرة على المالك أو الإداري المفوض!");
       return;
     }
-    const target = profiles[username];
-    if (!target) return;
+    let target = profiles[username];
+    if (!target) {
+      const allLocal = getUsers();
+      const localTarget = allLocal.find(u => u.username === username);
+      if (localTarget) {
+        target = { avatarColor: "#0d9488", bio: "", role: localTarget.role || "student" };
+      } else {
+        return;
+      }
+    }
     if (target.role === "owner") {
       alert("لا يمكن تعديل صلاحيات مالك المنصة!");
       return;
@@ -2446,7 +2454,7 @@ export default function Home() {
     // Update local React state optimistically
     setProfilesMap(prev => ({
       ...prev,
-      [permModalUser]: { ...prev[permModalUser], role: "mod" }
+      [permModalUser]: { ...(prev[permModalUser] || { avatarColor: "#0d9488", bio: "", avatarUrl: "" }), role: "mod" }
     }));
 
     // Persist role update to Supabase
@@ -2498,7 +2506,7 @@ export default function Home() {
     // Update local React state optimistically
     setProfilesMap(prev => ({
       ...prev,
-      [username]: { ...prev[username], role: "student" }
+      [username]: { ...(prev[username] || { avatarColor: "#0d9488", bio: "", avatarUrl: "" }), role: "student" }
     }));
 
     // Persist role update to Supabase
@@ -6032,7 +6040,15 @@ export default function Home() {
 
             {/* ═══════ SUB-TAB 5: OWNER & DELEGATED GOVERNANCE ═══════ */}
             {adminSubTab === "owner" && (canOwner || hasPermission("canManageStaff") || hasPermission("canManagePlatformToggles") || hasPermission("canToggleMaintenance") || hasPermission("canExportData")) && (() => {
-              const allUsers = Object.entries(profiles).map(([username, p]) => ({ username, role: p.role || "student" }));
+              // Merge live Supabase profiles with legacy local users so everyone is shown automatically
+              const localLegacyUsers = getUsers();
+              const supabaseProfilesMap = new Map(Object.entries(profiles).map(([username, p]) => [username, { username, role: p.role || "student" }]));
+              localLegacyUsers.forEach(u => {
+                if (!supabaseProfilesMap.has(u.username)) {
+                  supabaseProfilesMap.set(u.username, { username: u.username, role: u.role || "student" });
+                }
+              });
+              const allUsers = Array.from(supabaseProfilesMap.values());
               const ownerCount = allUsers.filter(u => u.role === "owner").length;
               const modCount = allUsers.filter(u => u.role === "mod").length;
               const studentCount = allUsers.filter(u => u.role === "student").length;
