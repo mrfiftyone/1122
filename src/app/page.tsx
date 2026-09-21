@@ -26,6 +26,7 @@ import {
   isAllowedYoutubeUrl, isAllowedTelegramUrl,
   verifySessionRole,
 } from "@/utils/security";
+import { submitPostServer, submitCommentServer } from "./actions";
 
 function isValidYoutubeUrl(url: string): boolean {
   if (!url || !url.trim()) return true;
@@ -1276,14 +1277,17 @@ export default function Home() {
     setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
     setPostModal(false); rerender();
 
-    // Send to Supabase in background
+    // Send to server for moderation check and insertion in background
     try {
-      const { data, error } = await supabase.from('posts').insert([newPostPayload]).select('id').single();
+      const { data, error } = await submitPostServer(newPostPayload, customBannedWords);
       if (!error && data) {
         setPostsList(prev => prev.map(p => p.id === tempPost.id ? { ...p, id: data.id } : p));
+      } else if (error) {
+        console.error("Server validation/insertion error:", error);
+        // Optional: revert optimistic UI on failure
       }
     } catch (e) {
-      console.error("Error creating post in Supabase:", e);
+      console.error("Error creating post via Server Action:", e);
     }
   }
 
@@ -1683,18 +1687,21 @@ export default function Home() {
 
     if (input) input.value = "";
 
-    // Send to Supabase Central Database
+    // Send to server for moderation check and insertion
     try {
-      await supabase.from('comments').insert([{
+      const { error } = await submitCommentServer({
         post_id: postId,
         author: session.username,
         text: commentText,
         likes: 0,
         dislikes: 0,
         reports: 0,
-      }]);
+      }, customBannedWords);
+      if (error) {
+        console.error("Server validation/insertion error:", error);
+      }
     } catch (e) {
-      console.error("Error creating comment in Supabase:", e);
+      console.error("Error creating comment via Server Action:", e);
     }
 
     rerender();
@@ -2412,8 +2419,7 @@ export default function Home() {
       alert("صلاحية تعيين المشرفين وتحديد الصلاحيات مقتصرة على المالك أو الإداري المفوض!");
       return;
     }
-    const allUsers = getUsers();
-    const target = allUsers.find(u => u.username === username);
+    const target = profiles[username];
     if (!target) return;
     if (target.role === "owner") {
       alert("لا يمكن تعديل صلاحيات مالك المنصة!");
@@ -2432,13 +2438,16 @@ export default function Home() {
     if (!session || (!canOwner && !hasPermission("canManageStaff"))) return;
     if (!permModalUser) return;
 
-    const allUsers = getUsers();
-    const target = allUsers.find(u => u.username === permModalUser);
+    const target = profiles[permModalUser];
     if (!target || target.role === "owner") return;
 
     const wasStudent = target.role === "student";
-    target.role = "mod";
-    setUsers(allUsers);
+    
+    // Update local React state optimistically
+    setProfilesMap(prev => ({
+      ...prev,
+      [permModalUser]: { ...prev[permModalUser], role: "mod" }
+    }));
 
     // Persist role update to Supabase
     try {
@@ -2478,8 +2487,7 @@ export default function Home() {
       alert("صلاحية تعديل الرتب مقتصرة على المالك أو الإداري المفوض!");
       return;
     }
-    const allUsers = getUsers();
-    const target = allUsers.find(u => u.username === username);
+    const target = profiles[username];
     if (!target) return;
     if (target.role === "owner") {
       alert("لا يمكن تخفيض رتبة مالك المنصة!");
@@ -2487,8 +2495,11 @@ export default function Home() {
     }
     if (!confirm(`هل أنت متأكد من سحب صلاحيات الإشراف من ${username} وتخفيضه إلى طالب؟`)) return;
 
-    target.role = "student";
-    setUsers(allUsers);
+    // Update local React state optimistically
+    setProfilesMap(prev => ({
+      ...prev,
+      [username]: { ...prev[username], role: "student" }
+    }));
 
     // Persist role update to Supabase
     try {
@@ -6021,7 +6032,7 @@ export default function Home() {
 
             {/* ═══════ SUB-TAB 5: OWNER & DELEGATED GOVERNANCE ═══════ */}
             {adminSubTab === "owner" && (canOwner || hasPermission("canManageStaff") || hasPermission("canManagePlatformToggles") || hasPermission("canToggleMaintenance") || hasPermission("canExportData")) && (() => {
-              const allUsers = getUsers();
+              const allUsers = Object.entries(profiles).map(([username, p]) => ({ username, role: p.role || "student" }));
               const ownerCount = allUsers.filter(u => u.role === "owner").length;
               const modCount = allUsers.filter(u => u.role === "mod").length;
               const studentCount = allUsers.filter(u => u.role === "student").length;
