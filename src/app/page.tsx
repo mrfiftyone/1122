@@ -13,7 +13,7 @@ import {
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
-  IconKey, IconClock, IconStar,
+  IconKey, IconClock, IconStar, IconReply,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -51,6 +51,7 @@ interface Profile {
 interface Comment {
   id: string; author: string; text: string; created_at: string;
   likes: number; dislikes: number; reports: number;
+  parentId?: string | null;
 }
 export type PostTag = "question" | "discussion" | "news" | "tips" | "booklet" | "other";
 
@@ -522,6 +523,11 @@ export default function Home() {
   const [selectedFeedTag, setSelectedFeedTag] = useState<"all" | PostTag>("all");
   const [pinnedPostIds, setPinnedPostIds] = useState<string[]>([]);
 
+  // Comment Threading & Reply States (Reddit-style)
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [replyDraftText, setReplyDraftText] = useState<string>("");
+
   // Teacher fields (Add teacher form)
   const [tName, setTName] = useState("");
   const [tGov, setTGov] = useState("بغداد");
@@ -738,15 +744,25 @@ export default function Home() {
             images: meta.images || [],
             youtubeUrl: meta.youtubeUrl || p.youtube_url || "",
             telegramUrl: meta.telegramUrl || p.telegram_url || "",
-            comments: (p.comments || []).map((c: any) => ({
-              id: c.id,
-              author: c.author,
-              text: c.text,
-              created_at: c.created_at,
-              likes: c.likes || 0,
-              dislikes: c.dislikes || 0,
-              reports: c.reports || 0,
-            })).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+            comments: (p.comments || []).map((c: any) => {
+              let cleanText = c.text || "";
+              let parentId = c.parent_id || c.parentId || null;
+              const replyMatch = cleanText.match(/<!--replyTo:(.*?)-->/);
+              if (replyMatch) {
+                parentId = replyMatch[1];
+                cleanText = cleanText.replace(/<!--replyTo:.*?-->/, "").trim();
+              }
+              return {
+                id: c.id,
+                author: c.author,
+                text: cleanText,
+                parentId,
+                created_at: c.created_at,
+                likes: c.likes || 0,
+                dislikes: c.dislikes || 0,
+                reports: c.reports || 0,
+              };
+            }).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
             created_at: p.created_at,
           };
         });
@@ -1756,7 +1772,7 @@ export default function Home() {
   }
 
 
-  async function addComment(postId: string, textOverride?: string) {
+  async function addComment(postId: string, textOverride?: string, parentId?: string | null) {
     if (!session) { setAuthModal(true); return; }
     if (profiles[session.username]?.isBanned) {
       alert("حسابك محظور نهائياً. لا يمكنك المشاركة أو النشر في المنصة.");
@@ -1789,6 +1805,7 @@ export default function Home() {
       id: "temp_c_" + Date.now(),
       author: session.username,
       text: commentText,
+      parentId: parentId || null,
       created_at: new Date().toISOString(),
       likes: 0,
       dislikes: 0,
@@ -1802,33 +1819,47 @@ export default function Home() {
       return p;
     }));
 
-    // Trigger notification if replying to another user
-    const targetPost = posts.find(p => p.id === postId);
-    if (targetPost && targetPost.author !== session.username) {
-      const notifs = getNotifications();
-      notifs.unshift({
-        id: "notif_" + Date.now(),
-        recipient: targetPost.author,
-        actor: session.username,
-        type: "comment",
-        postId: targetPost.id,
-        targetTitle: targetPost.title,
-        commentText: commentText,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-      setNotifications(notifs);
-      setAllNotifications(notifs);
+    // If it's a reply to a comment, expand the parent so the user immediately sees it
+    if (parentId) {
+      setExpandedComments(prev => ({ ...prev, [parentId]: true }));
     }
 
-    if (input) input.value = "";
+    // Trigger notification
+    if (parentId) {
+      let parentAuthor: string | null = null;
+      for (const p of posts) {
+        const c = p.comments?.find(x => x.id === parentId);
+        if (c) { parentAuthor = c.author; break; }
+      }
+      if (parentAuthor && parentAuthor !== session.username) {
+        sendNotificationToUser(parentAuthor, {
+          type: "comment",
+          postId: postId,
+          title: `رد جديد على تعليقك`,
+          message: `${session.username}: "${commentText}"`,
+        });
+      }
+    } else {
+      const targetPost = posts.find(p => p.id === postId);
+      if (targetPost && targetPost.author !== session.username) {
+        sendNotificationToUser(targetPost.author, {
+          type: "comment",
+          postId: targetPost.id,
+          title: targetPost.title,
+          message: commentText,
+        });
+      }
+    }
+
+    if (!textOverride && input) input.value = "";
 
     // Send to Supabase Central Database
     try {
+      const payloadText = parentId ? `<!--replyTo:${parentId}-->${commentText}` : commentText;
       await supabase.from('comments').insert([{
         post_id: postId,
         author: session.username,
-        text: commentText,
+        text: payloadText,
         likes: 0,
         dislikes: 0,
         reports: 0,
@@ -3116,6 +3147,167 @@ export default function Home() {
     return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black"><IconGrad size={10} /> طالب</span>;
   };
 
+  // Helper: Comment Threading Helpers (Reddit-style)
+  function toggleCommentReplies(commentId: string) {
+    setExpandedComments(prev => ({
+      ...prev,
+      [commentId]: !prev[commentId]
+    }));
+  }
+
+  function countDescendantReplies(commentId: string, comments: Comment[]): number {
+    const direct = comments.filter(c => c.parentId === commentId);
+    return direct.reduce((sum, child) => sum + 1 + countDescendantReplies(child.id, comments), 0);
+  }
+
+  const renderCommentNode = (c: Comment, postId: string, allComments: Comment[], depth = 0): React.ReactNode => {
+    const commentVote = getUserVote(`comment_${c.id}`);
+    const directReplies = allComments.filter(item => item.parentId === c.id);
+    const totalReplies = countDescendantReplies(c.id, allComments);
+    const isExpanded = !!expandedComments[c.id];
+    const isReplying = replyingToCommentId === c.id;
+    const parentComment = c.parentId ? allComments.find(x => x.id === c.parentId) : null;
+
+    return (
+      <div key={c.id} className="space-y-1.5">
+        <div className={`p-2.5 border transition-all ${depth > 0 ? "bg-slate-50/90 border-slate-200" : "bg-white border-slate-200 shadow-[1px_1px_0px_#000]"}`}>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => { setViewedUser(c.author); setTab("profile"); }}
+              className="flex items-center gap-1.5 hover:opacity-80 text-right flex-wrap"
+            >
+              <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
+              <span className="font-bold text-teal-800">{c.author}</span>
+              {parentComment && (
+                <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-0.5">
+                  <IconReply size={10} className="inline opacity-70" />
+                  <span>رد على @{parentComment.author}</span>
+                </span>
+              )}
+            </button>
+            <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(c.created_at)}</span>
+          </div>
+
+          <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap mt-0.5">{c.text}</p>
+
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-100 flex-wrap">
+            <button
+              onClick={() => voteComment(postId, c.id, "like")}
+              className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}
+              title="إعجاب"
+            >
+              <IconThumbUp size={10} /> {c.likes}
+            </button>
+            <button
+              onClick={() => voteComment(postId, c.id, "dislike")}
+              className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}
+              title="عدم إعجاب"
+            >
+              <IconThumbDown size={10} /> {c.dislikes}
+            </button>
+
+            {/* Reply Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!session) { setAuthModal(true); return; }
+                setReplyingToCommentId(isReplying ? null : c.id);
+                setReplyDraftText("");
+              }}
+              className={`text-[10px] font-bold flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+                isReplying ? "bg-teal-100 text-teal-900 border border-teal-300" : "text-slate-600 hover:text-teal-700 hover:bg-slate-100"
+              }`}
+            >
+              <IconReply size={10} />
+              <span>{isReplying ? "إلغاء الرد" : "رد"}</span>
+            </button>
+
+            <button
+              onClick={() => openReportModal({ id: c.id, type: "comment", title: c.text, parentPostId: postId })}
+              className="text-[10px] text-slate-400 hover:text-red-500 font-bold flex items-center gap-0.5 ms-auto"
+              title="بلاغ"
+            >
+              <IconFlag size={9} /> ({c.reports || 0})
+            </button>
+          </div>
+
+          {/* Inline Reply Input Box */}
+          {isReplying && (
+            <div className="mt-2 pt-2 border-t border-slate-200 bg-slate-100/80 p-2 space-y-1.5 rounded-xs">
+              <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+                <span>الرد على: <strong className="text-teal-800">@{c.author}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => setReplyingToCommentId(null)}
+                  className="text-slate-400 hover:text-slate-700 text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={replyDraftText}
+                  onChange={e => setReplyDraftText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && replyDraftText.trim()) {
+                      addComment(postId, replyDraftText, c.id);
+                      setReplyingToCommentId(null);
+                      setReplyDraftText("");
+                    }
+                  }}
+                  placeholder={`اكتب ردك على ${c.author}...`}
+                  className="flex-1 p-1.5 bg-white border border-slate-900 text-xs font-semibold focus:outline-none"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!replyDraftText.trim()) return;
+                    addComment(postId, replyDraftText, c.id);
+                    setReplyingToCommentId(null);
+                    setReplyDraftText("");
+                  }}
+                  className="px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] shrink-0"
+                >
+                  إرسال الرد
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Collapsed/Expanded Toggle Button for Replies */}
+          {totalReplies > 0 && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => toggleCommentReplies(c.id)}
+                className="text-[11px] font-black text-teal-700 hover:text-teal-900 flex items-center gap-1.5 py-0.5 px-2 bg-teal-50/80 hover:bg-teal-100 border border-teal-200 transition-all rounded-xs"
+              >
+                <IconChevronDown
+                  size={12}
+                  className={`transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                />
+                <span>
+                  {isExpanded
+                    ? "إخفاء الردود"
+                    : `💬 ${totalReplies} ${totalReplies === 1 ? "رد" : totalReplies === 2 ? "ردان" : "ردود"} (اضغط للمشاهدة)`}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Nested Replies with Reddit-Style Thread Line */}
+        {isExpanded && directReplies.length > 0 && (
+          <div className="ms-2.5 sm:ms-3.5 ps-2 sm:ps-2.5 border-s-2 border-slate-300 hover:border-teal-500 space-y-2 transition-colors">
+            {directReplies.map(child => renderCommentNode(child, postId, allComments, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Active viewed user profile (defaults to logged-in user)
   const targetProfileUser = viewedUser || session?.username || "";
   const isOwnProfile = !!session && targetProfileUser === session.username;
@@ -3815,35 +4007,28 @@ export default function Home() {
                           <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1">
                             <IconComment size={12} /> {t("commentsCount")} ({p.comments?.length || 0}):
                           </div>
-                          {(p.comments || []).map(c => {
-                            const commentVote = getUserVote(`comment_${c.id}`);
-                            return (
-                              <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <button onClick={() => { setViewedUser(c.author); setTab("profile"); }} className="flex items-center gap-1.5 hover:opacity-80 text-right">
-                                    <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
-                                    <span className="font-bold text-teal-800">{c.author}: </span>
-                                    <span>{c.text}</span>
-                                  </button>
-                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
-                                </div>
-
-                                <div className="flex items-center gap-2 pt-1">
-                                  <button onClick={() => voteComment(p.id, c.id, "like")} className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
-                                    <IconThumbUp size={10} /> {c.likes}
-                                  </button>
-                                  <button onClick={() => voteComment(p.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
-                                    <IconThumbDown size={10} /> {c.dislikes}
-                                  </button>
-                                  <button onClick={() => reportComment(p.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
-                                    <IconFlag size={9} /> ({c.reports || 0})
-                                  </button>
-                                </div>
+                          {(() => {
+                            const topComments = (p.comments || []).filter(c => !c.parentId);
+                            return topComments.length === 0 ? (
+                              <div className="text-[11px] text-slate-400 py-1 font-semibold">
+                                {t("noCommentsYet") || "لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!"}
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {topComments.map(c => renderCommentNode(c, p.id, p.comments || []))}
                               </div>
                             );
-                          })}
+                          })()}
                           <div className="flex gap-2 pt-1">
-                            <input type="text" id={`comment-${p.id}`} placeholder={t("writeComment")} className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none" />
+                            <input
+                              type="text"
+                              id={`comment-${p.id}`}
+                              placeholder={t("writeComment")}
+                              className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none font-semibold"
+                              onKeyDown={e => {
+                                if (e.key === "Enter") addComment(p.id);
+                              }}
+                            />
                             <button onClick={() => addComment(p.id)} className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700">{t("send")}</button>
                           </div>
                         </div>
@@ -4496,41 +4681,24 @@ export default function Home() {
                                 <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1">
                                   <IconComment size={12} /> التعليقات والردود ({postItem.comments?.length || 0}):
                                 </div>
-                                {(postItem.comments || []).map(c => {
-                                  const commentVote = getUserVote(`comment_${c.id}`);
-                                  return (
-                                    <div key={c.id} className="bg-white p-2 border border-slate-200 space-y-1">
-                                      <div className="flex items-center justify-between">
-                                        <button
-                                          onClick={() => { setViewedUser(c.author); setTab("profile"); }}
-                                          className="flex items-center gap-1.5 hover:opacity-80 text-right"
-                                        >
-                                          <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
-                                          <span className="font-bold text-teal-800">{c.author}: </span>
-                                          <span>{c.text}</span>
-                                        </button>
-                                        <span className="text-[9px] text-slate-400 font-bold shrink-0 mr-2">{getRelativeTime(c.created_at)}</span>
-                                      </div>
-                                      <div className="flex items-center gap-2 pt-1">
-                                        <button onClick={() => voteComment(postItem.id, c.id, "like")} className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}>
-                                          <IconThumbUp size={10} /> {c.likes}
-                                        </button>
-                                        <button onClick={() => voteComment(postItem.id, c.id, "dislike")} className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}>
-                                          <IconThumbDown size={10} /> {c.dislikes}
-                                        </button>
-                                        <button onClick={() => reportComment(postItem.id, c.id)} className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5">
-                                          <IconFlag size={9} /> ({c.reports || 0})
-                                        </button>
-                                      </div>
+                                {(() => {
+                                  const topComments = (postItem.comments || []).filter(c => !c.parentId);
+                                  return topComments.length === 0 ? (
+                                    <div className="text-[11px] text-slate-400 py-1 font-semibold">
+                                      لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {topComments.map(c => renderCommentNode(c, postItem.id, postItem.comments || []))}
                                     </div>
                                   );
-                                })}
+                                })()}
                                 <div className="flex gap-2 pt-1">
                                   <input
                                     type="text"
                                     id={`comment-${postItem.id}`}
                                     placeholder="اكتب رداً أو تعليقاً..."
-                                    className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none"
+                                    className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none font-semibold"
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") addComment(postItem.id);
                                     }}
@@ -5147,53 +5315,18 @@ export default function Home() {
                                 <span>الردود والتعليقات ({fullPost?.comments?.length || 0}):</span>
                               </div>
 
-                              {(fullPost?.comments || []).length === 0 ? (
-                                <div className="text-[11px] text-slate-400 py-1 font-semibold">
-                                  لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!
-                                </div>
-                              ) : (
-                                (fullPost?.comments || []).map(c => {
-                                  const cVote = getUserVote(`comment_${c.id}`);
-                                  return (
-                                    <div key={c.id} className="bg-white p-2.5 border border-slate-200 space-y-1.5 shadow-[1px_1px_0px_#000]">
-                                      <div className="flex items-center justify-between">
-                                        <button
-                                          onClick={() => { setViewedUser(c.author); setTab("profile"); }}
-                                          className="flex items-center gap-1.5 hover:opacity-80 text-right"
-                                        >
-                                          <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
-                                          <span className="font-bold text-teal-800">{c.author}</span>
-                                        </button>
-                                        <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(c.created_at)}</span>
-                                      </div>
-                                      <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">{c.text}</p>
-                                      <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                                        <button
-                                          onClick={() => voteComment(item.id, c.id, "like")}
-                                          className={`${vbtn(cVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}
-                                          title="إعجاب"
-                                        >
-                                          <IconThumbUp size={10} /> {c.likes}
-                                        </button>
-                                        <button
-                                          onClick={() => voteComment(item.id, c.id, "dislike")}
-                                          className={`${vbtn(cVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}
-                                          title="عدم إعجاب"
-                                        >
-                                          <IconThumbDown size={10} /> {c.dislikes}
-                                        </button>
-                                        <button
-                                          onClick={() => openReportModal({ id: c.id, type: "comment", title: c.text, parentPostId: item.id })}
-                                          className="text-[10px] text-slate-400 hover:text-red-500 font-bold flex items-center gap-0.5"
-                                          title="بلاغ"
-                                        >
-                                          <IconFlag size={9} /> ({c.reports || 0})
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })
-                              )}
+                              {(() => {
+                                const topComments = (fullPost?.comments || []).filter(c => !c.parentId);
+                                return topComments.length === 0 ? (
+                                  <div className="text-[11px] text-slate-400 py-1 font-semibold">
+                                    لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {topComments.map(c => renderCommentNode(c, item.id, fullPost?.comments || []))}
+                                  </div>
+                                );
+                              })()}
 
                               {/* Comment Input */}
                               <div className="flex gap-2 pt-1">
