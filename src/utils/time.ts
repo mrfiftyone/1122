@@ -1,37 +1,46 @@
-export function getRelativeTime(dateString: string): string {
+export function getRelativeTime(dateString: string, lang: "ar" | "en" = "ar"): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
   if (diffInSeconds < 60) {
-    return "الآن"; // Just now
+    return lang === "en" ? "Just now" : "هسة";
   }
 
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) {
-    if (diffInMinutes === 1) return "منذ دقيقة";
-    if (diffInMinutes === 2) return "منذ دقيقتين";
-    if (diffInMinutes <= 10) return `منذ ${diffInMinutes} دقائق`;
-    return `منذ ${diffInMinutes} دقيقة`;
+    if (lang === "en") {
+      return diffInMinutes === 1 ? "1 min ago" : `${diffInMinutes} mins ago`;
+    }
+    if (diffInMinutes === 1) return "قبل دقيقة";
+    if (diffInMinutes === 2) return "قبل دقيقتين";
+    if (diffInMinutes <= 10) return `قبل ${diffInMinutes} دقائق`;
+    return `قبل ${diffInMinutes} دقيقة`;
   }
 
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) {
-    if (diffInHours === 1) return "منذ ساعة";
-    if (diffInHours === 2) return "منذ ساعتين";
-    if (diffInHours <= 10) return `منذ ${diffInHours} ساعات`;
-    return `منذ ${diffInHours} ساعة`;
+    if (lang === "en") {
+      return diffInHours === 1 ? "1 hour ago" : `${diffInHours} hours ago`;
+    }
+    if (diffInHours === 1) return "قبل ساعة";
+    if (diffInHours === 2) return "قبل ساعتين";
+    if (diffInHours <= 10) return `قبل ${diffInHours} ساعات`;
+    return `قبل ${diffInHours} ساعة`;
   }
 
   const diffInDays = Math.floor(diffInHours / 24);
   if (diffInDays <= 7) {
-    if (diffInDays === 1) return "منذ يوم";
-    if (diffInDays === 2) return "منذ يومين";
-    if (diffInDays <= 7) return `منذ ${diffInDays} أيام`;
+    if (lang === "en") {
+      return diffInDays === 1 ? "1 day ago" : `${diffInDays} days ago`;
+    }
+    if (diffInDays === 1) return "قبل يوم";
+    if (diffInDays === 2) return "قبل يومين";
+    return `قبل ${diffInDays} أيام`;
   }
 
   // After 7 days, show actual date format DD/MM/YYYY
-  return date.toLocaleDateString("ar-IQ", {
+  return date.toLocaleDateString(lang === "en" ? "en-US" : "ar-IQ", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

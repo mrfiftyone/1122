@@ -1047,15 +1047,22 @@ export default function Home() {
     setAuthError("");
 
     if (!isRegister && lockoutRemaining > 0) {
-      setAuthError(`تسجيل الدخول مقفل مؤقتاً بسبب كثرة المحاولات. يرجى الانتظار ${lockoutRemaining} ثانية.`);
+      setAuthError(
+        siteLang === "en"
+          ? `Login temporarily locked. Please wait ${lockoutRemaining}s.`
+          : `تسجيل الدخول مقفول حالياً، انتظر ${lockoutRemaining} ثانية.`
+      );
       return;
     }
 
-    if (!authUser.trim() || !authPass.trim()) { setAuthError("املأ الحقول المطلوبة."); return; }
+    if (!authUser.trim() || !authPass.trim()) {
+      setAuthError(siteLang === "en" ? "Fill in the required fields." : "املأ الحقول المطلوبة.");
+      return;
+    }
 
     // Phase 1: Require server-side verified Turnstile token
     if (!turnstileToken || !turnstileServerVerified) {
-      setAuthError("يرجى إكمال التحقق الأمني من Cloudflare أولاً.");
+      setAuthError(siteLang === "en" ? "Complete security verification first." : "كمّل التحقق الأمني أولاً.");
       return;
     }
 
@@ -1071,11 +1078,15 @@ export default function Home() {
 
     if (isRegister) {
       if (!platformSettings.allowRegistration) {
-        setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "تم تعليق إنشاء الحسابات الجديدة مؤقتاً بأمر من إدارة المنصة.");
+        setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "إنشاء الحسابات معطل حالياً من إدارة المنصة.");
         return;
       }
       if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
-        setAuthError("كلمة المرور قصيرة أو لا تحتوي على رقم وحرف كبير.");
+        setAuthError(
+          siteLang === "en"
+            ? "Password must be at least 8 characters with a number and uppercase letter."
+            : "الرمز قصير أو ما بي رقم وحرف كبير."
+        );
         return;
       }
 
@@ -1134,12 +1145,20 @@ export default function Home() {
           setLockoutRemaining(60);
           setFailedAttempts(0);
           resetTurnstile();
-          setAuthError("تم قفل تسجيل الدخول لمدة دقيقة بعد ٥ محاولات خاطئة متتالية.");
+          setAuthError(
+            siteLang === "en"
+              ? "Login locked for 1 minute after 5 failed attempts."
+              : "انقفل تسجيل الدخول لمدة دقيقة بعد 5 محاولات غلط."
+          );
         } else {
           setAuthError(
-            error.message === "Invalid login credentials"
-              ? `خطأ في اسم المستخدم أو كلمة المرور. (المحاولة ${nextFails} من ٥ قبل القفل المؤقت)`
-              : `${error.message} (المحاولة ${nextFails} من ٥)`
+            siteLang === "en"
+              ? (error.message === "Invalid login credentials"
+                  ? `Incorrect username or password. Attempt ${nextFails} of 5 before lock.`
+                  : `${error.message}. Attempt ${nextFails} of 5.`)
+              : (error.message === "Invalid login credentials"
+                  ? `اسم المستخدم أو الرمز غلط. محاولة ${nextFails} من 5 قبل القفل.`
+                  : `${error.message}. محاولة ${nextFails} من 5.`)
           );
         }
         return;
@@ -1188,7 +1207,7 @@ export default function Home() {
   async function castVote(itemKey: string, type: "like" | "dislike", updateFn: (delta: { likes: number; dislikes: number }) => void) {
     if (!session) { setAuthModal(true); return; }
     if (profiles[session.username]?.isBanned) {
-      alert("حسابك محظور نهائياً.");
+      alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً.");
       return;
     }
 
@@ -1218,7 +1237,7 @@ export default function Home() {
     let delta = { likes: 0, dislikes: 0 };
 
     if (session.role === "owner") {
-      const val = prompt("أنت المالك. أدخل عدد الأصوات:", "1");
+      const val = prompt(siteLang === "en" ? "Owner vote override: enter number of votes:" : "أنت المالك، اكتب عدد الأصوات:", "1");
       if (val === null) return;
       const amount = parseInt(val || "1") || 1;
       delta = { likes: type === "like" ? amount : 0, dislikes: type === "dislike" ? amount : 0 };
@@ -1292,7 +1311,7 @@ export default function Home() {
   async function submitPost() {
     if (!session || !postTitle.trim() || !postBody.trim()) return;
     if (profiles[session.username]?.isBanned) {
-      alert("حسابك محظور نهائياً. لا يمكنك المشاركة أو النشر في المنصة.");
+      alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً، ما تكدر تنشر بالمنصة.");
       return;
     }
     if (postTitle.length > 100 || postBody.length > 1500) return;
@@ -1305,36 +1324,36 @@ export default function Home() {
     const muteCheck = isUserCurrentlyMuted(session.username);
     if (muteCheck.muted) {
       alert(siteLang === "en"
-        ? `Your account is temporarily muted (${muteCheck.remainingText}). Reason: ${muteCheck.reason}`
-        : `حسابك محظور مؤقتاً من النشر حتى ${muteCheck.remainingText}. السبب: ${muteCheck.reason}`);
+        ? `Your account is temporarily muted until ${muteCheck.remainingText}. Reason: ${muteCheck.reason}`
+        : `حسابك مكتوم مؤقتاً لحد ${muteCheck.remainingText}. السبب: ${muteCheck.reason}`);
       return;
     }
 
     if (!platformSettings.allowPosting && session.role === "student") {
       alert(siteLang === "en"
         ? "Post publishing is temporarily paused by platform administration."
-        : "تم تعليق نشر المشاركات الجديدة مؤقتاً بأمر من إدارة المنصة.");
+        : "نشر المنشورات معطل حالياً من إدارة المنصة.");
       return;
     }
 
     if (containsProfanity(cleanTitle, customBannedWords) || containsProfanity(cleanBody, customBannedWords)) {
       alert(siteLang === "en"
         ? "Post content contains prohibited words."
-        : "المحتوى يحتوي على كلمات غير مسموح بها وفق معايير المجتمع والكلمات المحظورة.");
+        : "المحتوى بي كلمات مو مسموحة حسب معايير المجتمع.");
       return;
     }
 
     // Phase 5: Strict YouTube & Telegram URL whitelisting
     if (postYoutube.trim() && !isAllowedYoutubeUrl(postYoutube.trim())) {
       alert(siteLang === "en"
-        ? "Please enter a valid YouTube link (e.g., https://youtube.com/watch?v=... or https://youtu.be/...)"
-        : "يرجى إدخال رابط يوتيوب صحيح (مثل https://youtube.com/watch?v=... أو https://youtu.be/...)");
+        ? "Please enter a valid YouTube link from youtube.com or youtu.be"
+        : "رابط اليوتيوب مو صحيح، لازم يكون من youtube.com أو youtu.be");
       return;
     }
     if (postTelegram.trim() && !isAllowedTelegramUrl(postTelegram.trim())) {
       alert(siteLang === "en"
-        ? "Please enter a valid Telegram link (e.g., https://t.me/...)"
-        : "يرجى إدخال رابط تلغرام صحيح (مثل https://t.me/...)");
+        ? "Please enter a valid Telegram link starting with https://t.me/"
+        : "رابط التلغرام مو صحيح، لازم يبدي بـ https://t.me/");
       return;
     }
 
@@ -1534,7 +1553,7 @@ export default function Home() {
   }
 
   async function deleteReportRecordOnly(targetId: string, targetType: "post" | "comment") {
-    if (!confirm("هل أنت متأكد من حذف البلاغات؟ سيتم إزالة جميع البلاغات وتصفير العداد.")) return;
+    if (!confirm(siteLang === "en" ? "Delete report records and reset counter?" : "متأكد تريد تمسح سجل البلاغات وتصفّر العداد؟")) return;
 
     // Remove from report records
     const list = getReportRecords().filter(r => r.targetId !== targetId);
@@ -1571,11 +1590,11 @@ export default function Home() {
       }
     }
     rerender();
-    alert("تم حذف البلاغ بنجاح وتصفير العداد.");
+    alert(siteLang === "en" ? "Report removed and counter reset." : "انمسح البلاغ وتصفّر العداد بنجاح.");
   }
 
   async function adminDeleteReportedItem(targetId: string, targetType: "post" | "comment", reportId?: string) {
-    if (!confirm("هل أنت متأكد من الحذف النهائي لهذا المحتوى من المنصة بالكامل؟")) return;
+    if (!confirm(siteLang === "en" ? "Permanently delete this content from the platform?" : "متأكد تريد تحذف هذا المحتوى نهائياً من المنصة؟")) return;
 
     if (targetType === "post") {
       setPostsList(prev => prev.filter(item => item.id !== targetId));
@@ -1599,47 +1618,38 @@ export default function Home() {
         try {
           await supabase.from('comments').delete().eq('id', targetId);
         } catch (e) {
-          console.error("Error deleting comment in Supabase:", e);
+          console.error("Error deleting comment from Supabase:", e);
         }
       }
     }
 
-    // Clean up all reports for this target
-    const list = getReportRecords().filter(r => r.targetId !== targetId);
-    localStorage.setItem("report_records_v1", JSON.stringify(list));
-    setReportRecordsList(list);
-
-    setDismissedReportIds(prev => {
-      const next = new Set(prev).add(targetId);
-      try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
-      return next;
-    });
-
-    try {
-      await supabase.from('reports').delete().eq('target_id', targetId);
-      await supabase.from('notifications').delete().eq('post_id', targetId);
-    } catch (e) {}
-
+    if (reportId) {
+      const list = getReportRecords().filter(r => r.id !== reportId);
+      localStorage.setItem("report_records_v1", JSON.stringify(list));
+      setReportRecordsList(list);
+    }
     rerender();
+    alert(siteLang === "en" ? "Item deleted permanently." : "تم حذف المحتوى نهائياً.");
   }
 
-  function sendAdminWarning(authorUsername: string, targetTitle?: string) {
-    if (!session) return;
+  function warnAuthor(authorUsername: string, targetTitle: string) {
     const notifs = getNotifications();
     notifs.unshift({
-      id: "notif_warn_" + Date.now(),
+      id: "notif_" + Date.now(),
       recipient: authorUsername,
-      actor: "إدارة المنصة",
+      actor: session?.username || "الإدارة",
       type: "admin_warning",
       postId: "",
-      targetTitle: targetTitle || "محتوى مخالف",
-      commentText: "تنبيه إداري رسمي: تلقى حسابك تحذيراً بشأن محتوى مخالف لسياسات المنصة. يُرجى الالتزام بالقواعد لتجنب حظر الحساب نهائياً.",
+      targetTitle,
+      commentText: siteLang === "en"
+        ? `Warning: Your post "${targetTitle}" was reported and flagged by administration.`
+        : `تنبيه إداري: تم الإبلاغ عن منشورك "${targetTitle}" لمخالفته تعليمات النشر.`,
       read: false,
       created_at: new Date().toISOString(),
     });
     setNotifications(notifs);
     setAllNotifications(notifs);
-    alert(`تم توجيه إنذار إداري رسمي للمستخدم: ${authorUsername}`);
+    alert(siteLang === "en" ? `Official warning sent to ${authorUsername}` : `تم إرسال إنذار إداري للمستخدم: ${authorUsername}`);
   }
 
   function getWordCount(str: string): number {
@@ -1669,12 +1679,12 @@ export default function Home() {
   async function submitReport() {
     if (!session) { setAuthModal(true); return; }
     if (profiles[session.username]?.isBanned) {
-      alert("حسابك محظور نهائياً.");
+      alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً.");
       return;
     }
     if (!reportTarget) return;
     if (getWordCount(reportNote) > 50) {
-      alert("الملاحظة يجب ألا تتجاوز 50 كلمة.");
+      alert(siteLang === "en" ? "Note must not exceed 50 words." : "الملاحظة لازم ما تعبر 50 كلمة.");
       return;
     }
 
@@ -1751,14 +1761,20 @@ export default function Home() {
     const localAdmins = getUsers().filter(u => u.role === "owner" || u.role === "mod").map(u => u.username);
     adminUsernames = Array.from(new Set([...adminUsernames, ...profilesAdmins, ...localAdmins]));
 
-    const reasonArabic = reportReason === "inappropriate" ? "محتوى غير لائق ومسيء" : reportReason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
+    const reasonText = reportReason === "inappropriate"
+      ? (siteLang === "en" ? "Inappropriate Content" : "محتوى غير لائق")
+      : reportReason === "wrong_info"
+      ? (siteLang === "en" ? "Misleading Information" : "معلومات مضللة")
+      : (siteLang === "en" ? "Other Reason" : "سبب آخر");
     
     await Promise.all(adminUsernames.map(admName =>
       sendNotificationToUser(admName, {
         type: "report_alert",
         postId: reportTarget.id,
-        title: `بلاغ عن: "${reportTarget.title || "محتوى"}"`,
-        message: `بلاغ جديد [${reasonArabic}]: ${reportNote.trim() || "بدون ملاحظة إضافية"} (من قِبل: ${session.username})`,
+        title: siteLang === "en" ? `Report on: "${reportTarget.title || "Content"}"` : `بلاغ عن: "${reportTarget.title || "محتوى"}"`,
+        message: siteLang === "en"
+          ? `New report [${reasonText}]: ${reportNote.trim() || "No extra note"} • from: ${session.username}`
+          : `بلاغ جديد [${reasonText}]: ${reportNote.trim() || "بدون ملاحظة إضافية"} • من: ${session.username}`,
       })
     ));
 
@@ -1767,7 +1783,7 @@ export default function Home() {
     setReportReason("inappropriate");
     rerender();
     setTimeout(() => {
-      alert("تم تقديم البلاغ بنجاح وسيتم مراجعته من قبل الإدارة.");
+      alert(siteLang === "en" ? "Report submitted for admin review." : "وصل البلاغ وراح تراجعه الإدارة.");
     }, 10);
   }
 
@@ -1775,15 +1791,15 @@ export default function Home() {
   async function addComment(postId: string, textOverride?: string, parentId?: string | null) {
     if (!session) { setAuthModal(true); return; }
     if (profiles[session.username]?.isBanned) {
-      alert("حسابك محظور نهائياً. لا يمكنك المشاركة أو النشر في المنصة.");
+      alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً، ما تكدر تشارك بالمنصة.");
       return;
     }
 
     const muteCheck = isUserCurrentlyMuted(session.username);
     if (muteCheck.muted) {
       alert(siteLang === "en"
-        ? `Your account is temporarily muted (${muteCheck.remainingText}). Reason: ${muteCheck.reason}`
-        : `حسابك محظور مؤقتاً من كتابة التعليقات حتى ${muteCheck.remainingText}. السبب: ${muteCheck.reason}`);
+        ? `Your account is temporarily muted until ${muteCheck.remainingText}. Reason: ${muteCheck.reason}`
+        : `حسابك مكتوم مؤقتاً لحد ${muteCheck.remainingText}. السبب: ${muteCheck.reason}`);
       return;
     }
 
@@ -1899,7 +1915,7 @@ export default function Home() {
     const isAuthor = session.username === p.author;
     const isPrivileged = session.role === "owner" || session.role === "mod";
     if (!isAuthor && !isPrivileged) return;
-    if (!confirm("هل أنت متأكد من حذف هذا المنشور/التقييم؟")) return;
+    if (!confirm(siteLang === "en" ? "Are you sure you want to delete this post or review?" : "متأكد تريد تحذف هذا المنشور أو التقييم؟")) return;
 
     setPostsList(prev => prev.filter(item => item.id !== postId));
     try {
@@ -1914,12 +1930,12 @@ export default function Home() {
   // Delete Teacher (Owner / Mod only)
   async function deleteTeacher(teacherId: string) {
     if (!session || (session.role !== "owner" && session.role !== "mod")) {
-      alert("عذراً، هذه الصلاحية للمالك والمشرفين فقط.");
+      alert(siteLang === "en" ? "This action is restricted to staff." : "هالصلاحية بس للمالك والمشرفين.");
       return;
     }
     const target = teachers.find(t => t.id === teacherId);
     if (!target) return;
-    if (!confirm(`هل أنت متأكد من حذف المدرس "${target.name}" نهائياً من المنصة؟`)) return;
+    if (!confirm(siteLang === "en" ? `Permanently delete teacher ${target.name}?` : `متأكد تريد تحذف الأستاذ "${target.name}" نهائياً؟`)) return;
 
     setTeachersList(prev => prev.filter(t => t.id !== teacherId));
     if (selectedTeacher?.id === teacherId) {
@@ -1934,7 +1950,7 @@ export default function Home() {
       console.error("Error deleting teacher from Supabase:", e);
     }
     rerender();
-    alert("تم حذف المدرس بنجاح.");
+    alert(siteLang === "en" ? "Teacher deleted successfully." : "انحذف الأستاذ بنجاح.");
   }
 
   // ─── Image Compression Helper ────────────────────────────────────
@@ -1989,16 +2005,31 @@ export default function Home() {
     if (!session) { setAuthModal(true); return; }
 
     if (!platformSettings.allowTeacherSubmissions && session.role === "student") {
-      alert(siteLang === "en" ? "New teacher suggestions are temporarily paused by platform administration." : "تم تعليق اقتراح المدرسين الجدد مؤقتاً بأمر من إدارة المنصة.");
+      alert(siteLang === "en" ? "New teacher suggestions are temporarily paused by platform administration." : "اقتراح الأساتذة معطل حالياً من إدارة المنصة.");
       return;
     }
 
     const finalSubject = tSubjectChoice === "أخرى" ? tCustomSubject.trim() : tSubjectChoice.trim();
-    if (!tName.trim()) { alert("يرجى كتابة اسم المدرس."); return; }
-    if (!finalSubject) { alert("يرجى اختيار أو كتابة المادة الدراسية."); return; }
-    if (tSelectedGrades.length === 0) { alert("يرجى اختيار مرحلة دراسية واحدة على الأقل."); return; }
-    if (tTeachingModes.length === 0) { alert("يرجى تحديد طريقة تدريس واحدة على الأقل (حضوري أو إلكتروني)."); return; }
-    if (!tImg.trim()) { alert("يرجى رفع ملف صورة للمدرس (ملف صورة وليس رابط)."); return; }
+    if (!tName.trim()) {
+      alert(siteLang === "en" ? "Enter teacher name." : "اكتب اسم الأستاذ.");
+      return;
+    }
+    if (!finalSubject) {
+      alert(siteLang === "en" ? "Select or enter subject." : "اختار أو اكتب المادة.");
+      return;
+    }
+    if (tSelectedGrades.length === 0) {
+      alert(siteLang === "en" ? "Select at least one grade." : "اختار مرحلة دراسية وحدة على الأقل.");
+      return;
+    }
+    if (tTeachingModes.length === 0) {
+      alert(siteLang === "en" ? "Select at least one teaching mode." : "حدد طريقة تدريس وحدة على الأقل.");
+      return;
+    }
+    if (!tImg.trim()) {
+      alert(siteLang === "en" ? "Upload a teacher photo file." : "ارفع صورة للأستاذ.");
+      return;
+    }
 
     const normalized = normalizeTeacherName(tName.trim());
     const isDupe = teachers.some(t =>
@@ -2006,7 +2037,10 @@ export default function Home() {
       t.subject === finalSubject &&
       t.gov === tGov
     );
-    if (isDupe) { alert("هذا المدرس موجود مسبقاً في قسم المدرسين!"); return; }
+    if (isDupe) {
+      alert(siteLang === "en" ? "This teacher already exists in the directory." : "هذا الأستاذ موجود مسبقاً بقسم الأساتذة!");
+      return;
+    }
 
     const finalGrades = tSelectedGrades.join("، ");
 
@@ -2058,7 +2092,7 @@ export default function Home() {
     setTeacherModal(false);
     rerender();
     setTimeout(() => {
-      alert("تم تقديم المعلم بنجاح! سيتم مراجعته من قبل الإدارة قبل ظهوره للجميع.");
+      alert(siteLang === "en" ? "Teacher submitted. Staff will review before publishing." : "تم إرسال الأستاذ، راح تراجعه الإدارة قبل لا يظهر للكل.");
     }, 10);
   }
 
@@ -2079,27 +2113,30 @@ export default function Home() {
     const muteCheck = isUserCurrentlyMuted(session.username);
     if (muteCheck.muted) {
       alert(siteLang === "en"
-        ? `Your account is temporarily muted (${muteCheck.remainingText}). Reason: ${muteCheck.reason}`
-        : `حسابك محظور مؤقتاً من كتابة التقييمات حتى ${muteCheck.remainingText}. السبب: ${muteCheck.reason}`);
+        ? `Your account is temporarily muted until ${muteCheck.remainingText}. Reason: ${muteCheck.reason}`
+        : `حسابك مكتوم مؤقتاً لحد ${muteCheck.remainingText}. السبب: ${muteCheck.reason}`);
       return;
     }
 
     if (!platformSettings.allowReviews && session.role === "student") {
-      alert(siteLang === "en" ? "Review submissions are temporarily paused by platform administration." : "تم تعليق إضافة التقييمات مؤقتاً بأمر من إدارة المنصة.");
+      alert(siteLang === "en" ? "Review submissions are temporarily paused by platform administration." : "إضافة التقييمات معطلة حالياً من إدارة المنصة.");
       return;
     }
 
     if (!reviewVerdict) {
-      alert("يرجى تحديد هل المدرس أعجبك أو لم يعجبك للمتابعة.");
+      alert(siteLang === "en" ? "Please indicate whether you recommend this teacher." : "حدد إذا تنصح بيه أو ما تنصح بيه أولاً.");
       return;
     }
-    if (!reviewBody.trim()) { alert("يرجى كتابة نص التقييم أو المراجعة."); return; }
+    if (!reviewBody.trim()) {
+      alert(siteLang === "en" ? "Write your review text." : "اكتب رأيك أو تقييمك بالأستاذ.");
+      return;
+    }
     if (containsProfanity(reviewTitle, customBannedWords) || containsProfanity(reviewBody, customBannedWords)) {
-      alert("المحتوى يحتوي على كلمات غير مسموح بها وفق معايير المجتمع.");
+      alert(siteLang === "en" ? "Review contains prohibited words." : "التقييم بي كلمات مو مسموحة حسب معايير المجتمع.");
       return;
     }
 
-    const titleText = reviewTitle.trim() || `تقييم للأستاذ ${selectedTeacher.name}`;
+    const titleText = reviewTitle.trim() || (siteLang === "en" ? `Review for ${selectedTeacher.name}` : `تقييم للأستاذ ${selectedTeacher.name}`);
     const verdictText = reviewVerdict === "like" ? "[أعجبني]" : "[لم يعجبني]";
     const fullBody = `${verdictText}\n\n${reviewBody.trim()}`;
     const gradeLevel = reviewVerdict === "like" ? "تقييم أستاذ: أعجبني" : "تقييم أستاذ: لم يعجبني";
@@ -2152,7 +2189,7 @@ export default function Home() {
     setShowReviewForm(false);
     rerender();
     setTimeout(() => {
-      alert("تم نشر تقييمك للمدرس بنجاح!");
+      alert(siteLang === "en" ? "Review published successfully." : "نزل تقييمك للأستاذ بنجاح!");
     }, 10);
   }
 
@@ -2179,7 +2216,9 @@ export default function Home() {
         type: "teacher_approved",
         postId: target?.id || "",
         targetTitle: target?.name || "المدرس",
-        commentText: `تمت الموافقة على طلبك لإضافة المدرس "${target?.name}" بنجاح! أصبح الآن متاحاً للجميع في قسم المدرسين.`,
+        commentText: siteLang === "en"
+          ? `Your suggestion for teacher "${target?.name}" has been approved and published.`
+          : `تمت الموافقة على اقتراحك لإضافة الأستاذ "${target?.name}". صار معروض للطلاب.`,
         read: false,
         created_at: new Date().toISOString(),
       });
@@ -2188,13 +2227,13 @@ export default function Home() {
     }
     addAuditLog("قبول مدرس", target?.name || id, "الموافقة على نشر المدرس في دليل المدرسين");
     rerender();
-    alert("تمت الموافقة على الأستاذ وإرسال إشعار لصاحب الطلب!");
+    alert(siteLang === "en" ? "Teacher approved and requester notified." : "تمت الموافقة على الأستاذ وإشعار الطالب.");
   }
 
   async function rejectTeacher(id: string) {
     const target = teachers.find(t => t.id === id);
     if (!target) return;
-    if (!confirm(`هل أنت متأكد من رفض وحذف طلب الأستاذ "${target.name}"؟`)) return;
+    if (!confirm(siteLang === "en" ? `Reject and remove suggestion for ${target.name}?` : `متأكد تريد ترفض وتحذف طلب الأستاذ "${target.name}"؟`)) return;
     setTeachersList(prev => prev.filter(t => t.id !== id));
     try {
       await supabase.from('teachers').delete().eq('id', id);
@@ -2211,14 +2250,16 @@ export default function Home() {
         type: "teacher_rejected",
         postId: "",
         targetTitle: target.name,
-        commentText: `نعتذر، لم تتم الموافقة على طلب إضافة المدرس "${target.name}".`,
+        commentText: siteLang === "en"
+          ? `Your suggestion for teacher "${target.name}" was reviewed and declined.`
+          : `نعتذر، ما تمت الموافقة على طلب إضافة الأستاذ "${target.name}".`,
         read: false,
         created_at: new Date().toISOString(),
       });
       setNotifications(notifs);
       setAllNotifications(notifs);
     }
-    addAuditLog("رفض مدرس", target.name, "رفض وحذف طلب إضافة المدرس");
+    addAuditLog("رفض مدرس", target.name, "رفض وحذف طلب إضافة المدرس من قائمة الانتظار");
     rerender();
   }
 
@@ -2315,11 +2356,11 @@ export default function Home() {
   // ─── Support Inquiries Handlers ──────────────────────────────────
   async function submitSupportTicket() {
     if (session && profiles[session.username]?.isBanned) {
-      alert("حسابك محظور نهائياً. لا يمكنك إرسال تذاكر دعم.");
+      alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً، ما تكدر ترسل تذاكر.");
       return;
     }
     if (!supportSubject.trim() || !supportMessage.trim()) {
-      alert(siteLang === "en" ? "Please fill in the subject and message." : "يرجى كتابة عنوان ورسالة الاستفسار.");
+      alert(siteLang === "en" ? "Please fill in the subject and message." : "اكتب عنوان ورسالة الاستفسار.");
       return;
     }
     const newTicket: SupportTicket = {
@@ -2341,7 +2382,7 @@ export default function Home() {
     setSupportMessage("");
     setSettingsModal(false);
 
-    alert("تم ارسال رسالتك بنجاح. سيتم الرد عليك قريباً في قسم التنبيهات أو الدعم.");
+    alert(siteLang === "en" ? "Message sent. We will respond shortly." : "وصلت رسالتك، نجاوبك قريباً.");
 
     // Persist to Supabase
     try {
@@ -2543,20 +2584,20 @@ export default function Home() {
   async function handleMuteUser(username: string, duration: "24h" | "7d" | "30d" | "permanent", reason: string) {
     if (!session || (session.role !== "owner" && session.role !== "mod")) return;
     if (username === session.username) {
-      alert("لا يمكنك حظر حسابك الشخصي!");
+      alert(siteLang === "en" ? "You cannot ban your own account." : "ما تكدر تحظر حسابك الشخصي!");
       return;
     }
     const targetProf = profiles[username];
     if (targetProf?.role === "owner") {
-      alert("لا يمكن حظر مالك المنصة!");
+      alert(siteLang === "en" ? "The platform owner cannot be banned." : "ما تكدر تحظر مالك المنصة!");
       return;
     }
     if (session.role === "mod" && targetProf?.role === "mod") {
-      alert("لا يمكن لمشرف حظر مشرف آخر!");
+      alert(siteLang === "en" ? "Moderators cannot ban each other." : "المشرفين ما يكدرون يحظرون بعض!");
       return;
     }
 
-    const finalReason = reason.trim() || "مخالفة معايير المجتمع وقواعد النشر";
+    const finalReason = reason.trim() || (siteLang === "en" ? "Violation of community standards" : "مخالفة معايير المجتمع وقواعد النشر");
 
     // Optimistic UI update
     setProfilesMap(prev => ({
@@ -2585,14 +2626,14 @@ export default function Home() {
 
     sendNotificationToUser(username, {
       type: "report",
-      message: `تم حظر حسابك نهائياً من قبل الإدارة. السبب: ${finalReason}`,
-      title: "حظر الحساب",
+      message: siteLang === "en" ? `Your account was banned by administration. Reason: ${finalReason}` : `تم حظر حسابك نهائياً من قبل الإدارة. السبب: ${finalReason}`,
+      title: siteLang === "en" ? "Account Banned" : "حظر الحساب",
     });
 
     addAuditLog("حظر طالب", username, `حظر رقم #${current.count}: ${finalReason}`);
     setAdminMuteReason("");
     rerender();
-    alert(`تم حظر حساب الطالب ${username} نهائياً ومنعه من النشر.`);
+    alert(siteLang === "en" ? `User ${username} has been permanently banned.` : `تم حظر حساب الطالب ${username} ومنعه من النشر.`);
   }
 
   async function handleUnmuteUser(username: string) {
@@ -2615,17 +2656,17 @@ export default function Home() {
 
     sendNotificationToUser(username, {
       type: "report",
-      message: "تم رفع الحظر عن حسابك بواسطة إدارة المنصة. نتمنى الالتزام بالقواعد.",
+      message: siteLang === "en" ? "Ban lifted from your account by administration." : "تم رفع الحظر عن حسابك بواسطة إدارة المنصة. نتمنى الالتزام بالقواعد.",
     });
 
     addAuditLog("رفع الحظر عن مستخدم", username, "تم إلغاء الحظر اليدوي");
     rerender();
-    alert(`تم رفع الحظر عن ${username}.`);
+    alert(siteLang === "en" ? `Ban lifted for ${username}.` : `تم رفع الحظر عن ${username}.`);
   }
 
   function handleIssueWarning(username: string, reason: string) {
     if (!session || (session.role !== "owner" && session.role !== "mod")) return;
-    const finalReason = reason.trim() || "تنبيه إداري رسمي لمخالفة القواعد";
+    const finalReason = reason.trim() || (siteLang === "en" ? "Official warning for policy violation" : "تنبيه إداري رسمي لمخالفة القواعد");
     const strikesMap = getUserStrikes();
     const current = strikesMap[username] || { count: 0, history: [] };
     current.count += 1;
@@ -2640,18 +2681,18 @@ export default function Home() {
 
     sendNotificationToUser(username, {
       type: "report",
-      message: `إنذار إداري رسمي: ${finalReason} (عدد الإنذارات المسجلة: ${current.count})`,
+      message: siteLang === "en" ? `Official Warning: ${finalReason} • Total warnings: ${current.count}` : `إنذار إداري رسمي: ${finalReason} • عدد الإنذارات: ${current.count}`,
     });
 
     addAuditLog("توجيه إنذار رسمي", username, `إنذار #${current.count}: ${finalReason}`);
     setAdminWarningReason("");
     rerender();
-    alert(`تم توجيه الإنذار للمستخدم ${username} بنجاح.`);
+    alert(siteLang === "en" ? `Official warning sent to ${username}.` : `تم توجيه الإنذار للمستخدم ${username}.`);
   }
 
   function openModPermissionModal(username: string) {
     if (!session || (!canOwner && !hasPermission("canManageStaff"))) {
-      alert("صلاحية تعيين المشرفين وتحديد الصلاحيات مقتصرة على المالك أو الإداري المفوض!");
+      alert(siteLang === "en" ? "Only owner or authorized staff can manage moderators." : "تعيين المشرفين مقتصر على المالك أو الإداري المفوض!");
       return;
     }
     let target = profiles[username];
@@ -2665,7 +2706,7 @@ export default function Home() {
       }
     }
     if (target.role === "owner") {
-      alert("لا يمكن تعديل صلاحيات مالك المنصة!");
+      alert(siteLang === "en" ? "Owner permissions cannot be altered." : "ما تكدر تعدل صلاحيات مالك المنصة!");
       return;
     }
 
@@ -2709,34 +2750,40 @@ export default function Home() {
     addAuditLog(
       wasStudent ? "ترقية لرتبة مشرف مع تخصيص الصلاحيات" : "تعديل صلاحيات مشرف",
       permModalUser,
-      `تم منح (${totalGranted}/11) صلاحية ${hasOwnerPowers ? "شاملة صلاحيات إدارية للمالك" : "إشرافية"}`
+      `تم منح ${totalGranted} من 11 صلاحية ${hasOwnerPowers ? "شاملة صلاحيات إدارية للمالك" : "إشرافية"}`
     );
 
     sendNotificationToUser(permModalUser, {
       type: "promotion",
-      title: wasStudent ? "ترقية إلى رتبة مشرف" : "تحديث صلاحيات الإشراف",
+      title: wasStudent
+        ? (siteLang === "en" ? "Promotion to Moderator" : "ترقية إلى رتبة مشرف")
+        : (siteLang === "en" ? "Updated Staff Permissions" : "تحديث صلاحيات الإشراف"),
       message: wasStudent
-        ? `تهانينا! لقد قام ${session.username} بترقيتك إلى رتبة مشرف مع منحك (${totalGranted}) صلاحية إدارية خاصة.`
-        : `تم تحديث صلاحياتك الإشرافية (${totalGranted} صلاحية مفعّلة) من قِبل إدارة المنصة.`,
+        ? (siteLang === "en"
+            ? `Congratulations! ${session.username} promoted you to moderator with ${totalGranted} permissions.`
+            : `مبروك! قام ${session.username} بترقيتك إلى مشرف ومنحك ${totalGranted} صلاحية.`)
+        : (siteLang === "en"
+            ? `Your moderation permissions were updated with ${totalGranted} active permissions.`
+            : `تم تحديث صلاحياتك الإشرافية إلى ${totalGranted} صلاحية مفعلة.`),
     });
 
     setPermModalUser(null);
     rerender();
-    alert(`تم حفظ وتطبيق صلاحيات المشرف (${permModalUser}) بنجاح!`);
+    alert(siteLang === "en" ? `Permissions saved for ${permModalUser}.` : `تم حفظ وتطبيق صلاحيات المشرف ${permModalUser} بنجاح!`);
   }
 
   function handleDemoteToStudent(username: string) {
     if (!session || (!canOwner && !hasPermission("canManageStaff"))) {
-      alert("صلاحية تعديل الرتب مقتصرة على المالك أو الإداري المفوض!");
+      alert(siteLang === "en" ? "Role editing is restricted to owner or authorized staff." : "تعديل الرتب مقتصر على المالك أو الإداري المفوض!");
       return;
     }
     const target = profiles[username];
     if (!target) return;
     if (target.role === "owner") {
-      alert("لا يمكن تخفيض رتبة مالك المنصة!");
+      alert(siteLang === "en" ? "Owner cannot be demoted." : "ما تكدر تخفض رتبة مالك المنصة!");
       return;
     }
-    if (!confirm(`هل أنت متأكد من سحب صلاحيات الإشراف من ${username} وتخفيضه إلى طالب؟`)) return;
+    if (!confirm(siteLang === "en" ? `Demote ${username} from moderator to regular student?` : `متأكد تريد تسحب الإشراف من ${username} وترجعه طالب عادي؟`)) return;
 
     // Update local React state optimistically
     setProfilesMap(prev => ({
@@ -2759,11 +2806,11 @@ export default function Home() {
     addAuditLog("تخفيض لرتبة طالب", username, "تم سحب صلاحيات الإشراف بالكامل");
     sendNotificationToUser(username, {
       type: "admin_warning",
-      title: "تعديل رتبة الحساب",
-      message: "تم تعديل رتبة حسابك إلى طالب عادي وإلغاء صلاحيات الإشراف.",
+      title: siteLang === "en" ? "Role Updated" : "تعديل رتبة الحساب",
+      message: siteLang === "en" ? "Your account was set to regular student." : "تم تعديل رتبة حسابك إلى طالب عادي وإلغاء صلاحيات الإشراف.",
     });
     rerender();
-    alert(`تم سحب صلاحيات الإشراف من ${username}.`);
+    alert(siteLang === "en" ? `Moderation privileges removed from ${username}.` : `تم سحب صلاحيات الإشراف من ${username}.`);
   }
 
   function handleSavePlatformSettings(updates: Partial<PlatformSettings>) {
@@ -2783,11 +2830,11 @@ export default function Home() {
     duration: "never" | "1h" | "6h" | "12h" | "24h" | "3d" | "7d"
   ) {
     if (!session || (!canOwner && !hasPermission("canManageAnnouncements"))) {
-      alert("صلاحية إدارة شريط التنبيهات مقتصرة على المالك أو المشرفين المفوضين!");
+      alert(siteLang === "en" ? "Only owner or authorized staff can manage announcements." : "شريط الإعلانات للمالك والمشرفين المفوضين بس.");
       return;
     }
     if (!text.trim() && active) {
-      alert("يرجى كتابة نص التنبيه أولاً قبل التفعيل.");
+      alert(siteLang === "en" ? "Enter announcement text before publishing." : "اكتب نص الإعلان أولاً قبل النشر.");
       return;
     }
 
@@ -2812,19 +2859,21 @@ export default function Home() {
       "تحديث شريط التنبيهات",
       "إعلان الموقع",
       active
-        ? `تفعيل إعلان (${type}): ${text.slice(0, 35)}... ${expiresAt ? `(ينتهي بعد ${duration})` : "(بدون انتهاء تلقائي)"}`
+        ? `تفعيل إعلان [${type}]: ${text.slice(0, 35)}... ${expiresAt ? `ينتهي بعد ${duration}` : "بدون انتهاء تلقائي"}`
         : "إلغاء تفعيل الإعلان"
     );
     rerender();
-    alert(active ? "تم تفعيل ونشر التنبيه العام في أعلى الموقع بنجاح!" : "تم إيقاف التنبيه العام.");
+    alert(active 
+      ? (siteLang === "en" ? "Announcement published." : "تم نشر الإعلان العام أعلى الموقع.") 
+      : (siteLang === "en" ? "Announcement disabled." : "تم إيقاف الإعلان العام."));
   }
 
   function handleDeleteAnnouncement() {
     if (!session || (!canOwner && !hasPermission("canManageAnnouncements"))) {
-      alert("صلاحية حذف شريط التنبيهات مقتصرة على المالك أو المشرفين المفوضين!");
+      alert(siteLang === "en" ? "Only owner or authorized staff can delete announcements." : "حذف الإعلان للمالك والمشرفين المفوضين بس.");
       return;
     }
-    if (!confirm("هل أنت متأكد من حذف التنبيه العام نهائياً وإزالته من المنصة؟")) return;
+    if (!confirm(siteLang === "en" ? "Permanently delete this announcement?" : "متأكد تريد تحذف الإعلان العام نهائياً؟")) return;
 
     const emptyAnn: SiteAnnouncement = {
       active: false,
@@ -2839,7 +2888,7 @@ export default function Home() {
     setAnnouncementDuration("never");
     addAuditLog("حذف شريط التنبيهات", "إعلان الموقع", "تم حذف التنبيه العام نهائياً");
     rerender();
-    alert("تم حذف التنبيه العام نهائياً.");
+    alert(siteLang === "en" ? "Announcement deleted." : "انحذف الإعلان نهائياً.");
   }
 
   function handleAddBannedWord(word: string) {
@@ -2867,7 +2916,7 @@ export default function Home() {
 
   function exportPlatformBackup() {
     if (!session || session.role !== "owner") {
-      alert("النسخ الاحتياطي متاح فقط لمالك المنصة.");
+      alert(siteLang === "en" ? "Data backup is restricted to the platform owner." : "النسخ الاحتياطي متاح لمالك المنصة بس.");
       return;
     }
     const backupData = {
@@ -3065,18 +3114,30 @@ export default function Home() {
     const reviewCount = posts.filter(p => p.teacher_id === t.id || p.teacherId === t.id).length;
 
     if (totalVotes >= 5 && approvalRate >= 85) {
-      badges.push({ label: "مفضل لدى الطلاب", cls: "bg-emerald-100 text-emerald-950 border-emerald-600", type: "favorite" });
+      badges.push({
+        label: siteLang === "en" ? "Student Favorite" : "مفضل عند الطلاب",
+        cls: "bg-emerald-100 text-emerald-950 border-emerald-600",
+        type: "favorite"
+      });
     }
 
     if (reviewCount >= 3) {
-      badges.push({ label: "الأكثر مراجعات ونشاطاً", cls: "bg-blue-100 text-blue-950 border-blue-600", type: "active" });
+      badges.push({
+        label: siteLang === "en" ? "Most Reviewed & Active" : "الأكثر مراجعات ونشاطاً",
+        cls: "bg-blue-100 text-blue-950 border-blue-600",
+        type: "active"
+      });
     }
 
     const sameSubjectTeachers = activeTeachers.filter(other => other.subject === t.subject && (other.likes + other.dislikes) >= 3);
     if (sameSubjectTeachers.length > 1) {
       const topTeacher = sameSubjectTeachers.reduce((max, curr) => (curr.likes - curr.dislikes) > (max.likes - max.dislikes) ? curr : max, sameSubjectTeachers[0]);
       if (topTeacher.id === t.id && (t.likes - t.dislikes) > 0) {
-        badges.push({ label: `الأعلى تقييماً في ال${t.subject}`, cls: "bg-amber-100 text-amber-950 border-amber-600", type: "top_subject" });
+        badges.push({
+          label: siteLang === "en" ? `Top Rated in ${t.subject}` : `الأعلى تقييماً في ${t.subject}`,
+          cls: "bg-amber-100 text-amber-950 border-amber-600",
+          type: "top_subject"
+        });
       }
     }
 
@@ -3181,11 +3242,11 @@ export default function Home() {
               {parentComment && (
                 <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-0.5">
                   <IconReply size={10} className="inline opacity-70" />
-                  <span>رد على @{parentComment.author}</span>
+                  <span>{siteLang === "en" ? "Replying to" : "رد على"} @{parentComment.author}</span>
                 </span>
               )}
             </button>
-            <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(c.created_at)}</span>
+            <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(c.created_at, siteLang)}</span>
           </div>
 
           <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap mt-0.5">{c.text}</p>
@@ -3219,13 +3280,13 @@ export default function Home() {
               }`}
             >
               <IconReply size={10} />
-              <span>{isReplying ? "إلغاء الرد" : "رد"}</span>
+              <span>{isReplying ? (siteLang === "en" ? "Cancel" : "إلغاء") : (siteLang === "en" ? "Reply" : "رد")}</span>
             </button>
 
             <button
               onClick={() => openReportModal({ id: c.id, type: "comment", title: c.text, parentPostId: postId })}
               className="text-[10px] text-slate-400 hover:text-red-500 font-bold flex items-center gap-0.5 ms-auto"
-              title="بلاغ"
+              title={siteLang === "en" ? "Report" : "بلاغ"}
             >
               <IconFlag size={9} /> ({c.reports || 0})
             </button>
@@ -3235,12 +3296,12 @@ export default function Home() {
           {isReplying && (
             <div className="mt-2 pt-2 border-t border-slate-200 bg-slate-100/80 p-2 space-y-1.5 rounded-xs">
               <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
-                <span>الرد على: <strong className="text-teal-800">@{c.author}</strong></span>
+                <span>{siteLang === "en" ? "Replying to:" : "الرد على:"} <strong className="text-teal-800">@{c.author}</strong></span>
                 <button
                   type="button"
                   onClick={() => setReplyingToCommentId(null)}
                   className="text-slate-400 hover:text-slate-700 p-0.5"
-                  title="إلغاء"
+                  title={siteLang === "en" ? "Cancel" : "إلغاء"}
                 >
                   <IconX size={12} />
                 </button>
@@ -3257,7 +3318,7 @@ export default function Home() {
                       setReplyDraftText("");
                     }
                   }}
-                  placeholder={`اكتب ردك على ${c.author}...`}
+                  placeholder={siteLang === "en" ? `Write your reply to ${c.author}...` : `اكتب ردك على ${c.author}...`}
                   className="flex-1 p-1.5 bg-white border border-slate-900 text-xs font-semibold focus:outline-none"
                   autoFocus
                 />
@@ -3271,7 +3332,7 @@ export default function Home() {
                   }}
                   className="px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] shrink-0"
                 >
-                  إرسال الرد
+                  {siteLang === "en" ? "Send Reply" : "إرسال الرد"}
                 </button>
               </div>
             </div>
@@ -3288,8 +3349,8 @@ export default function Home() {
                 <IconReplies size={13} className="text-teal-700 shrink-0" />
                 <span>
                   {isExpanded
-                    ? "إخفاء الردود"
-                    : `${totalReplies} ${totalReplies === 1 ? "رد" : totalReplies === 2 ? "ردان" : "ردود"} (اضغط للمشاهدة)`}
+                    ? (siteLang === "en" ? "Hide replies" : "إخفاء الردود")
+                    : `${totalReplies} ${siteLang === "en" ? (totalReplies === 1 ? "reply" : "replies") : (totalReplies === 1 ? "رد" : totalReplies === 2 ? "ردان" : "ردود")}`}
                 </span>
                 <IconChevronDown
                   size={12}
@@ -3592,7 +3653,7 @@ export default function Home() {
                 className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center gap-2"
               >
                 <IconShield size={16} />
-                <span>{siteLang === "en" ? "Staff Login (Mods & Owner)" : "تسجيل دخول الكادر الإداري (مشرفين / مالك)"}</span>
+                <span>{siteLang === "en" ? "Staff Login" : "تسجيل دخول الكادر الإداري"}</span>
               </button>
             </div>
           </section>
@@ -3896,10 +3957,10 @@ export default function Home() {
                                 }}
                                 className="px-2.5 py-0.5 bg-emerald-100 hover:bg-emerald-200 border border-slate-900 text-[10px] font-black text-emerald-900 flex items-center gap-1 transition-colors"
                               >
-                                <IconTag size={10} /> {teacher.name} ({teacher.subject})
+                                <IconTag size={10} /> {teacher.name} • {teacher.subject}
                               </button>
                             )}
-                            <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(p.created_at)}</span>
+                            <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(p.created_at, siteLang)}</span>
                           </div>
                         </div>
 
@@ -4226,7 +4287,7 @@ export default function Home() {
                               </span>
                               <span className="px-2 py-0.5 bg-purple-100 border border-slate-900 text-[10px] font-black text-purple-900 flex items-center gap-1">
                                 <IconMonitor size={10} />
-                                {isBoth ? "حضوري + إلكتروني" : modes.includes("إلكتروني") ? "إلكتروني (أونلاين)" : "حضوري (قاعات)"}
+                                {isBoth ? (siteLang === "en" ? "In-Person & Online" : "حضوري وإلكتروني") : modes.includes("إلكتروني") ? (siteLang === "en" ? "Online" : "إلكتروني") : (siteLang === "en" ? "In-Person" : "حضوري")}
                               </span>
                               {t.likes + t.dislikes > 0 && (
                                 <span className={`px-2 py-0.5 border border-slate-900 text-[10px] font-black ${
@@ -4236,7 +4297,7 @@ export default function Home() {
                                     ? "bg-amber-100 text-amber-950"
                                     : "bg-red-100 text-red-950"
                                 }`}>
-                                  {Math.round((t.likes / (t.likes + t.dislikes)) * 100)}% قبول
+                                  {Math.round((t.likes / (t.likes + t.dislikes)) * 100)}% {siteLang === "en" ? "Approval" : "قبول"}
                                 </span>
                               )}
                             </div>
@@ -4264,14 +4325,14 @@ export default function Home() {
                               className={`p-1.5 border border-slate-900 text-xs transition-all ${
                                 isBookmarked(t.id) ? "bg-amber-300 text-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-500 hover:bg-slate-100"
                               }`}
-                              title={isBookmarked(t.id) ? "إزالة من المحفوظات" : "حفظ المدرس في المحفوظات"}
+                              title={isBookmarked(t.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save teacher" : "حفظ الأستاذ")}
                             >
                               <IconBookmark size={13} fill={isBookmarked(t.id) ? "currentColor" : "none"} />
                             </button>
-                            <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title="إعجاب">
+                            <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title={siteLang === "en" ? "Like" : "إعجاب"}>
                               <IconThumbUp size={12} /> {t.likes}
                             </button>
-                            <button onClick={() => voteTeacher(t.id, "dislike")} className={vbtn(tVote === "dislike", "dislike")} title="عدم إعجاب">
+                            <button onClick={() => voteTeacher(t.id, "dislike")} className={vbtn(tVote === "dislike", "dislike")} title={siteLang === "en" ? "Dislike" : "عدم إعجاب"}>
                               <IconThumbDown size={12} /> {t.dislikes}
                             </button>
                           </div>
@@ -4279,9 +4340,9 @@ export default function Home() {
                             <button
                               onClick={() => deleteTeacher(t.id)}
                               className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 text-[10px] font-bold border border-red-500 flex items-center gap-0.5 shadow-[1px_1px_0px_#dc2626]"
-                              title="حذف المدرس نهائياً (إدارة)"
+                              title={siteLang === "en" ? "Delete Teacher" : "حذف الأستاذ"}
                             >
-                              <IconTrash size={10} /> حذف (إدارة)
+                              <IconTrash size={10} /> {siteLang === "en" ? "Delete" : "حذف إداري"}
                             </button>
                           )}
                         </div>
@@ -4334,7 +4395,7 @@ export default function Home() {
                       onClick={() => deleteTeacher(selectedTeacher.id)}
                       className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] flex items-center gap-1.5 transition-all"
                     >
-                      <IconTrash size={14} /> حذف المدرس نهائياً (إدارة)
+                      <IconTrash size={14} /> {siteLang === "en" ? "Admin Delete" : "حذف إداري للأستاذ"}
                     </button>
                   )}
                 </div>
@@ -4358,7 +4419,7 @@ export default function Home() {
                             {selectedTeacher.subject}
                           </span>
                           <span className="px-3 py-1 bg-blue-100 border border-slate-900 text-xs font-black text-blue-900">
-                            محافظة {selectedTeacher.gov}
+                            {siteLang === "en" ? selectedTeacher.gov : `محافظة ${selectedTeacher.gov}`}
                           </span>
                           {(() => {
                             const modes = selectedTeacher.teachingMode || selectedTeacher.teaching_mode || ["حضوري"];
@@ -4366,7 +4427,7 @@ export default function Home() {
                             return (
                               <span className="px-3 py-1 bg-purple-100 border border-slate-900 text-xs font-black text-purple-900 flex items-center gap-1.5">
                                 <IconMonitor size={12} />
-                                {isBoth ? "حضوري + إلكتروني" : modes.includes("إلكتروني") ? "إلكتروني (أونلاين)" : "حضوري (قاعات)"}
+                                {isBoth ? (siteLang === "en" ? "In-Person & Online" : "حضوري وإلكتروني") : modes.includes("إلكتروني") ? (siteLang === "en" ? "Online" : "إلكتروني") : (siteLang === "en" ? "In-Person" : "حضوري")}
                               </span>
                             );
                           })()}
@@ -4462,7 +4523,7 @@ export default function Home() {
                       {/* Prerequisite: Mandatory Like or Dislike Choice */}
                       <div>
                         <label className="block text-xs font-black text-slate-800 mb-2">
-                          هل تنصح بهذا المدرس؟ <span className="text-red-500">* (إجباري: اختر أحدهما)</span>
+                          {siteLang === "en" ? "Do you recommend this teacher?" : "تنصح بهذا الأستاذ؟"} <span className="text-red-500">*</span>
                         </label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <button
@@ -4474,7 +4535,8 @@ export default function Home() {
                                 : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
                             }`}
                           >
-                            <IconThumbUp size={16} /> أعجبني (أنصح به)
+                            <IconThumbUp size={16} />
+                            <span>{siteLang === "en" ? "Recommend" : "أنصح بيه"}</span>
                           </button>
                           <button
                             type="button"
@@ -4485,19 +4547,20 @@ export default function Home() {
                                 : "border-slate-300 bg-white text-slate-700 hover:border-slate-900"
                             }`}
                           >
-                            <IconThumbDown size={16} /> لم يعجبني (لا أنصح به)
+                            <IconThumbDown size={16} />
+                            <span>{siteLang === "en" ? "Don't Recommend" : "ما أنصح بيه"}</span>
                           </button>
                         </div>
                       </div>
 
                       {/* Review Title */}
                       <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1">عنوان التقييم (اختياري)</label>
+                        <label className="block text-xs font-bold text-slate-800 mb-1">{siteLang === "en" ? "Review Title" : "عنوان التقييم"}</label>
                         <input
                           type="text"
                           value={reviewTitle}
                           onChange={e => setReviewTitle(e.target.value)}
-                          placeholder="مثال: تجربتي مع الأستاذ في مادة الرياضيات..."
+                          placeholder={siteLang === "en" ? "e.g. My experience with this teacher..." : "مثال: تجربتي وي الأستاذ بمادة الرياضيات..."}
                           className="w-full p-2.5 bg-white border-2 border-slate-900 text-xs font-semibold focus:outline-none"
                         />
                       </div>
@@ -4576,20 +4639,20 @@ export default function Home() {
                                   {isReview ? (
                                     isDislikeReview ? (
                                       <span className="px-2 py-0.5 bg-red-100 border border-red-500 text-[10px] font-black text-red-900 flex items-center gap-1">
-                                        <IconThumbDown size={10} /> تقييم: لم يعجبني
+                                        <IconThumbDown size={10} /> {siteLang === "en" ? "Don't Recommend" : "ما أنصح بيه"}
                                       </span>
                                     ) : (
                                       <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-600 text-[10px] font-black text-emerald-900 flex items-center gap-1">
-                                        <IconThumbUp size={10} /> تقييم: أعجبني
+                                        <IconThumbUp size={10} /> {siteLang === "en" ? "Recommend" : "أنصح بيه"}
                                       </span>
                                     )
                                   ) : (
                                     <span className="px-2 py-0.5 bg-blue-100 border border-blue-600 text-[10px] font-black text-blue-900 flex items-center gap-1">
-                                      <IconComment size={10} /> منشور نقاش
+                                      <IconComment size={10} /> {siteLang === "en" ? "Discussion" : "سالفة ونقاش"}
                                     </span>
                                   )}
                                 </button>
-                                <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(postItem.created_at)}</span>
+                                <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(postItem.created_at, siteLang)}</span>
                               </div>
 
                               {/* Content */}
@@ -4673,7 +4736,7 @@ export default function Home() {
                                 </div>
                                 {canDelete && (
                                   <button onClick={() => deletePost(postItem.id)} className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1">
-                                    <IconTrash size={12} /> {session?.username === postItem.author ? "حذف" : "حذف (إدارة)"}
+                                    <IconTrash size={12} /> {session?.username === postItem.author ? (siteLang === "en" ? "Delete" : "حذف") : (siteLang === "en" ? "Admin Delete" : "حذف إداري")}
                                   </button>
                                 )}
                               </div>
@@ -4852,24 +4915,24 @@ export default function Home() {
                           <span className="font-black text-xs text-slate-800">{n.actor}</span>
                           <span className="text-xs text-slate-600">
                             {n.type === "teacher_approved"
-                              ? "تمت الموافقة على إضافة المدرس:"
+                              ? (siteLang === "en" ? "Teacher addition approved:" : "تمت الموافقة على الأستاذ:")
                               : n.type === "teacher_rejected"
-                              ? "تم رفض طلب إضافة المدرس:"
+                              ? (siteLang === "en" ? "Teacher suggestion declined:" : "ما تمت الموافقة على الأستاذ:")
                               : n.type === "like"
-                              ? "أعجب بمنشورك:"
+                              ? (siteLang === "en" ? "Liked your post:" : "عجبه منشورك:")
                               : n.type === "report_alert"
-                              ? "تنبيه إداري: وصل بلاغ عن:"
+                              ? (siteLang === "en" ? "Admin notice - report on:" : "تنبيه إداري - وصل بلاغ عن:")
                               : n.type === "admin_warning"
-                              ? "إنذار إداري رسمي:"
+                              ? (siteLang === "en" ? "Official admin warning:" : "إنذار إداري رسمي:")
                               : n.type === "promotion" || (n.type as string) === "badge"
-                              ? "ترقية وإشراف إداري:"
+                              ? (siteLang === "en" ? "Staff promotion:" : "ترقية إدارية:")
                               : n.type === "support_reply"
-                              ? "رد الدعم الفني:"
-                              : "علّق على منشورك:"}
+                              ? (siteLang === "en" ? "Support reply:" : "رد الدعم الفني:")
+                              : (siteLang === "en" ? "Commented on your post:" : "علّق على منشورك:")}
                           </span>
                           <span className="text-xs font-bold text-emerald-800">"{n.targetTitle}"</span>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-400 shrink-0">{getRelativeTime(n.created_at)}</span>
+                        <span className="text-[10px] font-bold text-slate-400 shrink-0">{getRelativeTime(n.created_at, siteLang)}</span>
                       </div>
                       {n.commentText && (
                         <p className="text-xs font-medium text-slate-700 mt-2 pr-9 bg-white/80 p-2.5 border border-slate-200 leading-relaxed">
@@ -5014,9 +5077,9 @@ export default function Home() {
                         <button
                           onClick={() => setHistoryModal(true)}
                           className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-xs border-2 border-amber-600 shadow-[2px_2px_0px_#d97706] flex items-center gap-1.5"
-                          title="سجل كل التفاعلات واللايكات التي قمت بها (سري)"
+                          title={t("interactionHistory")}
                         >
-                          <IconHistory size={14} /> سجل التفاعلات (سري)
+                          <IconHistory size={14} /> {t("interactionHistory")}
                         </button>
                       </div>
                     )}
@@ -5092,8 +5155,8 @@ export default function Home() {
                     {userBookmarks.length === 0 ? (
                       <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-2">
                         <div className="text-amber-500 flex justify-center"><IconBookmark size={28} /></div>
-                        <p className="text-xs font-bold text-slate-600">لم تقم بحفظ أي مدرسين أو منشورات حتى الآن.</p>
-                        <p className="text-[11px] text-slate-400 font-semibold">اضغط على زر الحفظ (أيقونة العلامة) بجانب أي مدرس أو منشور لحفظه هنا.</p>
+                        <p className="text-xs font-bold text-slate-600">{t("noBookmarks")}</p>
+                        <p className="text-[11px] text-slate-400 font-semibold">{siteLang === "en" ? "Click the bookmark icon on any teacher or post to save it here." : "اضغط زر الحفظ يم أي أستاذ أو منشور حتى تحفظه هنا."}</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -5113,9 +5176,9 @@ export default function Home() {
                                     <span className={`px-2 py-0.5 text-[9px] font-black border ${
                                       isTeacher ? "bg-amber-100 text-amber-900 border-amber-600" : "bg-emerald-100 text-emerald-900 border-emerald-600"
                                     }`}>
-                                      {isTeacher ? "مدرس محفوظ" : "منشور محفوظ"}
+                                      {isTeacher ? (siteLang === "en" ? "Saved Teacher" : "أستاذ محفوظ") : (siteLang === "en" ? "Saved Post" : "منشور محفوظ")}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 font-bold">{getRelativeTime(b.created_at)}</span>
+                                    <span className="text-[10px] text-slate-400 font-bold">{getRelativeTime(b.created_at, siteLang)}</span>
                                   </div>
                                   <h4 className="font-black text-sm text-slate-900">{b.title}</h4>
                                   {b.subtitle && <p className="text-xs text-slate-600 font-semibold">{b.subtitle}</p>}
@@ -5125,7 +5188,7 @@ export default function Home() {
                                 <button
                                   onClick={() => toggleBookmark(b.targetId, b.type, b.title)}
                                   className="p-1.5 border border-slate-300 hover:border-red-600 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all shrink-0"
-                                  title="إزالة من المحفوظات"
+                                  title={siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات"}
                                 >
                                   <IconTrash size={13} />
                                 </button>
@@ -5141,7 +5204,7 @@ export default function Home() {
                                     }}
                                     className="text-xs font-black text-emerald-800 hover:underline flex items-center gap-1"
                                   >
-                                    الانتقال لصفحة المدرس ←
+                                    {siteLang === "en" ? "Go to teacher profile" : "الانتقال لصفحة الأستاذ"}
                                   </button>
                                 ) : (
                                   <button
@@ -5151,7 +5214,7 @@ export default function Home() {
                                     }}
                                     className="text-xs font-black text-emerald-800 hover:underline flex items-center gap-1"
                                   >
-                                    عرض في ساحة النقاش ←
+                                    {siteLang === "en" ? "View in feed" : "عرض بساحة النقاش"}
                                   </button>
                                 )}
                               </div>
@@ -5165,12 +5228,14 @@ export default function Home() {
                 /* Mixed Activity Feed (Posts, Teacher Reviews, Comments) */
                 <div className="space-y-4">
                   <h3 className="font-black text-sm text-slate-800 border-b-2 border-slate-200 pb-2">
-                    {isOwnProfile ? "سجل نشاطاتي ومشاركاتي:" : `نشاطات ومشاركات الطالب (${targetProfileUser}):`}
+                    {isOwnProfile
+                      ? (siteLang === "en" ? "My Activities & Contributions:" : "سجل نشاطاتي ومشاركاتي:")
+                      : (siteLang === "en" ? `Activities of @${targetProfileUser}:` : `نشاطات ومشاركات الطالب @${targetProfileUser}:`)}
                   </h3>
 
                   {combinedActivities.length === 0 ? (
                     <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 text-center text-xs font-bold text-slate-400">
-                      لم يتم نشر أي منشورات أو تقييمات أو تعليقات حتى الآن.
+                      {siteLang === "en" ? "No posts, reviews, or comments published yet." : "ماكو أي منشورات أو تقييمات أو تعليقات منشورة لحد الآن."}
                     </div>
                   ) : (
                     combinedActivities.map(item => {
@@ -5184,7 +5249,7 @@ export default function Home() {
                       const commentVote = item.kind === "comment" ? getUserVote(`comment_${item.id}`) : null;
 
                       return (
-                        <div key={item.id} className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 space-y-3 relative">
+                        <div key={item.id} className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#000] p-4 space-y-3">
                           {/* Item Header */}
                           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                             <div className="flex items-center gap-2">
@@ -5197,21 +5262,21 @@ export default function Home() {
                               }`}>
                                 {item.kind === "post" ? (
                                   <>
-                                    <IconPen size={10} /> منشور
+                                    <IconPen size={10} /> {siteLang === "en" ? "Post" : "منشور"}
                                   </>
                                 ) : item.kind === "review" ? (
                                   isDislikeReview ? (
                                     <>
-                                      <IconThumbDown size={10} /> تقييم: لم يعجبني
+                                      <IconThumbDown size={10} /> {siteLang === "en" ? "Don't Recommend" : "ما أنصح بيه"}
                                     </>
                                   ) : (
                                     <>
-                                      <IconThumbUp size={10} /> تقييم: أعجبني
+                                      <IconThumbUp size={10} /> {siteLang === "en" ? "Recommend" : "أنصح بيه"}
                                     </>
                                   )
                                 ) : (
                                   <>
-                                    <IconComment size={10} /> تعليق
+                                    <IconComment size={10} /> {siteLang === "en" ? "Comment" : "تعليق"}
                                   </>
                                 )}
                               </span>
@@ -5220,11 +5285,11 @@ export default function Home() {
                                   onClick={() => { setSelectedTeacher(teacher); setTab("teacher"); }}
                                   className="text-[11px] font-bold text-emerald-800 hover:underline flex items-center gap-1"
                                 >
-                                  الأستاذ: {teacher.name} ({teacher.subject})
+                                  {siteLang === "en" ? "Teacher:" : "الأستاذ:"} {teacher.name} • {teacher.subject}
                                 </button>
                               )}
                             </div>
-                            <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(item.created_at)}</span>
+                            <span className="text-[10px] font-bold text-slate-400">{getRelativeTime(item.created_at, siteLang)}</span>
                           </div>
 
                           {/* Content */}
@@ -5241,14 +5306,14 @@ export default function Home() {
                                   <button
                                     onClick={() => votePost(item.id, "like")}
                                     className={vbtn(postVote === "like", "like")}
-                                    title="إعجاب"
+                                    title={siteLang === "en" ? "Like" : "إعجاب"}
                                   >
                                     <IconThumbUp size={12} /> {item.likes}
                                   </button>
                                   <button
                                     onClick={() => votePost(item.id, "dislike")}
                                     className={vbtn(postVote === "dislike", "dislike")}
-                                    title="عدم إعجاب"
+                                    title={siteLang === "en" ? "Dislike" : "عدم إعجاب"}
                                   >
                                     <IconThumbDown size={12} /> {item.dislikes}
                                   </button>
@@ -5261,7 +5326,7 @@ export default function Home() {
                                     }`}
                                   >
                                     <IconComment size={12} />
-                                    <span>التعليقات ({fullPost?.comments?.length || 0})</span>
+                                    <span>{siteLang === "en" ? "Comments" : "التعليقات"} • {fullPost?.comments?.length || 0}</span>
                                   </button>
                                   <button
                                     onClick={() => openReportModal({ id: item.id, type: "post", title: item.title })}
@@ -5305,7 +5370,7 @@ export default function Home() {
                                 onClick={() => deletePost(item.id)}
                                 className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1"
                               >
-                                <IconTrash size={12} /> {session.username === targetProfileUser ? "حذف" : "حذف (إدارة)"}
+                                <IconTrash size={12} /> {session.username === targetProfileUser ? (siteLang === "en" ? "Delete" : "حذف") : (siteLang === "en" ? "Admin Delete" : "حذف إداري")}
                               </button>
                             )}
                           </div>
@@ -5713,21 +5778,21 @@ export default function Home() {
                                       {reasonLabel}
                                     </span>
                                     <span className="text-[11px] text-slate-600 font-bold">
-                                      من قِبل: <span className="text-slate-900 font-black">{r.allReporters.slice(0, 3).join(", ")}{r.allReporters.length > 3 ? ` و ${r.allReporters.length - 3} آخرين` : ""}</span>
+                                      {siteLang === "en" ? "Reported by:" : "من قِبل:"} <span className="text-slate-900 font-black">{r.allReporters.slice(0, 3).join(", ")}{r.allReporters.length > 3 ? (siteLang === "en" ? ` and ${r.allReporters.length - 3} others` : ` و ${r.allReporters.length - 3} آخرين`) : ""}</span>
                                     </span>
                                   </div>
-                                  <span className="text-[10px] text-slate-400 font-bold shrink-0">{getRelativeTime(r.created_at)}</span>
+                                  <span className="text-[10px] text-slate-400 font-bold shrink-0">{getRelativeTime(r.created_at, siteLang)}</span>
                                 </div>
 
                                 <div className="bg-slate-50 p-2.5 border border-slate-200 text-xs space-y-1">
-                                  <div className="font-black text-slate-900 text-sm">{r.targetTitle || targetPost?.title || "محتوى محدد"}</div>
+                                  <div className="font-black text-slate-900 text-sm">{r.targetTitle || targetPost?.title || (siteLang === "en" ? "Target Content" : "محتوى محدد")}</div>
                                   {targetPost?.body && (
                                     <p className="text-[11px] text-slate-600 line-clamp-2">{targetPost.body}</p>
                                   )}
                                   {targetPost && (
                                     <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 flex items-center justify-between">
-                                      <span>الكاتب: <strong className="text-slate-900 font-bold">{targetPost.author}</strong></span>
-                                      <span>الحالة: <strong className={targetPost.status === "hidden" ? "text-red-600 font-bold" : "text-emerald-700 font-bold"}>{targetPost.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
+                                      <span>{siteLang === "en" ? "Author:" : "الكاتب:"} <strong className="text-slate-900 font-bold">{targetPost.author}</strong></span>
+                                      <span>{siteLang === "en" ? "Status:" : "الحالة:"} <strong className={targetPost.status === "hidden" ? "text-red-600 font-bold" : "text-emerald-700 font-bold"}>{targetPost.status === "hidden" ? (siteLang === "en" ? "Hidden" : "مخفي") : (siteLang === "en" ? "Active" : "نشط")}</strong></span>
                                     </div>
                                   )}
                                 </div>
@@ -5739,7 +5804,7 @@ export default function Home() {
                                   className="w-full py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-950 border border-blue-300 text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-[1px_1px_0px_#93c5fd]"
                                 >
                                   <IconSearch size={14} className="text-blue-700" />
-                                  <span>اضغط هنا لعرض تفاصيل المُبلّغين وأسباب البلاغات بالتفصيل ({r.reportsList?.length || r.reportCount})</span>
+                                  <span>{siteLang === "en" ? "View reporters and detailed reasons" : "عرض تفاصيل المُبلّغين وأسباب البلاغات"} • {r.reportsList?.length || r.reportCount}</span>
                                 </button>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
@@ -5814,9 +5879,9 @@ export default function Home() {
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                     <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
                       <IconVolumeX size={16} className="text-red-600" />
-                      <span>مركز انضباط المستخدمين والحظر المؤقت (User Disciplinary Center)</span>
+                      <span>{siteLang === "en" ? "User Disciplinary Center" : "مركز انضباط وحظر الحسابات"}</span>
                     </h3>
-                    <span className="text-[11px] text-slate-500 font-bold">حظر مؤقت أو إنذارات رسمية</span>
+                    <span className="text-[11px] text-slate-500 font-bold">{siteLang === "en" ? "Temporary bans and warnings" : "حظر مؤقت أو إنذارات"}</span>
                   </div>
 
                   {/* Search user */}
@@ -5826,14 +5891,14 @@ export default function Home() {
                         type="text"
                         value={adminUserSearch}
                         onChange={e => setAdminUserSearch(e.target.value)}
-                        placeholder="ابحث عن اسم المستخدم لإدارته أو توجيه عقوبة..."
+                        placeholder={siteLang === "en" ? "Search username to manage or penalize..." : "ابحث عن اسم المستخدم لإدارته أو توجيه عقوبة..."}
                         className="w-full p-2.5 ps-8 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none"
                       />
                       <span className="absolute start-2.5 top-3 text-slate-400">
                         <IconSearch size={14} />
                       </span>
                       {adminUserSearch && (
-                        <button onClick={() => setAdminUserSearch("")} className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700" title="مسح البحث">
+                        <button onClick={() => setAdminUserSearch("")} className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700" title={siteLang === "en" ? "Clear" : "مسح"}>
                           <IconX size={12} />
                         </button>
                       )}
@@ -5844,12 +5909,12 @@ export default function Home() {
                         onChange={e => setAdminSelectedUser(e.target.value || null)}
                         className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none"
                       >
-                        <option value="">-- اختر مستخدم من القائمة ({getAllPlatformUsers().length} مستخدم) --</option>
+                        <option value="">{siteLang === "en" ? `-- Select a user (${getAllPlatformUsers().length}) --` : `-- اختر طالب من القائمة (${getAllPlatformUsers().length}) --`}</option>
                         {getAllPlatformUsers()
                           .filter(u => !adminUserSearch.trim() || u.username.toLowerCase().includes(adminUserSearch.toLowerCase()))
                           .map(u => (
                             <option key={u.username} value={u.username}>
-                              {u.username} ({u.role}) {isUserCurrentlyMuted(u.username).muted ? "[محظور]" : ""}
+                              {u.username} - {u.role} {isUserCurrentlyMuted(u.username).muted ? (siteLang === "en" ? "[Banned]" : "[محظور]") : ""}
                             </option>
                           ))}
                       </select>
@@ -5919,14 +5984,14 @@ export default function Home() {
                                   onChange={e => setAdminMuteDuration(e.target.value as any)}
                                   className="w-full p-2 bg-slate-50 border border-slate-900 text-xs font-bold"
                                 >
-                                  <option value="24h">٢٤ ساعة (يوم واحد)</option>
-                                  <option value="7d">٧ أيام (أسبوع)</option>
-                                  <option value="30d">٣٠ يوماً (شهر)</option>
-                                  <option value="permanent">حظر دائم</option>
-                                </select>
-                              </div>
-                              <div className="sm:col-span-2">
-                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">سبب الحظر (يصل للمستخدم)</label>
+                                   <option value="24h">{siteLang === "en" ? "24 Hours" : "٢٤ ساعة"}</option>
+                                   <option value="7d">{siteLang === "en" ? "7 Days" : "٧ أيام"}</option>
+                                   <option value="30d">{siteLang === "en" ? "30 Days" : "٣٠ يوم"}</option>
+                                   <option value="permanent">{siteLang === "en" ? "Permanent Ban" : "حظر دائم"}</option>
+                                 </select>
+                               </div>
+                               <div className="sm:col-span-2">
+                                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">{siteLang === "en" ? "Ban Reason" : "سبب الحظر"}</label>
                                 <div className="flex gap-1.5">
                                   <input
                                     type="text"
@@ -5973,12 +6038,14 @@ export default function Home() {
                         {/* Strike History */}
                         {strikes.history.length > 0 && (
                           <div className="space-y-1.5 pt-1">
-                            <span className="text-[11px] font-bold text-slate-700 block">سجل العقوبات والإنذارات السابقة لهذا الطالب:</span>
+                            <span className="text-[11px] font-bold text-slate-700 block">
+                              {siteLang === "en" ? "Disciplinary and warning history for this student:" : "سجل العقوبات والإنذارات السابقة لهذا الطالب:"}
+                            </span>
                             <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
                               {strikes.history.map((h, idx) => (
                                 <div key={idx} className="p-1.5 bg-white border border-slate-200 text-[10px] flex items-center justify-between">
                                   <span className="text-red-700 font-semibold">{h.reason}</span>
-                                  <span className="text-slate-400 font-bold shrink-0">{getRelativeTime(h.date)} • بواسطة: {h.by}</span>
+                                  <span className="text-slate-400 font-bold shrink-0">{getRelativeTime(h.date, siteLang)} • {siteLang === "en" ? "By" : "بواسطة"}: {h.by}</span>
                                 </div>
                               ))}
                             </div>
@@ -5988,7 +6055,7 @@ export default function Home() {
                     );
                   })() : (
                     <div className="text-xs text-slate-400 py-4 text-center border border-dashed border-slate-300 font-semibold">
-                      اختر أو ابحث عن مستخدم أعلاه لإدارة عقوباته، حظره مؤقتاً، أو مراجعة سجله الإشرافي.
+                      {siteLang === "en" ? "Select or search for a user above to manage disciplinary actions." : "اختار أو ابحث عن مستخدم أعلاه لإدارة عقوباته أو مراجعة سجله."}
                     </div>
                   )}
                 </div>
@@ -6103,13 +6170,13 @@ export default function Home() {
                     <div>
                       <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
                         <IconPalmTree size={18} className="text-blue-900" />
-                        <span>شريط التنبيهات العام في أعلى الموقع (Site-Wide Banner)</span>
+                        <span>{siteLang === "en" ? "Site-Wide Banner" : "شريط التنبيهات العام"}</span>
                       </h3>
-                      <p className="text-xs text-slate-600 mt-0.5">يظهر لجميع الطلاب والزوار فور دخولهم المنصة</p>
+                      <p className="text-xs text-slate-600 mt-0.5">{siteLang === "en" ? "Shown to all students and visitors upon entering" : "يطلع لكل الطلاب والزوار أول ما يدخلون المنصة"}</p>
                     </div>
 
                     <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <span className="text-xs font-black text-slate-800">تفعيل الشريط:</span>
+                      <span className="text-xs font-black text-slate-800">{siteLang === "en" ? "Enable Banner:" : "تفعيل الشريط:"}</span>
                       <input
                         type="checkbox"
                         checked={announcementActive}
@@ -6121,7 +6188,7 @@ export default function Home() {
 
                   {/* Preset Selector */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-800">اختر نوع وطابع التنبيه:</label>
+                    <label className="block text-xs font-bold text-slate-800">{siteLang === "en" ? "Select banner style:" : "اختر نوع وطابع التنبيه:"}</label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <button
                         type="button"
@@ -6133,7 +6200,7 @@ export default function Home() {
                         }`}
                       >
                         <IconPalmTree size={16} />
-                        <span>بيان وزاري رسمي (Navy Blue)</span>
+                        <span>{siteLang === "en" ? "Ministerial Notice" : "بيان وزاري"}</span>
                       </button>
 
                       <button
@@ -6146,7 +6213,7 @@ export default function Home() {
                         }`}
                       >
                         <IconAlertTriangle size={16} />
-                        <span>تنبيه عاجل (Amber Alert)</span>
+                        <span>{siteLang === "en" ? "Urgent Alert" : "تنبيه عاجل"}</span>
                       </button>
 
                       <button
@@ -6159,7 +6226,7 @@ export default function Home() {
                         }`}
                       >
                         <IconCheck size={16} />
-                        <span>إعلان المنصة (Emerald Notice)</span>
+                        <span>{siteLang === "en" ? "Platform Announcement" : "إعلان المنصة"}</span>
                       </button>
                     </div>
                   </div>
@@ -6169,7 +6236,7 @@ export default function Home() {
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <IconClock size={14} className="text-slate-700" />
-                        <span>مدة صلاحية الإعلان قبل الإيقاف التلقائي (Auto-Expiration):</span>
+                        <span>{siteLang === "en" ? "Banner Expiry Duration:" : "مدة ظهور الإعلان قبل التوقف:"}</span>
                       </label>
                       {siteAnnouncement.expiresAt && (
                         <span className={`text-[10px] font-black px-2 py-0.5 border border-slate-900 ${
@@ -6178,8 +6245,8 @@ export default function Home() {
                             : "bg-amber-200 text-amber-950"
                         }`}>
                           {siteAnnouncement.expiresAt <= Date.now()
-                            ? "انتهت صلاحية الإعلان تلقائياً"
-                            : `ينتهي خلال: ${Math.max(1, Math.ceil((siteAnnouncement.expiresAt - Date.now()) / (1000 * 60 * 60)))} ساعة`}
+                            ? (siteLang === "en" ? "Banner expired" : "خلص وقت الإعلان")
+                            : (siteLang === "en" ? `Expires in: ${Math.max(1, Math.ceil((siteAnnouncement.expiresAt - Date.now()) / (1000 * 60 * 60)))}h` : `ينتهي خلال: ${Math.max(1, Math.ceil((siteAnnouncement.expiresAt - Date.now()) / (1000 * 60 * 60)))} ساعة`)}
                         </span>
                       )}
                     </div>
@@ -6188,35 +6255,35 @@ export default function Home() {
                       onChange={e => setAnnouncementDuration(e.target.value as any)}
                       className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none focus:bg-white"
                     >
-                      <option value="never">بدون انتهاء تلقائي (يبقى نشطاً حتى حذفه يدوياً)</option>
-                      <option value="1h">ساعة واحدة (1 Hour)</option>
-                      <option value="6h">6 ساعات (6 Hours)</option>
-                      <option value="12h">12 ساعة (12 Hours)</option>
-                      <option value="24h">24 ساعة / يوم واحد (24 Hours)</option>
-                      <option value="3d">3 أيام (3 Days)</option>
-                      <option value="7d">أسبوع كامل (7 Days)</option>
+                      <option value="never">{siteLang === "en" ? "Permanent" : "دائمي"}</option>
+                      <option value="1h">{siteLang === "en" ? "1 Hour" : "ساعة واحدة"}</option>
+                      <option value="6h">{siteLang === "en" ? "6 Hours" : "٦ ساعات"}</option>
+                      <option value="12h">{siteLang === "en" ? "12 Hours" : "١٢ ساعة"}</option>
+                      <option value="24h">{siteLang === "en" ? "24 Hours" : "٢٤ ساعة"}</option>
+                      <option value="3d">{siteLang === "en" ? "3 Days" : "٣ أيام"}</option>
+                      <option value="7d">{siteLang === "en" ? "7 Days" : "٧ أيام"}</option>
                     </select>
                   </div>
 
                   {/* Text input */}
                   <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-800">نص التنبيه أو القرار:</label>
+                    <label className="block text-xs font-bold text-slate-800">{siteLang === "en" ? "Announcement Text:" : "نص التنبيه أو القرار:"}</label>
                     <textarea
                       value={announcementText}
                       onChange={e => setAnnouncementText(e.target.value)}
                       maxLength={200}
                       rows={3}
-                      placeholder="اكتب هنا الإعلان الوزاري أو التنبيه العام للطلاب..."
+                      placeholder={siteLang === "en" ? "Write announcement text here..." : "اكتب هنا الإعلان الوزاري أو التنبيه العام للطلاب..."}
                       className="w-full p-3 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white resize-none"
                     />
                     <div className="flex justify-end text-[10px] font-bold text-slate-400">
-                      {announcementText.length}/200 حرف
+                      {announcementText.length}/200 {siteLang === "en" ? "chars" : "حرف"}
                     </div>
                   </div>
 
                   {/* Live Preview Box */}
                   <div className="space-y-1.5 pt-2 border-t border-slate-200">
-                    <span className="text-xs font-black text-slate-700 block">معاينة حية لما سيظهر للطلاب:</span>
+                    <span className="text-xs font-black text-slate-700 block">{siteLang === "en" ? "Live preview for students:" : "معاينة حية للي راح يشوفه الطلاب:"}</span>
                     <div className={`p-4 border-2 border-slate-900 shadow-[3px_3px_0px_#000] flex items-center gap-3 ${
                       announcementType === "ministerial"
                         ? "bg-blue-900 text-white"
@@ -6231,9 +6298,9 @@ export default function Home() {
                       </div>
                       <div>
                         <span className="text-[9px] font-black uppercase px-1.5 py-0.2 border border-slate-900 bg-white/20">
-                          {announcementType === "ministerial" ? "بيان وزاري رسمي" : announcementType === "warning" ? "تنبيه دراسي عاجل" : "إعلان المنصة"}
+                          {announcementType === "ministerial" ? (siteLang === "en" ? "Ministerial Notice" : "بيان وزاري") : announcementType === "warning" ? (siteLang === "en" ? "Urgent Alert" : "تنبيه دراسي عاجل") : (siteLang === "en" ? "Announcement" : "إعلان المنصة")}
                         </span>
-                        <p className="font-bold text-xs mt-0.5">{announcementText || "نص التنبيه سيظهر هنا بشكل فوري..."}</p>
+                        <p className="font-bold text-xs mt-0.5">{announcementText || (siteLang === "en" ? "Banner text will appear here..." : "نص التنبيه راح يطلع هنا فورا...")}</p>
                       </div>
                     </div>
                   </div>
@@ -6243,7 +6310,7 @@ export default function Home() {
                       onClick={() => handleSaveAnnouncement(announcementText, announcementType, announcementActive, announcementDuration)}
                       className="w-full sm:w-auto px-6 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
                     >
-                      حفظ وتطبيق شريط التنبيه فوراً
+                      {siteLang === "en" ? "Save & Apply Banner" : "حفظ وتطبيق شريط التنبيه فوراً"}
                     </button>
 
                     <button
@@ -6252,7 +6319,7 @@ export default function Home() {
                       className="w-full sm:w-auto px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-800 font-black text-xs border-2 border-red-600 shadow-[2px_2px_0px_#991b1b] flex items-center justify-center gap-1.5 active:translate-x-0.5 active:translate-y-0.5 transition-all"
                     >
                       <IconTrash size={14} />
-                      <span>حذف التنبيه نهائياً (Delete Banner)</span>
+                      <span>{siteLang === "en" ? "Delete Banner" : "حذف التنبيه نهائياً"}</span>
                     </button>
                   </div>
                 </div>
@@ -6266,18 +6333,18 @@ export default function Home() {
                   <div>
                     <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
                       <IconActivity size={16} className="text-emerald-primary" />
-                      <span>سجل عمليات الإشراف والمشرفين (Audit & Activity Log)</span>
+                      <span>{siteLang === "en" ? "Audit & Activity Log" : "سجل عمليات الإشراف والمشرفين"}</span>
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">توثيق شامل وفوري لكل إجراء إداري لضمان الشفافية ومتابعة عمل المشرفين</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{siteLang === "en" ? "Real-time documentation of every administrative action" : "توثيق شامل وفوري لكل إجراء إداري لضمان الشفافية ومتابعة عمل المشرفين"}</p>
                   </div>
                   <span className="px-2.5 py-0.5 bg-slate-100 text-slate-800 font-black text-xs border border-slate-900">
-                    {auditLogs.length} عملية مسجلة
+                    {auditLogs.length} {siteLang === "en" ? "actions logged" : "عملية مسجلة"}
                   </span>
                 </div>
 
                 {auditLogs.length === 0 ? (
                   <div className="text-xs text-slate-400 py-10 text-center font-semibold border-2 border-dashed border-slate-200">
-                    لا توجد عمليات إشرافية مسجلة بعد في هذا السجل.
+                    {siteLang === "en" ? "No moderation actions recorded yet." : "لا توجد عمليات إشرافية مسجلة بعد في هذا السجل."}
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[550px] overflow-y-auto pr-1">
@@ -6300,7 +6367,7 @@ export default function Home() {
                           )}
                         </div>
                         <span className="text-[10px] font-bold text-slate-400 shrink-0 self-end sm:self-center">
-                          {getRelativeTime(log.timestamp)}
+                          {getRelativeTime(log.timestamp, siteLang)}
                         </span>
                       </div>
                     ))}
@@ -6316,16 +6383,16 @@ export default function Home() {
                   <div className="border-b-2 border-slate-200 pb-3">
                     <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
                       <IconSlash size={16} className="text-red-600" />
-                      <span>إدارة الكلمات المحظورة وفلتر المحتوى التلقائي (Profanity Filter)</span>
+                      <span>{siteLang === "en" ? "Word Filter & Auto Content Moderation" : "إدارة الكلمات المحظورة وفلتر المحتوى التلقائي"}</span>
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      يتم فحص هذه الكلمات تلقائياً وبشكل مسبق في عناوين ونصوص المنشورات، التقييمات، والتعليقات لحظر نشرها فوراً
+                      {siteLang === "en" ? "Words checked automatically across titles, posts, reviews, and comments to block them instantly" : "يتم فحص هذه الكلمات تلقائياً وبشكل مسبق في عناوين ونصوص المنشورات، التقييمات، والتعليقات لحظر نشرها فوراً"}
                     </p>
                   </div>
 
                   {/* Add word */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-800">إضافة كلمة جديدة لقائمة الحظر:</label>
+                    <label className="block text-xs font-bold text-slate-800">{siteLang === "en" ? "Add new word to filter:" : "إضافة كلمة جديدة لقائمة الحظر:"}</label>
                     <div className="flex gap-2 max-w-md">
                       <input
                         type="text"
@@ -6377,7 +6444,7 @@ export default function Home() {
                   {/* Built-in Banned Words preview */}
                   <div className="space-y-2 pt-2 border-t border-slate-200">
                     <span className="text-xs font-bold text-slate-600 block">
-                      الكلمات المحظورة الأساسية في النظام (مدمجة):
+                      {siteLang === "en" ? "Default System Banned Words:" : "الكلمات المحظورة الافتراضية في النظام:"}
                     </span>
                     <div className="flex flex-wrap gap-1.5">
                       {getBlockedWordsList().map(w => (
@@ -6392,13 +6459,13 @@ export default function Home() {
                   <div className="bg-slate-50 p-4 border-2 border-slate-900 space-y-2.5 mt-4">
                     <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                       <IconCheck size={14} className="text-emerald-primary" />
-                      <span>اختبار الفحص الفوري (Sentence Tester):</span>
+                      <span>{siteLang === "en" ? "Sentence Tester:" : "اختبار الفحص الفوري:"}</span>
                     </span>
                     <input
                       type="text"
                       value={filterTestSentence}
                       onChange={e => setFilterTestSentence(e.target.value)}
-                      placeholder="جرّب كتابة جملة أو تعليق لمعرفة هل سيتم حظره أم قبوله..."
+                      placeholder={siteLang === "en" ? "Test a sentence or comment to check if it gets blocked..." : "جرّب اكتب جملة حتى تفحصها..."}
                       className="w-full p-2.5 bg-white border-2 border-slate-900 text-xs font-semibold focus:outline-none"
                     />
                     {filterTestSentence.trim() && (
@@ -6406,12 +6473,12 @@ export default function Home() {
                         {containsProfanity(filterTestSentence, customBannedWords) ? (
                           <div className="p-2.5 bg-red-100 border border-red-600 text-red-900 text-xs font-black flex items-center gap-1.5">
                             <IconSlash size={14} />
-                            <span>سيتم حظر هذه الجملة تلقائياً لاحتوائها على كلمة محظورة!</span>
+                            <span>{siteLang === "en" ? "This sentence will be blocked because it contains a forbidden word!" : "هاي الجملة تنحظر لأن بيها كلمة ممنوعة!"}</span>
                           </div>
                         ) : (
                           <div className="p-2.5 bg-emerald-100 border border-emerald-600 text-emerald-900 text-xs font-black flex items-center gap-1.5">
                             <IconCheck size={14} />
-                            <span>الجملة سليمة ومقبولة للنشر وفق المعايير.</span>
+                            <span>{siteLang === "en" ? "Sentence is clean and approved for publishing." : "الجملة ما بيها شي ومقبولة للنشر."}</span>
                           </div>
                         )}
                       </div>
@@ -6439,8 +6506,8 @@ export default function Home() {
                     <div className="flex items-center gap-2.5">
                       <IconCrown size={24} />
                       <div>
-                        <h3 className="font-black text-sm">لوحة تحكم مالك المنصة الحصرية (Owner Authority)</h3>
-                        <p className="text-xs font-bold opacity-90">هذه الأدوات الحساسة مقتصرة حصرياً على حساب المالك ولا يمكن للمشرفين الوصول إليها</p>
+                        <h3 className="font-black text-sm">{siteLang === "en" ? "Owner Control Panel" : "لوحة تحكم مالك المنصة"}</h3>
+                        <p className="text-xs font-bold opacity-90">{siteLang === "en" ? "Sensitive platform tools restricted to the owner account" : "أدوات حساسة خاصة بمالك المنصة وما يكدر يوصل إلها المشرفين"}</p>
                       </div>
                     </div>
                     <button
@@ -6448,7 +6515,7 @@ export default function Home() {
                       className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 shrink-0"
                     >
                       <IconDownload size={14} />
-                      <span>تصدير نسخة احتياطية (Backup)</span>
+                      <span>{siteLang === "en" ? "Export Backup" : "تصدير نسخة احتياطية"}</span>
                     </button>
                   </div>
 
@@ -6457,9 +6524,9 @@ export default function Home() {
                     <div className="border-b-2 border-slate-200 pb-2 flex items-center justify-between">
                       <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
                         <IconSliders size={16} className="text-amber-600" />
-                        <span>مفاتيح الطوارئ والتحكم بالمنصة (Emergency Master Toggles)</span>
+                        <span>{siteLang === "en" ? "Platform Master Controls" : "مفاتيح الطوارئ والتحكم بالمنصة"}</span>
                       </h4>
-                      <span className="text-[10px] text-slate-500 font-bold">تطبيق فوري لجميع المستخدمين</span>
+                      <span className="text-[10px] text-slate-500 font-bold">{siteLang === "en" ? "Instant application for all users" : "تطبيق فوري لجميع المستخدمين"}</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -6469,8 +6536,8 @@ export default function Home() {
                       }`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-black text-xs text-slate-900 block">وضع الصيانة العام (Maintenance Mode)</span>
-                            <span className="text-[11px] text-slate-500 font-semibold">حصر التصفح بالمشرفين والمالك فقط</span>
+                            <span className="font-black text-xs text-slate-900 block">{siteLang === "en" ? "Maintenance Mode" : "وضع الصيانة العام"}</span>
+                            <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Restrict browsing to staff and owner only" : "حصر التصفح بالمشرفين والمالك بس"}</span>
                           </div>
                           <button
                             onClick={() => handleSavePlatformSettings({ maintenanceMode: !platformSettings.maintenanceMode })}
@@ -6478,7 +6545,7 @@ export default function Home() {
                               platformSettings.maintenanceMode ? "bg-red-600 text-white" : "bg-slate-200 text-slate-700"
                             }`}
                           >
-                            {platformSettings.maintenanceMode ? "مفعل (ON)" : "معطل (OFF)"}
+                            {platformSettings.maintenanceMode ? (siteLang === "en" ? "Active" : "مفعل") : (siteLang === "en" ? "Disabled" : "معطل")}
                           </button>
                         </div>
                       </div>
@@ -6489,8 +6556,8 @@ export default function Home() {
                       }`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-black text-xs text-slate-900 block">تسجيل حسابات جديدة (Signups)</span>
-                            <span className="text-[11px] text-slate-500 font-semibold">إيقاف التسجيل في حال الهجمات العشوائية</span>
+                            <span className="font-black text-xs text-slate-900 block">{siteLang === "en" ? "New Signups" : "تسجيل حسابات جديدة"}</span>
+                            <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Halt registrations during spam attacks" : "إيقاف التسجيل في حال الهجمات العشوائية"}</span>
                           </div>
                           <button
                             onClick={() => handleSavePlatformSettings({ allowRegistration: !platformSettings.allowRegistration })}
@@ -6498,7 +6565,7 @@ export default function Home() {
                               platformSettings.allowRegistration ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
                             }`}
                           >
-                            {platformSettings.allowRegistration ? "مسموح (ON)" : "موقف (OFF)"}
+                            {platformSettings.allowRegistration ? (siteLang === "en" ? "Allowed" : "مسموح") : (siteLang === "en" ? "Paused" : "موقف")}
                           </button>
                         </div>
                       </div>
@@ -6509,8 +6576,8 @@ export default function Home() {
                       }`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-black text-xs text-slate-900 block">نشر المنشورات في الساحة (Posting)</span>
-                            <span className="text-[11px] text-slate-500 font-semibold">تجميد النشر أثناء فترات الامتحانات</span>
+                            <span className="font-black text-xs text-slate-900 block">{siteLang === "en" ? "Feed Posting" : "نشر المشاركات بالساحة"}</span>
+                            <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Freeze posting during exam periods" : "تجميد النشر أثناء فترات الامتحانات"}</span>
                           </div>
                           <button
                             onClick={() => handleSavePlatformSettings({ allowPosting: !platformSettings.allowPosting })}
@@ -6518,7 +6585,7 @@ export default function Home() {
                               platformSettings.allowPosting ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
                             }`}
                           >
-                            {platformSettings.allowPosting ? "مسموح (ON)" : "موقف (OFF)"}
+                            {platformSettings.allowPosting ? (siteLang === "en" ? "Allowed" : "مسموح") : (siteLang === "en" ? "Paused" : "موقف")}
                           </button>
                         </div>
                       </div>
@@ -6529,8 +6596,8 @@ export default function Home() {
                       }`}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="font-black text-xs text-slate-900 block">اقتراح مدرسين جدد (Teacher Suggestions)</span>
-                            <span className="text-[11px] text-slate-500 font-semibold">تعليق قائمة الانتظار للمراجعة</span>
+                            <span className="font-black text-xs text-slate-900 block">{siteLang === "en" ? "Teacher Suggestions" : "اقتراح أساتذة جدد"}</span>
+                            <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Suspend waiting list for review" : "تعليق قائمة الانتظار للمراجعة"}</span>
                           </div>
                           <button
                             onClick={() => handleSavePlatformSettings({ allowTeacherSubmissions: !platformSettings.allowTeacherSubmissions })}
@@ -6538,7 +6605,7 @@ export default function Home() {
                               platformSettings.allowTeacherSubmissions ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
                             }`}
                           >
-                            {platformSettings.allowTeacherSubmissions ? "مسموح (ON)" : "موقف (OFF)"}
+                            {platformSettings.allowTeacherSubmissions ? (siteLang === "en" ? "Allowed" : "مسموح") : (siteLang === "en" ? "Paused" : "موقف")}
                           </button>
                         </div>
                       </div>
@@ -6551,14 +6618,14 @@ export default function Home() {
                       <div>
                         <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
                           <IconShield size={16} className="text-blue-600" />
-                          <span>إدارة طاقم المشرفين والصلاحيات المخصصة (Staff & Granular Permissions)</span>
+                          <span>{siteLang === "en" ? "Moderation Staff & Permissions" : "إدارة طاقم المشرفين والصلاحيات"}</span>
                         </h4>
                         <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
-                          ابحث عن أي مستخدم لترقيته إلى مشرف، أو تخصيص وتعديل صلاحياته بما فيها صلاحيات المالك
+                          {siteLang === "en" ? "Search any user to promote to mod or customize their permissions" : "ابحث عن أي طالب لترقيته إلى مشرف أو تعديل صلاحياته"}
                         </p>
                       </div>
                       <span className="text-xs font-bold text-slate-600 shrink-0">
-                        {ownerCount} مالك • {modCount} مشرف • {studentCount} طالب
+                        {ownerCount} {siteLang === "en" ? "owner" : "مالك"} • {modCount} {siteLang === "en" ? "moderators" : "مشرف"} • {studentCount} {siteLang === "en" ? "students" : "طالب"}
                       </span>
                     </div>
 
@@ -6665,17 +6732,17 @@ export default function Home() {
                                         <span className={`px-2 py-0.2 text-[9px] font-bold border border-slate-900 ${
                                           hasOwnerPowers ? "bg-amber-200 text-amber-950" : "bg-blue-100 text-blue-900"
                                         }`}>
-                                          {grantedCount === 11 ? "كامل الصلاحيات (11/11)" : `${grantedCount} صلاحيات`}
-                                          {hasOwnerPowers && " • تشمل أدوات المالك"}
+                                          {grantedCount === 11 ? (siteLang === "en" ? "Full Access" : "كامل الصلاحيات") : (siteLang === "en" ? `${grantedCount} permissions` : `${grantedCount} صلاحيات`)}
+                                          {hasOwnerPowers && (siteLang === "en" ? " • Includes Owner Tools" : " • تشمل أدوات المالك")}
                                         </span>
                                       )}
                                     </div>
                                     <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
                                       {u.role === "owner"
-                                        ? "المالك الأساسي للنظام بصلاحيات كاملة غير قابلة للتعديل"
+                                        ? (siteLang === "en" ? "Platform Owner" : "المالك الأساسي للنظام بصلاحيات كاملة")
                                         : u.role === "mod"
-                                        ? `مشرف في المنصة (${grantedCount} صلاحية مفعلة)`
-                                        : "طالب مسجل في المنصة"}
+                                        ? (siteLang === "en" ? `Platform Moderator - ${grantedCount} active permissions` : `مشرف بالمنصة - ${grantedCount} صلاحيات مفعلة`)
+                                        : (siteLang === "en" ? "Registered Student" : "طالب مسجل في المنصة")}
                                     </p>
                                   </div>
                                 </div>
@@ -6683,7 +6750,7 @@ export default function Home() {
                                 <div className="flex items-center gap-2 self-end sm:self-center">
                                   {u.role === "owner" ? (
                                     <span className="text-[10px] text-amber-900 font-black px-2.5 py-1 bg-amber-100 border border-amber-400 flex items-center gap-1">
-                                      <IconCrown size={12} /> محمي (المالك)
+                                      <IconCrown size={12} /> {siteLang === "en" ? "Owner Account" : "حساب المالك"}
                                     </span>
                                   ) : u.role === "mod" ? (
                                     <>
@@ -6724,27 +6791,27 @@ export default function Home() {
                     <div className="border-b-2 border-slate-200 pb-2 flex items-center justify-between">
                       <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
                         <IconAward size={16} className="text-amber-500" />
-                        <span>لوحة إحصائيات النمو الشاملة (Executive Growth Analytics)</span>
+                        <span>{siteLang === "en" ? "Growth & Activity Analytics" : "لوحة إحصائيات النمو الشاملة"}</span>
                       </h4>
-                      <span className="text-[10px] text-slate-400 font-bold">بيانات مباشرة</span>
+                      <span className="text-[10px] text-slate-400 font-bold">{siteLang === "en" ? "Live data" : "بيانات مباشرة"}</span>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="bg-slate-50 border border-slate-300 p-3 text-center">
                         <div className="text-2xl font-black text-slate-900">{allUsers.length}</div>
-                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">إجمالي الحسابات</div>
+                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">{siteLang === "en" ? "Total Accounts" : "إجمالي الحسابات"}</div>
                       </div>
                       <div className="bg-slate-50 border border-slate-300 p-3 text-center">
                         <div className="text-2xl font-black text-emerald-700">{teachers.filter(t => t.status === "active").length}</div>
-                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">مدرسين معتمدين</div>
+                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">{siteLang === "en" ? "Verified Teachers" : "أساتذة معتمدين"}</div>
                       </div>
                       <div className="bg-slate-50 border border-slate-300 p-3 text-center">
                         <div className="text-2xl font-black text-blue-700">{posts.length}</div>
-                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">إجمالي المنشورات والمراجعات</div>
+                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">{siteLang === "en" ? "Total Posts & Reviews" : "إجمالي المنشورات والتقييمات"}</div>
                       </div>
                       <div className="bg-slate-50 border border-slate-300 p-3 text-center">
                         <div className="text-2xl font-black text-amber-600">{approvalRate}%</div>
-                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">متوسط قبول المدرسين</div>
+                        <div className="text-[11px] font-bold text-slate-600 mt-0.5">{siteLang === "en" ? "Teacher Approval Rate" : "متوسط قبول الأساتذة"}</div>
                       </div>
                     </div>
                   </div>
@@ -6804,7 +6871,7 @@ export default function Home() {
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
-                  تسجيل الدخول
+                  {siteLang === "en" ? "Sign In" : "تسجيل الدخول"}
                 </button>
                 <button
                   type="button"
@@ -6815,13 +6882,13 @@ export default function Home() {
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
-                  إنشاء حساب جديد
+                  {siteLang === "en" ? "Create Account" : "إنشاء حساب جديد"}
                 </button>
               </div>
               <button
                 onClick={() => { setAuthModal(false); resetTurnstile(); }}
                 className="p-1 hover:bg-slate-100 rounded border border-transparent hover:border-slate-400"
-                title="إغلاق"
+                title={siteLang === "en" ? "Close" : "إغلاق"}
               >
                 <IconX size={18} />
               </button>
@@ -6829,32 +6896,32 @@ export default function Home() {
 
             <p className="text-[11px] text-slate-500 font-bold">
               {isRegister
-                ? "أنشئ حسابك المجاني للمشاركة في النقاشات وتقييم المدرسين"
-                : "أهلاً بك مجدداً! سجّل دخولك للوصول إلى حسابك ونشاطاتك"}
+                ? (siteLang === "en" ? "Join for free to participate in discussions and rate teachers" : "سوي حساب للمشاركة ونقاش الأساتذة وتقييمهم")
+                : (siteLang === "en" ? "Welcome back! Sign in to continue" : "هلا بيك! سجل دخولك حتى تكمل")}
             </p>
 
             {authError && <div className="p-2.5 bg-red-100 border border-red-400 text-red-700 text-xs font-bold leading-relaxed">{authError}</div>}
             
             {!isRegister && lockoutRemaining > 0 && (
               <div className="p-2.5 bg-amber-100 border-2 border-amber-600 text-amber-900 text-xs font-bold text-center">
-                تم قفل تسجيل الدخول مؤقتاً! يرجى الانتظار: <span className="font-black text-sm">{lockoutRemaining} ثانية</span>
+                {siteLang === "en" ? "Login temporarily locked! Please wait: " : "تم قفل تسجيل الدخول مؤقتاً! يرجى الانتظار: "}<span className="font-black text-sm">{lockoutRemaining} {siteLang === "en" ? "seconds" : "ثانية"}</span>
               </div>
             )}
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold mb-1">اسم المستخدم</label>
+                <label className="block font-bold mb-1">{siteLang === "en" ? "Username" : "اسم المستخدم"}</label>
                 <input
                   type="text"
                   value={authUser}
                   onChange={e => setAuthUser(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none"
-                  placeholder={isRegister ? "اختر اسم مستخدم (مثال: ali_2026)" : "اسم المستخدم"}
+                  placeholder={siteLang === "en" ? "Username" : "اسم المستخدم"}
                 />
               </div>
               <div>
                 <label className="block font-bold mb-1">
-                  {isRegister ? "كلمة المرور (8+ أحرف، رقم، وحرف كبير)" : "كلمة المرور"}
+                  {siteLang === "en" ? "Password" : "كلمة المرور"}
                 </label>
                 <input
                   type="password"
@@ -6867,15 +6934,15 @@ export default function Home() {
                   <div className="mt-2 space-y-1 text-[11px] font-bold">
                     <p className={`flex items-center gap-1.5 ${authPass.length >= 8 ? "text-emerald-600" : "text-slate-400"}`}>
                       {authPass.length >= 8 ? <IconCheck size={12} /> : <span className="w-2.5 h-2.5 rounded-full border border-current inline-block" />}
-                      <span>٨ أحرف على الأقل</span>
+                      <span>{siteLang === "en" ? "At least 8 characters" : "٨ أحرف على الأقل"}</span>
                     </p>
                     <p className={`flex items-center gap-1.5 ${/[0-9]/.test(authPass) ? "text-emerald-600" : "text-slate-400"}`}>
                       {/[0-9]/.test(authPass) ? <IconCheck size={12} /> : <span className="w-2.5 h-2.5 rounded-full border border-current inline-block" />}
-                      <span>يحتوي على رقم</span>
+                      <span>{siteLang === "en" ? "Contains a number" : "بيها رقم"}</span>
                     </p>
                     <p className={`flex items-center gap-1.5 ${/[A-Z]/.test(authPass) ? "text-emerald-600" : "text-slate-400"}`}>
                       {/[A-Z]/.test(authPass) ? <IconCheck size={12} /> : <span className="w-2.5 h-2.5 rounded-full border border-current inline-block" />}
-                      <span>يحتوي على حرف كبير</span>
+                      <span>{siteLang === "en" ? "Contains uppercase letter" : "بيها حرف جبير"}</span>
                     </p>
                   </div>
                 )}
@@ -6885,28 +6952,28 @@ export default function Home() {
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-slate-800 flex items-center gap-1">
-                    <span>التحقق الأمني (Cloudflare Turnstile):</span>
+                    <span>{siteLang === "en" ? "Security Verification:" : "التحقق الأمني:"}</span>
                   </label>
                   {turnstileServerVerified ? (
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
-                        <IconCheck size={12} className="text-emerald-700" /> تم التحقق بنجاح
+                        <IconCheck size={12} className="text-emerald-700" /> {siteLang === "en" ? "Verified" : "تم التحقق"}
                       </span>
                       <button
                         type="button"
                         onClick={resetTurnstile}
                         className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold"
-                        title="إعادة تعيين التحقق الأمني"
+                        title={siteLang === "en" ? "Reset verification" : "إعادة تعيين التحقق"}
                       >
-                        (إعادة التحقق)
+                        {siteLang === "en" ? "Retry" : "إعادة التحقق"}
                       </button>
                     </div>
                   ) : turnstileToken ? (
                     <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
-                      <IconCheck size={12} className="text-emerald-700" /> تم التحقق بنجاح
+                      <IconCheck size={12} className="text-emerald-700" /> {siteLang === "en" ? "Verified" : "تم التحقق"}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-slate-500 font-semibold">مطلوب للتحقق</span>
+                    <span className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "Required" : "مطلوب"}</span>
                   )}
                 </div>
                 <Turnstile
@@ -6924,11 +6991,11 @@ export default function Home() {
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed"
               >
                 {!isRegister && lockoutRemaining > 0 ? (
-                  <span>مقفل مؤقتاً ({lockoutRemaining} ثانية)</span>
+                  <span>{siteLang === "en" ? `Locked - ${lockoutRemaining}s remaining` : `مقفل مؤقتاً - باقي ${lockoutRemaining} ثانية`}</span>
                 ) : (
                   <span className="flex items-center justify-center gap-1.5">
                     {isRegister ? <IconCheck size={14} /> : <IconArrowRight size={14} className="rtl:rotate-180" />}
-                    <span>{isRegister ? "إنشاء حساب جديد" : "تسجيل الدخول"}</span>
+                    <span>{isRegister ? (siteLang === "en" ? "Create New Account" : "إنشاء حساب جديد") : (siteLang === "en" ? "Log In" : "تسجيل الدخول")}</span>
                   </span>
                 )}
               </button>
@@ -6956,14 +7023,14 @@ export default function Home() {
         <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
-              <h3 className="font-black text-base">إنشاء منشور جديد</h3>
-              <button onClick={() => setPostModal(false)}><IconX size={16} /></button>
+              <h3 className="font-black text-base">{siteLang === "en" ? "Create New Post" : "نشر مشاركة جديدة"}</h3>
+              <button onClick={() => setPostModal(false)} title={siteLang === "en" ? "Close" : "إغلاق"}><IconX size={16} /></button>
             </div>
             <div className="space-y-3 text-xs">
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block font-bold text-slate-800">
-                    {siteLang === "en" ? "Related Teacher (Optional)" : "المدرس المعني (اختياري)"}
+                    {siteLang === "en" ? "Related Teacher" : "الأستاذ المعني"}
                   </label>
                   {postTeacher && (
                     <button
@@ -6981,7 +7048,7 @@ export default function Home() {
                       type="text"
                       value={postTeacherSearch}
                       onChange={e => setPostTeacherSearch(e.target.value)}
-                      placeholder={siteLang === "en" ? "Search teacher by name, subject, or city..." : "ابحث عن المدرس بالاسم، المادة أو المحافظة..."}
+                      placeholder={siteLang === "en" ? "Search teacher by name, subject, or governorate..." : "ابحث عن الأستاذ بالاسم، المادة أو المحافظة..."}
                       className="w-full p-2 ps-8 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none"
                     />
                     <span className="absolute start-2.5 top-2.5 text-slate-500 pointer-events-none">
@@ -6992,7 +7059,7 @@ export default function Home() {
                         type="button"
                         onClick={() => setPostTeacherSearch("")}
                         className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700"
-                        title="مسح"
+                        title={siteLang === "en" ? "Clear" : "مسح"}
                       >
                         <IconX size={12} />
                       </button>
@@ -7005,7 +7072,7 @@ export default function Home() {
                     className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none text-xs"
                   >
                     <option value="">
-                      {siteLang === "en" ? "-- No Teacher (General / Ministerial Post) --" : "-- بدون مدرس (منشور عام / وزاري) --"}
+                      {siteLang === "en" ? "-- No Teacher --" : "-- بدون أستاذ --"}
                     </option>
                     {activeTeachers
                       .filter(t => {
@@ -7019,7 +7086,7 @@ export default function Home() {
                       })
                       .map(t => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({t.subject} - {t.gov})
+                          {t.name} - {t.subject} - {t.gov}
                         </option>
                       ))}
                   </select>
@@ -7056,19 +7123,19 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block font-bold mb-1">العنوان (حد أقصى ١٠٠ حرف)</label>
-                <input type="text" value={postTitle} onChange={e => setPostTitle(e.target.value)} maxLength={100} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder="عنوان المنشور" />
+                <label className="block font-bold mb-1">{siteLang === "en" ? "Post Title" : "عنوان المشاركة"}</label>
+                <input type="text" value={postTitle} onChange={e => setPostTitle(e.target.value)} maxLength={100} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder={siteLang === "en" ? "Post title" : "عنوان المنشور"} />
                 <span className="text-[10px] text-slate-400 font-bold">{postTitle.length}/100</span>
               </div>
               <div>
-                <label className="block font-bold mb-1">المحتوى (حد أقصى ١٥٠٠ حرف)</label>
-                <textarea value={postBody} onChange={e => setPostBody(e.target.value)} maxLength={1500} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[100px] resize-none focus:outline-none" placeholder="اكتب هنا..." />
+                <label className="block font-bold mb-1">{siteLang === "en" ? "Content" : "محتوى المنشور"}</label>
+                <textarea value={postBody} onChange={e => setPostBody(e.target.value)} maxLength={1500} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[100px] resize-none focus:outline-none" placeholder={siteLang === "en" ? "Write something helpful..." : "اكتب هنا..."} />
                 <span className="text-[10px] text-slate-400 font-bold">{postBody.length}/1500</span>
               </div>
               <div>
-                <label className="block font-bold mb-1">المرحلة</label>
+                <label className="block font-bold mb-1">{siteLang === "en" ? "Grade Level" : "المرحلة الدراسية"}</label>
                 <select value={postGrade} onChange={e => setPostGrade(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none">
-                  <option value="General">عام</option>
+                  <option value="General">{siteLang === "en" ? "General" : "عام لكل المراحل"}</option>
                   {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
@@ -7076,7 +7143,7 @@ export default function Home() {
               {/* Multi-Image Upload */}
               <div>
                 <label className="block font-bold mb-1 text-slate-800">
-                  إرفاق صور (ملازم، ملخصات، أسئلة وزارية - يمكنك اختيار أكثر من صورة)
+                  {siteLang === "en" ? "Attach Study Images" : "إرفاق صور الملازم والملخصات"}
                 </label>
                 <div className="border-2 border-dashed border-slate-300 p-3 bg-slate-50 text-center space-y-2">
                   <input
@@ -7092,19 +7159,19 @@ export default function Home() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] cursor-pointer transition-all"
                   >
                     <IconImage size={14} className="text-emerald-primary" />
-                    <span>+ إضافة صور من جهازك</span>
+                    <span>{siteLang === "en" ? "+ Add images from device" : "+ إضافة صور من جهازك"}</span>
                   </label>
 
                   {postImages.length > 0 && (
                     <div className="flex flex-wrap gap-2 justify-center pt-2">
                       {postImages.map((img, idx) => (
                         <div key={idx} className="relative group w-14 h-14 border border-slate-900 bg-white shadow-[1px_1px_0px_#000]">
-                          <img src={img} alt={`مرفق ${idx + 1}`} className="w-full h-full object-cover" />
+                          <img src={img} alt={siteLang === "en" ? `Attachment ${idx + 1}` : `مرفق ${idx + 1}`} className="w-full h-full object-cover" />
                           <button
                             type="button"
                             onClick={() => removePostImage(idx)}
                             className="absolute -top-1.5 -left-1.5 bg-red-600 text-white w-4 h-4 text-[10px] font-black rounded-full flex items-center justify-center border border-slate-900 hover:bg-red-700"
-                            title="حذف الصورة"
+                            title={siteLang === "en" ? "Remove image" : "حذف الصورة"}
                           >
                             <IconX size={10} />
                           </button>
@@ -7120,7 +7187,7 @@ export default function Home() {
                 <label className="block font-bold mb-1 text-slate-800 flex items-center justify-between">
                   <span className="flex items-center gap-1">
                     <IconVideo size={13} className="text-red-600" />
-                    <span>{siteLang === "en" ? "YouTube Explanation Link (Optional)" : "رابط شرح يوتيوب (اختياري)"}</span>
+                    <span>{siteLang === "en" ? "YouTube Explanation Link" : "رابط شرح يوتيوب"}</span>
                   </span>
                   {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
                     <span className="text-[10px] text-red-600 font-bold">
@@ -7137,11 +7204,11 @@ export default function Home() {
                       ? "border-red-600 bg-red-50 text-red-900"
                       : "border-slate-900"
                   }`}
-                  placeholder="https://youtube.com/watch?v=... أو https://youtu.be/..."
+                  placeholder="https://youtube.com/watch?v=... / https://youtu.be/..."
                 />
                 {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
                   <p className="text-[10px] text-red-600 font-bold mt-1">
-                    {siteLang === "en" ? "Must be a valid YouTube link (youtube.com or youtu.be)" : "يجب أن يكون الرابط من موقع يوتيوب (youtube.com أو youtu.be)"}
+                    {siteLang === "en" ? "Must be a valid YouTube link" : "يجب أن يكون الرابط من موقع يوتيوب"}
                   </p>
                 )}
               </div>
@@ -7151,7 +7218,7 @@ export default function Home() {
                 disabled={!postTitle.trim() || !postBody.trim() || (!!postYoutube.trim() && !isValidYoutubeUrl(postYoutube))}
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
               >
-                {siteLang === "en" ? "Publish Post" : "نشر المنشور"}
+                {siteLang === "en" ? "Publish Post" : "نشر المشاركة"}
               </button>
             </div>
           </div>
@@ -7164,31 +7231,31 @@ export default function Home() {
           <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
               <div>
-                <h3 className="font-black text-base text-slate-900">إضافة مدرس جديد</h3>
-                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">سيتم إرسال المدرس لقائمة الانتظار لمراجعة الإدارة</p>
+                <h3 className="font-black text-base text-slate-900">{siteLang === "en" ? "Suggest a New Teacher" : "إضافة أستاذ جديد"}</h3>
+                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{siteLang === "en" ? "Will be sent to waiting list for admin review" : "يروح لقائمة الانتظار حتى تراجعه الإدارة"}</p>
               </div>
-              <button onClick={() => setTeacherModal(false)}><IconX size={16} /></button>
+              <button onClick={() => setTeacherModal(false)} title={siteLang === "en" ? "Close" : "إغلاق"}><IconX size={16} /></button>
             </div>
 
             <div className="space-y-4 text-xs">
               {/* Box 1: Teacher Name (No name prefilled in box) */}
               <div>
                 <label className="block font-bold mb-1 text-slate-800">
-                  اسم المدرس <span className="text-red-500">*</span>
+                  {siteLang === "en" ? "Teacher Name" : "اسم الأستاذ"} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={tName}
                   onChange={e => setTName(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white"
-                  placeholder="اكتب اسم المدرس هنا..."
+                  placeholder={siteLang === "en" ? "Enter teacher name..." : "اكتب اسم الأستاذ هنا..."}
                 />
               </div>
 
               {/* Box 2: Location / City (Single select from 18 governorates) */}
               <div>
                 <label className="block font-bold mb-1 text-slate-800">
-                  أين يتواجد هذا المدرس؟ (اختر محافظة واحدة) <span className="text-red-500">*</span>
+                  {siteLang === "en" ? "Governorate" : "محافظة الأستاذ"} <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={tGov}
@@ -7204,7 +7271,7 @@ export default function Home() {
               {/* Box 3: Subject Boxes + Other */}
               <div>
                 <label className="block font-bold mb-1.5 text-slate-800">
-                  المادة الدراسية <span className="text-red-500">*</span>
+                  {siteLang === "en" ? "Subject" : "المادة الدراسية"} <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                   {SUBJECT_OPTIONS.map(s => (
@@ -7228,7 +7295,7 @@ export default function Home() {
                       type="text"
                       value={tCustomSubject}
                       onChange={e => setTCustomSubject(e.target.value)}
-                      placeholder="اكتب اسم المادة الدراسية غير المتوفرة..."
+                      placeholder={siteLang === "en" ? "Enter custom subject..." : "اكتب اسم المادة الدراسية غير المتوفرة..."}
                       className="w-full p-2 bg-white border-2 border-emerald-600 text-xs font-semibold focus:outline-none"
                     />
                   </div>
@@ -7238,7 +7305,7 @@ export default function Home() {
               {/* Box 4: Grades Options (Multiple selection) */}
               <div>
                 <label className="block font-bold mb-1.5 text-slate-800">
-                  المراحل الدراسية التي يدرّسها (يمكنك اختيار أكثر من مرحلة) <span className="text-red-500">*</span>
+                  {siteLang === "en" ? "Grade Levels" : "المراحل الدراسية"} <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                   {GRADE_OPTIONS.map(g => {
@@ -7271,7 +7338,7 @@ export default function Home() {
               {/* Box: Teaching Mode (حضوري / إلكتروني / كلاهما) */}
               <div>
                 <label className="block font-bold mb-1.5 text-slate-800">
-                  طريقة التدريس المتاحة للمدرس <span className="text-red-500">* (اختر طريقة واحدة أو كلاهما)</span>
+                  {siteLang === "en" ? "Teaching Mode" : "طريقة التدريس المتاحة"} <span className="text-red-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -7289,7 +7356,7 @@ export default function Home() {
                         : "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-900"
                     }`}
                   >
-                    <span>حضوري (معاهد وقاعات)</span>
+                    <span>{siteLang === "en" ? "In-Person" : "حضوري"}</span>
                     <span>{tTeachingModes.includes("حضوري") ? <IconCheck size={12} /> : <IconPlus size={12} />}</span>
                   </button>
                   <button
@@ -7307,7 +7374,7 @@ export default function Home() {
                         : "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-900"
                     }`}
                   >
-                    <span>إلكتروني (دورات أونلاين)</span>
+                    <span>{siteLang === "en" ? "Online" : "إلكتروني"}</span>
                     <span>{tTeachingModes.includes("إلكتروني") ? <IconCheck size={12} /> : <IconPlus size={12} />}</span>
                   </button>
                 </div>
@@ -7316,7 +7383,7 @@ export default function Home() {
               {/* Box 5: Image File Upload (FILE ONLY, NOT LINK) */}
               <div>
                 <label className="block font-bold mb-1 text-slate-800">
-                  صورة المدرس (ملف صورة فقط) <span className="text-red-500">*</span>
+                  {siteLang === "en" ? "Teacher Photo" : "صورة الأستاذ"} <span className="text-red-500">*</span>
                 </label>
                 <div className="border-2 border-dashed border-slate-400 p-4 bg-slate-50 text-center">
                   <input
@@ -7331,27 +7398,27 @@ export default function Home() {
                       {/* Medium-sized preview image */}
                       <img
                         src={tImg}
-                        alt="معاينة المدرس"
+                        alt={siteLang === "en" ? "Teacher preview" : "معاينة الأستاذ"}
                         className="w-20 h-20 border-2 border-slate-900 object-cover shadow-[2px_2px_0px_#000] bg-white"
                       />
                       <div className="text-right space-y-1">
                         <span className="text-xs font-black text-emerald-800 flex items-center gap-1">
                           <IconCheck size={13} className="text-emerald-700" />
-                          <span>تم رفع الصورة بنجاح</span>
+                          <span>{siteLang === "en" ? "Photo uploaded successfully" : "تم رفع الصورة بنجاح"}</span>
                         </span>
                         <label
                           htmlFor="teacher-img-file"
                           className="inline-block px-3 py-1 bg-white border border-slate-900 text-xs font-bold cursor-pointer hover:bg-slate-100 shadow-[1px_1px_0px_#000]"
                         >
-                          تغيير ملف الصورة
+                          {siteLang === "en" ? "Change photo file" : "تغيير ملف الصورة"}
                         </label>
                       </div>
                     </div>
                   ) : (
                     <label htmlFor="teacher-img-file" className="cursor-pointer block py-2 space-y-1.5">
                       <div className="flex justify-center text-slate-600"><IconCamera size={28} /></div>
-                      <div className="text-xs font-black text-slate-800">اضغط هنا لاختيار ملف صورة المدرس من جهازك</div>
-                      <div className="text-[10px] text-slate-500 font-semibold">يقبل JPG، PNG، WebP، وغيرها (ملف فقط وليس رابط)</div>
+                      <div className="text-xs font-black text-slate-800">{siteLang === "en" ? "Click here to choose teacher photo from device" : "اضغط هنا لاختيار ملف صورة الأستاذ من جهازك"}</div>
+                      <div className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "JPG, PNG, WebP supported" : "يقبل JPG، PNG، WebP وغيرها"}</div>
                     </label>
                   )}
                 </div>
@@ -7369,7 +7436,7 @@ export default function Home() {
                 }
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
               >
-                إرسال للمراجعة (قائمة الانتظار)
+                {siteLang === "en" ? "Submit for Review" : "إرسال للتدقيق"}
               </button>
             </div>
           </div>
@@ -7383,11 +7450,12 @@ export default function Home() {
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
               <h3 className="font-black text-base flex items-center gap-2 text-slate-900">
                 <IconFlag size={18} className="text-red-600" />
-                <span>إرسال بلاغ عن محتوى</span>
+                <span>{siteLang === "en" ? "Report Content" : "إرسال بلاغ عن محتوى"}</span>
               </h3>
               <button
                 onClick={() => { setReportTarget(null); setReportNote(""); }}
                 className="p-1 hover:bg-slate-100 border border-transparent hover:border-slate-900"
+                title={siteLang === "en" ? "Close" : "إغلاق"}
               >
                 <IconX size={16} />
               </button>
@@ -7396,7 +7464,7 @@ export default function Home() {
             {reportTarget.title && (
               <div className="p-3 bg-slate-50 border-2 border-slate-200 space-y-1 text-xs">
                 <span className="text-[10px] font-bold text-slate-500 block">
-                  {reportTarget.type === "post" ? "المحتوى المبلّغ عنه:" : "التعليق المبلّغ عنه:"}
+                  {reportTarget.type === "post" ? (siteLang === "en" ? "Reported post:" : "المنشور المبلّغ عنه:") : (siteLang === "en" ? "Reported comment:" : "التعليق المبلّغ عنه:")}
                 </span>
                 <p className="font-bold text-slate-800 line-clamp-2">{reportTarget.title}</p>
               </div>
@@ -7404,7 +7472,7 @@ export default function Home() {
 
             <div className="space-y-3 text-xs">
               <label className="block font-bold text-slate-900">
-                حدد سبب البلاغ: <span className="text-red-500">*</span>
+                {siteLang === "en" ? "Select report reason:" : "حدد سبب البلاغ:"} <span className="text-red-500">*</span>
               </label>
 
               {/* Option 1: Inappropriate */}
@@ -7424,8 +7492,8 @@ export default function Home() {
                   className="mt-0.5 accent-red-600"
                 />
                 <div className="space-y-0.5">
-                  <div className="font-black text-slate-900 text-xs">محتوى غير لائق أو مسيء</div>
-                  <div className="text-[11px] text-slate-500 font-semibold">ألفاظ غير مقبولة، تنمر، أو إساءة شخصية</div>
+                  <div className="font-black text-slate-900 text-xs">{siteLang === "en" ? "Inappropriate or offensive content" : "محتوى غير لائق أو مسيء"}</div>
+                  <div className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Offensive language, harassment, or personal attacks" : "ألفاظ غير مقبولة، تنمر، أو إساءة شخصية"}</div>
                 </div>
               </label>
 
@@ -7446,8 +7514,8 @@ export default function Home() {
                   className="mt-0.5 accent-amber-600"
                 />
                 <div className="space-y-0.5">
-                  <div className="font-black text-slate-900 text-xs">معلومات خاطئة أو مضللة</div>
-                  <div className="text-[11px] text-slate-500 font-semibold">بيانات غير صحيحة، تقييم كاذب أو مضلل للطلاب</div>
+                  <div className="font-black text-slate-900 text-xs">{siteLang === "en" ? "False or misleading information" : "معلومات غلط أو مضللة"}</div>
+                  <div className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Incorrect info, fake or deceptive reviews" : "بيانات غير صحيحة، تقييم كاذب أو مضلل"}</div>
                 </div>
               </label>
 
@@ -7468,8 +7536,8 @@ export default function Home() {
                   className="mt-0.5 accent-slate-900"
                 />
                 <div className="space-y-0.5">
-                  <div className="font-black text-slate-900 text-xs">سبب آخر</div>
-                  <div className="text-[11px] text-slate-500 font-semibold">مخالفة أخرى لسياسات المنصة وقواعد السلوك</div>
+                  <div className="font-black text-slate-900 text-xs">{siteLang === "en" ? "Other reason" : "سالفة ثانية"}</div>
+                  <div className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Other violation of platform guidelines" : "مخالفة ثانية لقواعد المنصة"}</div>
                 </div>
               </label>
 
@@ -7477,10 +7545,10 @@ export default function Home() {
               <div className="pt-2 space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="block font-bold text-slate-800 text-xs">
-                    ملاحظة إضافية للمشرفين (اختياري - حتى 50 كلمة):
+                    {siteLang === "en" ? "Additional note for moderators:" : "ملاحظة إضافية للمشرفين:"}
                   </label>
                   <span className={`text-[10px] font-bold ${getWordCount(reportNote) > 50 ? "text-red-600 font-black" : "text-slate-500"}`}>
-                    {getWordCount(reportNote)} / 50 كلمة
+                    {getWordCount(reportNote)} / 50 {siteLang === "en" ? "words" : "كلمة"}
                   </span>
                 </div>
                 <textarea
@@ -7492,11 +7560,11 @@ export default function Home() {
                       setReportNote(val);
                     }
                   }}
-                  placeholder="اكتب توضيحاً إضافياً للمشرفين (بحد أقصى 50 كلمة)..."
+                  placeholder={siteLang === "en" ? "Add extra details for moderators..." : "اكتب توضيح إضافي للمشرفين..."}
                   className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-semibold min-h-[75px] resize-none focus:outline-none focus:bg-white"
                 />
                 {getWordCount(reportNote) > 50 && (
-                  <p className="text-[10px] text-red-600 font-bold">لا يمكن تجاوز الحد الأقصى (50 كلمة).</p>
+                  <p className="text-[10px] text-red-600 font-bold">{siteLang === "en" ? "Word limit reached: 50 words maximum." : "لا يمكن تجاوز الحد الأقصى 50 كلمة."}</p>
                 )}
               </div>
 
@@ -7507,7 +7575,7 @@ export default function Home() {
                   onClick={() => { setReportTarget(null); setReportNote(""); }}
                   className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold border-2 border-slate-900 transition-all"
                 >
-                  إلغاء
+                  {siteLang === "en" ? "Cancel" : "إلغاء"}
                 </button>
                 <button
                   type="button"
@@ -7515,7 +7583,7 @@ export default function Home() {
                   disabled={getWordCount(reportNote) > 50}
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#7f1d1d] disabled:bg-slate-300 disabled:shadow-none transition-all active:translate-x-0.5 active:translate-y-0.5"
                 >
-                  إرسال البلاغ
+                  {siteLang === "en" ? "Submit Report" : "إرسال البلاغ"}
                 </button>
               </div>
             </div>
@@ -7532,15 +7600,16 @@ export default function Home() {
               <div className="space-y-0.5">
                 <h3 className="font-black text-base flex items-center gap-2 text-slate-900">
                   <IconFlag size={20} className="text-red-600" />
-                  <span>تفاصيل البلاغات والمُبلّغين</span>
+                  <span>{siteLang === "en" ? "Report Details & Reporters" : "تفاصيل البلاغات والمُبلّغين"}</span>
                 </h3>
                 <p className="text-xs text-slate-500 font-semibold">
-                  مراجعة دقيقة لجميع الحسابات التي قدمت بلاغاً مع الأسباب والملاحظات
+                  {siteLang === "en" ? "Detailed review of all accounts that submitted reports with reasons and notes" : "مراجعة دقيقة لجميع الحسابات التي قدمت بلاغاً مع الأسباب والملاحظات"}
                 </p>
               </div>
               <button
                 onClick={() => setInspectingReport(null)}
                 className="p-1 hover:bg-slate-100 border border-transparent hover:border-slate-900 transition-all"
+                title={siteLang === "en" ? "Close" : "إغلاق"}
               >
                 <IconX size={18} />
               </button>
@@ -7552,7 +7621,7 @@ export default function Home() {
                 <span className="font-black text-slate-900 text-sm">{inspectingReport.targetTitle}</span>
                 <span className="px-2.5 py-0.5 bg-red-600 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
                   <IconAlertTriangle size={12} className="shrink-0" />
-                  <span>{inspectingReport.reportCount || inspectingReport.reportsList?.length || 1} بلاغات</span>
+                  <span>{inspectingReport.reportCount || inspectingReport.reportsList?.length || 1} {siteLang === "en" ? "reports" : "بلاغات"}</span>
                 </span>
               </div>
               {(() => {
@@ -7565,8 +7634,8 @@ export default function Home() {
                       </p>
                     )}
                     <div className="text-[11px] text-slate-600 pt-1 flex items-center justify-between flex-wrap gap-2">
-                      <span>الكاتب: <strong className="text-slate-900 font-black">{targetPost.author}</strong></span>
-                      <span>الحالة: <strong className={targetPost.status === "hidden" ? "text-red-600 font-black" : "text-emerald-700 font-black"}>{targetPost.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
+                      <span>{siteLang === "en" ? "Author:" : "الكاتب:"} <strong className="text-slate-900 font-black">{targetPost.author}</strong></span>
+                      <span>{siteLang === "en" ? "Status:" : "الحالة:"} <strong className={targetPost.status === "hidden" ? "text-red-600 font-black" : "text-emerald-700 font-black"}>{targetPost.status === "hidden" ? (siteLang === "en" ? "Hidden" : "مخفي") : (siteLang === "en" ? "Active" : "نشط")}</strong></span>
                     </div>
                   </div>
                 ) : null;
@@ -7578,10 +7647,10 @@ export default function Home() {
               <h4 className="font-black text-xs text-slate-900 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <IconUser size={15} className="text-emerald-700" />
-                  <span>قائمة المُبلّغين والأسباب بالتفصيل:</span>
+                  <span>{siteLang === "en" ? "Reporters and reasons list:" : "قائمة المُبلّغين والأسباب بالتفصيل:"}</span>
                 </span>
                 <span className="text-slate-500 font-bold">
-                  ({(inspectingReport.reportsList || [inspectingReport]).length} بلاغ)
+                  ({(inspectingReport.reportsList || [inspectingReport]).length} {siteLang === "en" ? "reports" : "بلاغ"})
                 </span>
               </h4>
 
@@ -7589,10 +7658,10 @@ export default function Home() {
                 {(inspectingReport.reportsList || [inspectingReport]).map((rep: any, idx: number) => {
                   const reasonLabel =
                     rep.reason === "inappropriate"
-                      ? "محتوى غير لائق أو مسيء"
+                      ? (siteLang === "en" ? "Inappropriate or offensive" : "محتوى غير لائق أو مسيء")
                       : rep.reason === "wrong_info"
-                      ? "معلومات خاطئة أو مضللة"
-                      : "سبب آخر / مخالفة معايير";
+                      ? (siteLang === "en" ? "False or misleading info" : "معلومات غلط أو مضللة")
+                      : (siteLang === "en" ? "Other reason" : "سالفة ثانية");
 
                   return (
                     <div
@@ -7602,9 +7671,9 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <span className="font-black text-slate-900 flex items-center gap-1.5 text-xs">
                           <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
-                          <span>مُقدّم البلاغ: <strong>{rep.reporter}</strong></span>
+                          <span>{siteLang === "en" ? "Reporter:" : "مُقدّم البلاغ:"} <strong>{rep.reporter}</strong></span>
                         </span>
-                        <span className="text-[10px] text-slate-500 font-bold">{getRelativeTime(rep.created_at)}</span>
+                        <span className="text-[10px] text-slate-500 font-bold">{getRelativeTime(rep.created_at, siteLang)}</span>
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -7615,17 +7684,17 @@ export default function Home() {
                             ? "bg-amber-100 text-amber-900 border-amber-400"
                             : "bg-slate-100 text-slate-800 border-slate-400"
                         }`}>
-                          السبب المختار: {reasonLabel}
+                          {siteLang === "en" ? "Reason:" : "السبب المختار:"} {reasonLabel}
                         </span>
                       </div>
 
                       {rep.note ? (
                         <div className="bg-white p-2 border border-slate-300 text-[11px] text-slate-800 font-semibold space-y-0.5">
-                          <span className="text-[10px] text-slate-500 font-bold block">الملاحظة المكتوبة:</span>
+                          <span className="text-[10px] text-slate-500 font-bold block">{siteLang === "en" ? "Note:" : "الملاحظة المكتوبة:"}</span>
                           <p className="leading-relaxed">"{rep.note}"</p>
                         </div>
                       ) : (
-                        <p className="text-[10px] text-slate-400 italic">لم تتم كتابة ملاحظة إضافية مع هذا البلاغ</p>
+                        <p className="text-[10px] text-slate-400 italic">{siteLang === "en" ? "No extra notes provided." : "ما انكتبت ملاحظة إضافية ويه هذا البلاغ."}</p>
                       )}
                     </div>
                   );
@@ -7644,7 +7713,7 @@ export default function Home() {
                 className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 active:translate-x-0.5 active:translate-y-0.5"
               >
                 <IconTrash size={13} />
-                <span>حذف جميع البلاغات وتصفير العداد</span>
+                <span>{siteLang === "en" ? "Delete all reports & reset counter" : "حذف جميع البلاغات وتصفير العداد"}</span>
               </button>
 
               <button
@@ -7652,7 +7721,7 @@ export default function Home() {
                 onClick={() => setInspectingReport(null)}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold border-2 border-slate-900"
               >
-                إغلاق النافذة
+                {siteLang === "en" ? "Close" : "إغلاق النافذة"}
               </button>
             </div>
           </div>
@@ -7669,22 +7738,23 @@ export default function Home() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-black text-base sm:text-lg text-slate-900 flex items-center gap-2">
                     <IconKey size={20} className="text-amber-500" />
-                    <span>تخصيص وتعيين صلاحيات المشرف:</span>
+                    <span>{siteLang === "en" ? "Assign Moderator Permissions:" : "تخصيص وتعيين صلاحيات المشرف:"}</span>
                     <span className="text-emerald-primary">{permModalUser}</span>
                   </h3>
                   <span className={`px-2 py-0.5 text-[10px] font-black border border-slate-900 ${
                     permModalRole === "mod" ? "bg-blue-600 text-white" : "bg-amber-400 text-slate-950"
                   }`}>
-                    {permModalRole === "mod" ? "مشرف حالي" : "طالب (ترقية جديدة)"}
+                    {permModalRole === "mod" ? (siteLang === "en" ? "Current Moderator" : "مشرف حالي") : (siteLang === "en" ? "Student Promotion" : "ترقية طالب")}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 font-semibold">
-                  حدد بدقة ما يُسمح لهذا المشرف تنفيذه في لوحة التحكم، بما في ذلك الصلاحيات الحساسة الخاصة بالمالك
+                  {siteLang === "en" ? "Specify exact permissions for this moderator in the control panel" : "حدد بدقة ما يُسمح لهذا المشرف تنفيذه في لوحة التحكم"}
                 </p>
               </div>
               <button
                 onClick={() => setPermModalUser(null)}
                 className="p-1 hover:bg-slate-200 border-2 border-slate-900 shadow-[1px_1px_0px_#000] shrink-0 active:translate-x-px active:translate-y-px"
+                title={siteLang === "en" ? "Close" : "إغلاق"}
               >
                 <IconX size={16} />
               </button>
@@ -7692,14 +7762,14 @@ export default function Home() {
 
             {/* Quick Presets Bar */}
             <div className="px-4 sm:px-5 py-3 bg-slate-100 border-b-2 border-slate-200 flex items-center justify-between gap-2 flex-wrap text-xs font-bold">
-              <span className="text-slate-600 font-black">قوالب الصلاحيات السريعة:</span>
+              <span className="text-slate-600 font-black">{siteLang === "en" ? "Quick Presets:" : "قوالب الصلاحيات السريعة:"}</span>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setPermForm({ ...DEFAULT_MOD_PERMISSIONS })}
                   className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-900 border border-slate-900 shadow-[1px_1px_0px_#000] text-[11px] font-black"
                 >
-                  مشرف قياسي (افتراضي)
+                  {siteLang === "en" ? "Standard Moderator" : "مشرف قياسي"}
                 </button>
                 <button
                   type="button"
@@ -7707,7 +7777,7 @@ export default function Home() {
                   className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000] text-[11px] font-black flex items-center gap-1"
                 >
                   <IconCrown size={12} />
-                  <span>كامل الصلاحيات (شريك / Super Mod)</span>
+                  <span>{siteLang === "en" ? "Full Permissions" : "كامل الصلاحيات"}</span>
                 </button>
                 <button
                   type="button"
@@ -7729,7 +7799,7 @@ export default function Home() {
                   }}
                   className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-400 text-[11px]"
                 >
-                  إلغاء الكل
+                  {siteLang === "en" ? "Clear All" : "إلغاء الكل"}
                 </button>
               </div>
             </div>
@@ -7741,7 +7811,7 @@ export default function Home() {
                 <div className="flex items-center gap-2 border-b-2 border-slate-200 pb-1.5">
                   <IconShield size={16} className="text-blue-600" />
                   <h4 className="font-black text-xs text-slate-900 uppercase">
-                    1. الصلاحيات الإشرافية الأساسية (Standard Moderation)
+                    {siteLang === "en" ? "1. Standard Moderation Powers" : "١. الصلاحيات الإشرافية الأساسية"}
                   </h4>
                 </div>
 
@@ -7754,8 +7824,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-emerald-600"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">قبول ورفض المدرسين</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">مراجعة طلبات إضافة المدرسين في قائمة الانتظار واعتمادها</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Approve & Reject Teachers" : "قبول ورفض الأساتذة"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Review submissions in waiting list" : "مراجعة طلبات إضافة الأساتذة في قائمة الانتظار واعتمادها"}</span>
                     </div>
                   </label>
 
@@ -7767,8 +7837,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-emerald-600"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">إدارة المنشورات والبلاغات</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">حذف أو إخفاء المنشورات والتعليقات ومعالجة البلاغات</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Moderate Posts & Reports" : "إدارة المشاركات والبلاغات"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Delete or hide posts, comments, and handle reports" : "حذف أو إخفاء المنشورات والتعليقات ومعالجة البلاغات"}</span>
                     </div>
                   </label>
 
@@ -7780,8 +7850,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-emerald-600"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">تذاكر الدعم الفني</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">معالجة وحذف استفسارات وتذاكر الدعم الفني للطلاب</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Support Tickets" : "تذاكر الدعم الفني"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Resolve student support inquiries" : "معالجة وحل استفسارات وتذاكر الدعم الفني"}</span>
                     </div>
                   </label>
 
@@ -7793,8 +7863,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-emerald-600"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">الانضباط وحظر المستخدمين</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">توجيه إنذارات رسمية وحظر حسابات الطلاب مؤقتاً أو نهائياً</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Discipline & User Bans" : "الانضباط وحظر الحسابات"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Issue warnings and ban accounts temporarily or permanently" : "توجيه إنذارات وحظر الحسابات مؤقتاً أو نهائياً"}</span>
                     </div>
                   </label>
 
@@ -7806,8 +7876,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-emerald-600"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">فلتر الكلمات المحظورة</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">إضافة وإزالة الكلمات المحظورة من فلتر الحظر التلقائي</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Profanity Filter" : "فلتر الكلمات المحظورة"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Add or remove blocked words" : "إضافة وإزالة الكلمات المحظورة من فلتر الحظر"}</span>
                     </div>
                   </label>
                 </div>
@@ -7819,15 +7889,15 @@ export default function Home() {
                   <div className="flex items-center gap-2">
                     <IconCrown size={18} className="text-amber-700" />
                     <h4 className="font-black text-xs text-amber-950 uppercase">
-                      2. صلاحيات المالك الحصرية والمفوضة (Owner Delegated Powers)
+                      {siteLang === "en" ? "2. Owner Delegated Powers" : "٢. صلاحيات الإدارة العليا المفوضة"}
                     </h4>
                   </div>
                   <span className="text-[10px] font-black px-2 py-0.5 bg-amber-300 text-amber-950 border border-slate-900">
-                    أدوات حساسة
+                    {siteLang === "en" ? "Sensitive Tools" : "أدوات حساسة"}
                   </span>
                 </div>
                 <p className="text-[11px] text-amber-900 font-semibold">
-                  تحذير: تفعيل هذه الصلاحيات يمنح المشرف وصولاً لأدوات الإدارة العليا للمنصة، شريط التنبيهات، مفاتيح الطوارئ، والصيانة
+                  {siteLang === "en" ? "Warning: Granting these gives access to platform announcements, emergency controls, and maintenance" : "تحذير: تفعيل هذه الصلاحيات يمنح المشرف وصولاً لأدوات شريط التنبيهات، مفاتيح الطوارئ، والصيانة"}
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -7839,8 +7909,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-amber-500"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">شريط التنبيهات العام (Announcements)</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">نشر وتعديل وحذف التنبيهات والبيانات الوزارية في أعلى الموقع</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Site Announcements" : "شريط التنبيهات العام"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Publish and edit announcements across the site" : "نشر وتعديل وحذف التنبيهات والبيانات في أعلى الموقع"}</span>
                     </div>
                   </label>
 
@@ -7852,8 +7922,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-amber-500"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">الاطلاع على سجل العمليات (Audit Log)</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">مراجعة تقرير وتاريخ تصرفات المشرفين والأنشطة الإدارية</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Audit Log Access" : "الاطلاع على سجل العمليات"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Review moderator action history" : "مراجعة تقرير وتاريخ تصرفات المشرفين والأنشطة الإدارية"}</span>
                     </div>
                   </label>
 
@@ -7865,8 +7935,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-amber-500"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">مفاتيح طوارئ المنصة (Emergency Toggles)</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">تعليق أو تفعيل التسجيل، النشر، واقتراح المدرسين</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Emergency Toggles" : "مفاتيح طوارئ المنصة"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Pause or resume registrations, posting, and suggestions" : "تعليق أو تفعيل التسجيل، النشر، واقتراح الأساتذة"}</span>
                     </div>
                   </label>
 
@@ -7878,8 +7948,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-amber-500"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">وضع الصيانة العام (Maintenance Mode)</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">تفعيل شاشة الصيانة وحجب التصفح عن عامة الطلاب</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Maintenance Mode" : "وضع الصيانة العام"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Activate maintenance mode and restrict browsing" : "تفعيل شاشة الصيانة وحجب التصفح عن عامة الطلاب"}</span>
                     </div>
                   </label>
 
@@ -7891,8 +7961,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-amber-500"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">تصدير النسخة الاحتياطية (Backup)</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">تحميل ملف JSON الشامل لجميع بيانات المنصة</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Export Backup" : "تصدير النسخة الاحتياطية"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Download complete JSON database backup" : "تحميل ملف شامل لجميع بيانات المنصة"}</span>
                     </div>
                   </label>
 
@@ -7904,8 +7974,8 @@ export default function Home() {
                       className="w-4 h-4 mt-0.5 accent-amber-500"
                     />
                     <div>
-                      <span className="font-black text-slate-900 block">إدارة وترقية المشرفين (Staff Governance)</span>
-                      <span className="text-[11px] text-slate-500 font-semibold">ترقية طلاب آخرين وتعديل صلاحيات باقي الكادر</span>
+                      <span className="font-black text-slate-900 block">{siteLang === "en" ? "Staff Governance" : "إدارة وترقية المشرفين"}</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Promote students and manage staff permissions" : "ترقية طلاب وتعديل صلاحيات باقي الكادر"}</span>
                     </div>
                   </label>
                 </div>
@@ -7915,7 +7985,7 @@ export default function Home() {
             {/* Modal Footer */}
             <div className="p-4 sm:p-5 border-t-2 border-slate-900 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="text-xs font-bold text-slate-600">
-                الصلاحيات المحددة: <strong className="text-slate-950 font-black">{Object.values(permForm).filter(Boolean).length}</strong> من 11
+                {siteLang === "en" ? "Selected permissions: " : "الصلاحيات المحددة: "} <strong className="text-slate-950 font-black">{Object.values(permForm).filter(Boolean).length}</strong> / 11
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
@@ -7923,14 +7993,14 @@ export default function Home() {
                   onClick={() => setPermModalUser(null)}
                   className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs border border-slate-900 transition-all"
                 >
-                  إلغاء
+                  {siteLang === "en" ? "Cancel" : "إلغاء"}
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveModPermissions}
                   className="flex-1 sm:flex-none px-6 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
                 >
-                  حفظ وتطبيق الصلاحيات فوراً
+                  {siteLang === "en" ? "Save & Apply Permissions" : "حفظ وتطبيق الصلاحيات فوراً"}
                 </button>
               </div>
             </div>
@@ -7943,20 +8013,20 @@ export default function Home() {
         <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
-              <h3 className="font-black text-base flex items-center gap-1.5"><IconCamera size={16} /> تعديل الملف الشخصي والصورة</h3>
-              <button onClick={() => setProfileModal(false)}><IconX size={16} /></button>
+              <h3 className="font-black text-base flex items-center gap-1.5"><IconCamera size={16} /> {siteLang === "en" ? "Edit Profile & Photo" : "تعديل الملف الشخصي والصورة"}</h3>
+              <button onClick={() => setProfileModal(false)} title={siteLang === "en" ? "Close" : "إغلاق"}><IconX size={16} /></button>
             </div>
             <div className="space-y-4 text-xs">
               
               {/* Custom Image Upload (Screenshots, JPG, PNG, WebP) */}
               <div className="bg-slate-50 border-2 border-slate-900 p-3 space-y-2">
                 <label className="block font-bold text-slate-800">
-                  صورة الحساب الشخصية (PFP):
+                  {siteLang === "en" ? "Profile Picture:" : "صورة الحساب الشخصية:"}
                 </label>
                 <div className="flex items-center gap-3">
                   {editPfpUrl ? (
                     <div className="w-14 h-14 border-2 border-slate-900 overflow-hidden shrink-0 bg-white">
-                      <img src={editPfpUrl} alt="معاينة" className="w-full h-full object-cover" />
+                      <img src={editPfpUrl} alt={siteLang === "en" ? "Preview" : "معاينة"} className="w-full h-full object-cover" />
                     </div>
                   ) : (
                     <div className="w-14 h-14 border-2 border-slate-900 flex items-center justify-center font-black text-white text-lg shrink-0" style={{ backgroundColor: editColor }}>
@@ -7966,7 +8036,7 @@ export default function Home() {
 
                   <div className="space-y-1.5 flex-1">
                     <label className="block">
-                      <span className="sr-only">اختر صورة</span>
+                      <span className="sr-only">{siteLang === "en" ? "Choose image" : "اختر صورة"}</span>
                       <input
                         type="file"
                         accept="image/png, image/jpeg, image/jpg, image/webp, image/*"
@@ -7974,14 +8044,14 @@ export default function Home() {
                         className="block w-full text-xs text-slate-500 file:mr-0 file:py-1.5 file:px-3 file:border-2 file:border-slate-900 file:text-xs file:font-black file:bg-emerald-primary file:text-white hover:file:bg-emerald-dark cursor-pointer"
                       />
                     </label>
-                    <p className="text-[10px] text-slate-500">يقبل الصور، السكرين شوت، JPG، PNG، WebP وغيرها.</p>
+                    <p className="text-[10px] text-slate-500">{siteLang === "en" ? "Supports screenshots, JPG, PNG, WebP, etc." : "يقبل الصور، السكرين شوت، JPG، PNG، WebP وغيرها."}</p>
                     {editPfpUrl && (
                       <button
                         type="button"
                         onClick={() => setEditPfpUrl("")}
                         className="text-[10px] text-red-600 font-bold hover:underline"
                       >
-                        حذف الصورة واستخدام الرمز اللوني
+                        {siteLang === "en" ? "Remove picture & use color icon" : "حذف الصورة واستخدام الرمز اللوني"}
                       </button>
                     )}
                   </div>
@@ -7990,7 +8060,7 @@ export default function Home() {
 
               {/* Color Picker (Fallback if no custom image) */}
               <div>
-                <label className="block font-bold mb-2">لون الرمز التعبيري (إذا لم ترفع صورة):</label>
+                <label className="block font-bold mb-2">{siteLang === "en" ? "Avatar Color:" : "لون الرمز الشخصي:"}</label>
                 <div className="flex gap-2 flex-wrap">
                   {AVATAR_COLORS.map(c => (
                     <button key={c} onClick={() => setEditColor(c)}
@@ -8031,7 +8101,7 @@ export default function Home() {
                   }
                 >
                   <span className="text-[10px] font-black bg-white/90 px-1.5 py-0.5 border border-slate-900">
-                    {siteLang === "ar" ? "معاينة البانر" : "Banner Preview"}
+                    {siteLang === "ar" ? "معاينة الغلاف" : "Banner Preview"}
                   </span>
                 </div>
 
@@ -8114,13 +8184,13 @@ export default function Home() {
 
               {/* Bio */}
               <div>
-                <label className="block font-bold mb-1">النبذة التعريفية (Bio):</label>
+                <label className="block font-bold mb-1">{siteLang === "en" ? "Bio:" : "النبذة التعريفية:"}</label>
                 <textarea
                   value={editBio}
                   onChange={e => setEditBio(e.target.value)}
                   maxLength={200}
                   className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[70px] resize-none focus:outline-none"
-                  placeholder="اكتب شيئاً عنك، مرحلتك الدراسية، أو هدفك..."
+                  placeholder={siteLang === "en" ? "Write something about yourself, your grade, or goals..." : "اكتب شيئاً عنك، مرحلتك الدراسية، أو هدفك..."}
                 />
                 <span className="text-[10px] text-slate-400 font-bold">{editBio.length}/200</span>
               </div>
@@ -8143,16 +8213,16 @@ export default function Home() {
             <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
               <div>
                 <h3 className="font-black text-base flex items-center gap-1.5 text-amber-900">
-                  <IconHistory size={18} /> سجل تفاعلاتك (سري وخاص)
+                  <IconHistory size={18} /> {siteLang === "en" ? "Your Interaction History" : "سجل تفاعلاتك"}
                 </h3>
-                <p className="text-[11px] text-slate-500 font-semibold">مرئي فقط لك وللمالك — يحتوي على كل تصويتاتك</p>
+                <p className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Visible only to you and owner — includes all your votes" : "خاص بيك وبالمالك — يحتوي على كل تصويتاتك"}</p>
               </div>
-              <button onClick={() => setHistoryModal(false)}><IconX size={16} /></button>
+              <button onClick={() => setHistoryModal(false)} title={siteLang === "en" ? "Close" : "إغلاق"}><IconX size={16} /></button>
             </div>
 
             {userVoteHistory.length === 0 ? (
               <div className="p-6 text-center text-xs font-bold text-slate-400 border border-dashed border-slate-300">
-                لم تقم بأي تصويت (إعجاب أو عدم إعجاب) بعد.
+                {siteLang === "en" ? "You haven't cast any votes yet." : "ما مصوت على أي شي بعد."}
               </div>
             ) : (
               <div className="space-y-2 text-xs">
@@ -8167,11 +8237,11 @@ export default function Home() {
                     }`}>
                       {item.voteType === "like" ? (
                         <>
-                          <IconThumbUp size={12} /> أعجبك
+                          <IconThumbUp size={12} /> {siteLang === "en" ? "Upvoted" : "أنصح بيه"}
                         </>
                       ) : (
                         <>
-                          <IconThumbDown size={12} /> لم يعجبك
+                          <IconThumbDown size={12} /> {siteLang === "en" ? "Downvoted" : "ما أنصح بيه"}
                         </>
                       )}
                     </span>
@@ -8188,8 +8258,8 @@ export default function Home() {
         <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4">
             <div className="text-center mb-2">
-              <h3 className="font-black text-xl text-slate-900">أي الصفوف تهمك؟</h3>
-              <p className="text-xs text-slate-600 font-semibold mt-1">اختر بالضبط ٢ من المراحل الدراسية لتخصيص تجربتك</p>
+              <h3 className="font-black text-xl text-slate-900">{siteLang === "en" ? "Which grades are you interested in?" : "يا صفوف تهمك؟"}</h3>
+              <p className="text-xs text-slate-600 font-semibold mt-1">{siteLang === "en" ? "Select your grade levels to customize your experience" : "اختر المراحل الدراسية اللي تهمك حتى نضبط الحساب إلك"}</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {GRADES.map(g => (
@@ -8207,7 +8277,7 @@ export default function Home() {
             </div>
             <button onClick={completeGrades} disabled={selectedGrades.length === 0}
               className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-              متابعة ({selectedGrades.length} مختار)
+              {siteLang === "en" ? `Continue (${selectedGrades.length})` : "متابعة"}
             </button>
           </div>
         </div>
@@ -8224,13 +8294,13 @@ export default function Home() {
             onClick={e => e.stopPropagation()}
           >
             <div className="w-full flex items-center justify-between border-b border-slate-200 pb-2 mb-2 px-1">
-              <span className="text-xs font-black text-slate-800">معاينة الصورة بالحجم الكامل</span>
+              <span className="text-xs font-black text-slate-800">{siteLang === "en" ? "Full-Size Image Preview" : "معاينة الصورة بالحجم الكامل"}</span>
               <button
                 onClick={() => setPreviewImageModal(null)}
                 className="px-2.5 py-1 bg-red-600 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] hover:bg-red-700 flex items-center gap-1"
               >
-                <span>إغلاق</span>
                 <IconX size={12} />
+                <span>{siteLang === "en" ? "Close" : "إغلاق"}</span>
               </button>
             </div>
             <img
@@ -8508,7 +8578,7 @@ export default function Home() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-black text-sm text-slate-900">العربية (Arabic)</span>
+                        <span className="font-black text-sm text-slate-900">العربية</span>
                         {siteLang === "ar" && (
                           <span className="w-5 h-5 bg-slate-900 text-white flex items-center justify-center text-[10px]">
                             <IconCheck size={12} />
@@ -8516,7 +8586,7 @@ export default function Home() {
                         )}
                       </div>
                       <p className="text-[11px] text-slate-600 font-semibold">
-                        الاتجاه من اليمين إلى اليسار (RTL). اللغة الرسمية والافتراضية للمنصة ومجتمع الطلاب.
+                        الاتجاه من اليمين لليسار، لغة المنصة ومجتمع الطلاب.
                       </p>
                     </div>
 
@@ -8533,7 +8603,7 @@ export default function Home() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-black text-sm text-slate-900">English (الإنجليزية)</span>
+                        <span className="font-black text-sm text-slate-900">English</span>
                         {siteLang === "en" && (
                           <span className="w-5 h-5 bg-slate-900 text-white flex items-center justify-center text-[10px]">
                             <IconCheck size={12} />
@@ -8541,7 +8611,7 @@ export default function Home() {
                         )}
                       </div>
                       <p className="text-[11px] text-slate-600 font-semibold">
-                        Left-to-Right layout (LTR). Complete English translation for all platform menus and tabs.
+                        Left-to-right layout with full translation for platform menus and controls.
                       </p>
                     </div>
                   </div>
@@ -8628,7 +8698,8 @@ export default function Home() {
                         onChange={e => setSupportSubject(e.target.value)}
                         placeholder={t("supportSubjectPlaceholder")}
                         className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white"
-                      />
+                      >
+                      </input>
                     </div>
 
                     {/* Inquiry Message */}
@@ -8654,16 +8725,18 @@ export default function Home() {
                     {/* Show User's Own Tickets */}
                     {session && (
                       <div className="mt-8 pt-4 border-t-2 border-slate-200 space-y-3">
-                        <h4 className="font-black text-sm text-slate-900">تذاكري السابقة</h4>
+                        <h4 className="font-black text-sm text-slate-900">{siteLang === "en" ? "My Previous Tickets" : "تذاكري السابقة"}</h4>
                         {supportTickets.filter(t => t.sender === session.username).length === 0 && (
-                          <p className="text-xs text-slate-500 font-medium">لا توجد تذاكر سابقة.</p>
+                          <p className="text-xs text-slate-500 font-medium">{siteLang === "en" ? "No previous tickets." : "ماكو تذاكر سابقة."}</p>
                         )}
                         {supportTickets.filter(t => t.sender === session.username).map(ticket => (
                           <div key={ticket.id} className="p-3 border-2 border-slate-900 bg-white space-y-2 shadow-[2px_2px_0px_#000]">
                             <div className="flex justify-between items-center">
                               <span className="font-black text-xs text-slate-900">{ticket.subject}</span>
                               <span className={`px-2 py-0.5 text-[9px] font-black border border-slate-900 ${ticket.status === "resolved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                                {ticket.status === "resolved" ? "تمت المراجعة" : "قيد المراجعة"}
+                                {ticket.status === "resolved" 
+                                  ? (siteLang === "en" ? "Resolved" : "تمت المراجعة") 
+                                  : (siteLang === "en" ? "Under Review" : "قيد المراجعة")}
                               </span>
                             </div>
                             
@@ -8672,7 +8745,7 @@ export default function Home() {
                                 onClick={() => resolveSupportTicket(ticket.id)}
                                 className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold border border-slate-900 shadow-[1px_1px_0px_#000]"
                               >
-                                تحديد كـ محلولة (إغلاق التذكرة)
+                                {siteLang === "en" ? "Mark as Resolved" : "تم الحل"}
                               </button>
                             )}
 
@@ -8697,11 +8770,11 @@ export default function Home() {
                                   type="text"
                                   value={ticketReplyTexts[ticket.id] || ""}
                                   onChange={e => setTicketReplyTexts(prev => ({ ...prev, [ticket.id]: e.target.value }))}
-                                  placeholder="أضف رداً..."
+                                  placeholder={siteLang === "en" ? "Add a reply..." : "أضف رداً..."}
                                   className="flex-1 p-2 text-xs border border-slate-300 focus:outline-none focus:border-slate-900"
                                 />
                                 <button onClick={() => submitSupportReply(ticket.id)} className="px-3 py-1 bg-slate-900 text-white font-bold text-xs border border-slate-900 hover:bg-slate-800">
-                                  إرسال
+                                  {siteLang === "en" ? "Send" : "إرسال"}
                                 </button>
                               </div>
                             )}
