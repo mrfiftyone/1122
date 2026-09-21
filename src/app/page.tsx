@@ -473,6 +473,28 @@ export default function Home() {
   const [profiles, setProfilesMap] = useState<Record<string, Profile>>({});
   const [allNotifications, setAllNotifications] = useState<NotificationItem[]>([]);
 
+  // Helper to merge Supabase profiles with local legacy users so all users (old & new) are always available
+  const getAllPlatformUsers = useCallback(() => {
+    const localLegacyUsers = getUsers();
+    const map = new Map<string, { username: string; role: "student" | "mod" | "owner" }>();
+
+    // 1. Supabase Profiles (live registered users)
+    Object.entries(profiles).forEach(([username, p]) => {
+      if (username && username.trim()) {
+        map.set(username, { username, role: (p.role as any) || "student" });
+      }
+    });
+
+    // 2. Local legacy users
+    localLegacyUsers.forEach(u => {
+      if (u.username && !map.has(u.username)) {
+        map.set(u.username, { username: u.username, role: (u.role as any) || "student" });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.username.localeCompare(b.username));
+  }, [profiles]);
+
   // Modals
   const [authModal, setAuthModal] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
@@ -683,7 +705,7 @@ export default function Home() {
       const [pRes, tRes, prRes, nRes, repRes] = await Promise.all([
         supabase.from('posts').select('*, comments(*)').order('created_at', { ascending: false }).limit(40),
         supabase.from('teachers').select('*').order('created_at', { ascending: false }).limit(40),
-        supabase.from('profiles').select('username, role, avatar_color, bio, avatar_url, banner_url, banner_pattern'),
+        supabase.from('profiles').select('username, role, avatar_color, bio, avatar_url, banner_url, banner_pattern, is_banned'),
         supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(40),
         supabase.from('reports').select('*').order('created_at', { ascending: false }).limit(40),
       ]);
@@ -761,6 +783,7 @@ export default function Home() {
             bannerPattern: p.banner_pattern || currentProfiles[p.username]?.bannerPattern || "none",
             bio: p.bio || currentProfiles[p.username]?.bio || "",
             role: p.role || "student",
+            isBanned: p.is_banned ?? currentProfiles[p.username]?.isBanned ?? false,
           };
         });
         setProfilesMap(currentProfiles);
@@ -2423,6 +2446,13 @@ export default function Home() {
 
   function isUserCurrentlyMuted(username: string): { muted: boolean; remainingText?: string; reason?: string } {
     if (!username) return { muted: false };
+    if (profiles[username]?.isBanned) {
+      return {
+        muted: true,
+        remainingText: "حظر دائم",
+        reason: "تم حظر الحساب نهائياً من قبل الإدارة",
+      };
+    }
     const mutedMap = getMutedUsers();
     const info = mutedMap[username];
     if (!info) return { muted: false };
@@ -2502,12 +2532,23 @@ export default function Home() {
     alert(`تم حظر حساب الطالب ${username} نهائياً ومنعه من النشر.`);
   }
 
-  function handleUnmuteUser(username: string) {
+  async function handleUnmuteUser(username: string) {
     if (!session || (session.role !== "owner" && session.role !== "mod")) return;
     const mutedMap = getMutedUsers();
     delete mutedMap[username];
     setMutedUsers(mutedMap);
     setMutedUsersState({ ...mutedMap });
+
+    // Remove ban from profiles state and Supabase
+    setProfilesMap(prev => ({
+      ...prev,
+      [username]: { ...(prev[username] || { avatarColor: "#0d9488", bio: "", avatarUrl: "" }), isBanned: false }
+    }));
+    try {
+      await supabase.from('profiles').update({ is_banned: false }).eq('username', username);
+    } catch (e) {
+      console.error("Error unbanning user in Supabase:", e);
+    }
 
     sendNotificationToUser(username, {
       type: "report",
@@ -5630,8 +5671,8 @@ export default function Home() {
                         onChange={e => setAdminSelectedUser(e.target.value || null)}
                         className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none"
                       >
-                        <option value="">-- اختر مستخدم من القائمة --</option>
-                        {getUsers()
+                        <option value="">-- اختر مستخدم من القائمة ({getAllPlatformUsers().length} مستخدم) --</option>
+                        {getAllPlatformUsers()
                           .filter(u => !adminUserSearch.trim() || u.username.toLowerCase().includes(adminUserSearch.toLowerCase()))
                           .map(u => (
                             <option key={u.username} value={u.username}>
@@ -5644,7 +5685,7 @@ export default function Home() {
 
                   {/* Selected User Management Card */}
                   {adminSelectedUser ? (() => {
-                    const targetUser = getUsers().find(u => u.username === adminSelectedUser);
+                    const targetUser = getAllPlatformUsers().find(u => u.username === adminSelectedUser);
                     if (!targetUser) return null;
                     const muteStatus = isUserCurrentlyMuted(targetUser.username);
                     const strikes = userStrikes[targetUser.username] || { count: 0, history: [] };
@@ -6209,15 +6250,7 @@ export default function Home() {
 
             {/* ═══════ SUB-TAB 5: OWNER & DELEGATED GOVERNANCE ═══════ */}
             {adminSubTab === "owner" && (canOwner || hasPermission("canManageStaff") || hasPermission("canManagePlatformToggles") || hasPermission("canToggleMaintenance") || hasPermission("canExportData")) && (() => {
-              // Merge live Supabase profiles with legacy local users so everyone is shown automatically
-              const localLegacyUsers = getUsers();
-              const supabaseProfilesMap = new Map(Object.entries(profiles).map(([username, p]) => [username, { username, role: p.role || "student" }]));
-              localLegacyUsers.forEach(u => {
-                if (!supabaseProfilesMap.has(u.username)) {
-                  supabaseProfilesMap.set(u.username, { username: u.username, role: u.role || "student" });
-                }
-              });
-              const allUsers = Array.from(supabaseProfilesMap.values());
+              const allUsers = getAllPlatformUsers();
               const ownerCount = allUsers.filter(u => u.role === "owner").length;
               const modCount = allUsers.filter(u => u.role === "mod").length;
               const studentCount = allUsers.filter(u => u.role === "student").length;
