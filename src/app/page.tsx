@@ -1325,21 +1325,21 @@ export default function Home() {
     rerender();
   }
 
-  function handlePostImagesUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePostImagesUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files) return;
+    if (postImages.length + files.length > 4) {
+      alert(siteLang === "en" ? "You can only upload up to 4 images." : "يمكنك رفع 4 صور كحد أقصى.");
+      return;
+    }
     const fileList = Array.from(files);
-
-    fileList.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const res = ev.target?.result as string;
-        if (res) {
-          setPostImages(prev => [...prev, res]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    
+    for (const file of fileList) {
+      const compressed = await compressImage(file, 800, 800, 0.7);
+      if (compressed) {
+        setPostImages(prev => [...prev, compressed]);
+      }
+    }
   }
 
   function removePostImage(idx: number) {
@@ -2097,6 +2097,16 @@ export default function Home() {
   // ─── Profile Handlers ─────────────────────────────────────────────
   async function saveProfile() {
     if (!session) return;
+    
+    // Auth Check: Ensure user has a real Supabase session, not just legacy localStorage
+    const { data: { session: supaSession } } = await supabase.auth.getSession();
+    if (!supaSession?.user) {
+      alert(siteLang === "en" 
+        ? "⚠️ Your account is using legacy login! Please log out and sign up again using this exact same username to secure your account before saving." 
+        : "⚠️ حسابك يستخدم نظام تسجيل الدخول القديم! يرجى تسجيل الخروج وإنشاء حساب جديد بنفس اسم المستخدم بالضبط لتأمين حسابك قبل الحفظ.");
+      return;
+    }
+
     const p = getProfiles();
     p[session.username] = {
       avatarColor: editColor,
@@ -2139,26 +2149,18 @@ export default function Home() {
     setProfileModal(true);
   }
 
-  function handlePfpUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePfpUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const result = uploadEvent.target?.result as string;
-      if (result) setEditPfpUrl(result);
-    };
-    reader.readAsDataURL(file);
+    const compressed = await compressImage(file, 250, 250, 0.7);
+    if (compressed) setEditPfpUrl(compressed);
   }
 
-  function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const result = uploadEvent.target?.result as string;
-      if (result) setEditBannerUrl(result);
-    };
-    reader.readAsDataURL(file);
+    const compressed = await compressImage(file, 1000, 300, 0.7);
+    if (compressed) setEditBannerUrl(compressed);
   }
 
   // ─── Support Inquiries Handlers ──────────────────────────────────
