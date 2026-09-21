@@ -46,6 +46,7 @@ interface Profile {
   bannerColor?: string;
   accentColor?: string;
   role?: "student" | "mod" | "owner";
+  isBanned?: boolean;
 }
 interface Comment {
   id: string; author: string; text: string; created_at: string;
@@ -1439,7 +1440,6 @@ export default function Home() {
     try {
       await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
       await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
-      await supabase.from('reports').update({ status: "dismissed" }).eq('id', reportId);
       await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
     } catch (e) {
       console.error("Error dismissing report in Supabase:", e);
@@ -5181,7 +5181,7 @@ export default function Home() {
                       : "border-transparent text-slate-700 hover:border-slate-300"
                   }`}
                 >
-                  <IconHeadset size={14} />
+                  <IconLifeBuoy size={14} />
                   <span>تذاكر الدعم</span>
                   {supportTickets.filter(t => t.status === "open").length > 0 && (
                     <span className="px-1.5 py-0.2 bg-blue-600 text-white text-[9px] font-black rounded-full">
@@ -5200,7 +5200,7 @@ export default function Home() {
                       : "border-transparent text-slate-700 hover:border-slate-300"
                   }`}
                 >
-                  <IconBooks size={14} />
+                  <IconBook size={14} />
                   <span>طلبات المعلمين</span>
                   {pendingTeachers.length > 0 && (
                     <span className="px-1.5 py-0.2 bg-amber-600 text-white text-[9px] font-black rounded-full">
@@ -5219,7 +5219,7 @@ export default function Home() {
                       : "border-transparent text-slate-700 hover:border-slate-300"
                   }`}
                 >
-                  <IconUsers size={14} />
+                  <IconUser size={14} />
                   <span>المستخدمين</span>
                 </button>
               )}
@@ -5533,7 +5533,7 @@ export default function Home() {
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => deleteReportRecordOnly("auto_" + p.id, p.id, "post")}
+                                    onClick={() => deleteReportRecordOnly(p.id, "post")}
                                     className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
                                     title="حذف البلاغ وتصفير العداد"
                                   >
