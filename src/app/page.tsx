@@ -3203,9 +3203,9 @@ export default function Home() {
 
   // Helper: role icon
   const RoleIcon = ({ role }: { role: string }) => {
-    if (role === "owner") return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-200 text-amber-900 border border-amber-600 text-[9px] font-black"><IconCrown size={10} /> مالك</span>;
-    if (role === "mod") return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-900 border border-blue-600 text-[9px] font-black"><IconShield size={10} /> مشرف</span>;
-    return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black"><IconGrad size={10} /> طالب</span>;
+    if (role === "owner") return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-200 text-amber-900 border border-amber-600 text-[9px] font-black"><IconCrown size={10} /> {siteLang === "en" ? "Owner" : "مالك"}</span>;
+    if (role === "mod") return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-900 border border-blue-600 text-[9px] font-black"><IconShield size={10} /> {siteLang === "en" ? "Moderator" : "مشرف"}</span>;
+    return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black"><IconGrad size={10} /> {siteLang === "en" ? "Student" : "طالب"}</span>;
   };
 
   // Helper: Comment Threading Helpers (Reddit-style)
@@ -3255,14 +3255,14 @@ export default function Home() {
             <button
               onClick={() => voteComment(postId, c.id, "like")}
               className={`${vbtn(commentVote === "like", "like")} py-0.5 px-1.5 text-[10px]`}
-              title="إعجاب"
+              title={siteLang === "en" ? "Like" : "إعجاب"}
             >
               <IconThumbUp size={10} /> {c.likes}
             </button>
             <button
               onClick={() => voteComment(postId, c.id, "dislike")}
               className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-1.5 text-[10px]`}
-              title="عدم إعجاب"
+              title={siteLang === "en" ? "Dislike" : "عدم إعجاب"}
             >
               <IconThumbDown size={10} /> {c.dislikes}
             </button>
@@ -3671,15 +3671,15 @@ export default function Home() {
                       <IconFlame size={16} />
                     </div>
                     <div>
-                      <h3 className="font-black text-xs sm:text-sm text-slate-900">المدرسين الأكثر رواجاً هذا الأسبوع</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold">بناءً على تفاعلات الطلاب والمراجعات النشطة</p>
+                      <h3 className="font-black text-xs sm:text-sm text-slate-900">{siteLang === "en" ? "Trending Teachers This Week" : "المدرسين الأكثر رواجاً هذا الأسبوع"}</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "Based on student interactions and active reviews" : "بناءً على تفاعلات الطلاب والمراجعات النشطة"}</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setTab("directory")}
                     className="text-[11px] font-bold text-emerald-800 hover:underline flex items-center gap-1"
                   >
-                    عرض كل المدرسين ←
+                    {siteLang === "en" ? "View all teachers →" : "عرض كل المدرسين ←"}
                   </button>
                 </div>
 
@@ -3714,7 +3714,7 @@ export default function Home() {
                         <p className="text-[10px] text-slate-600 font-bold truncate">{t.subject} - {t.gov}</p>
                       </div>
                       <div className="flex items-center gap-1 text-[9px] font-black text-emerald-800 bg-emerald-50 px-1.5 py-0.5 border border-emerald-300 w-full justify-center">
-                        <IconThumbUp size={9} /> {t.likes} • {t.reviewCount} تقييم
+                        <IconThumbUp size={9} /> {t.likes} • {t.reviewCount} {siteLang === "en" ? "reviews" : "تقييم"}
                       </div>
                     </div>
                   ))}
@@ -3730,22 +3730,22 @@ export default function Home() {
                     <IconAward size={16} />
                   </div>
                   <div>
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900">لوحة شرف الطلاب الأكثر تفاعلاً ومساعدة</h3>
-                    <p className="text-[10px] text-slate-500 font-semibold">تكريم أفضل الطلاب الذين ينشرون المراجعات الموثوقة والإجابات المفيدة</p>
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900">{siteLang === "en" ? "Student Honor Board" : "لوحة شرف الطلاب الأكثر تفاعلاً ومساعدة"}</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "Honoring top students who share verified reviews and helpful advice" : "تكريم أفضل الطلاب الذين ينشرون المراجعات الموثوقة والإجابات المفيدة"}</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowHonorBoard(!showHonorBoard)}
                   className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold border border-slate-900 shadow-[1px_1px_0px_#000] transition-all"
                 >
-                  {showHonorBoard ? "إخفاء لوحة الشرف" : `عرض الطلاب المتميزين (${topHonorStudents.length})`}
+                  {showHonorBoard ? (siteLang === "en" ? "Hide Honor Board" : "إخفاء لوحة الشرف") : (siteLang === "en" ? `Top Students • ${topHonorStudents.length}` : `عرض الطلاب المتميزين • ${topHonorStudents.length}`)}
                 </button>
               </div>
 
               {showHonorBoard && (
                 <div className="pt-2.5 border-t border-slate-200">
                   {topHonorStudents.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-slate-500 font-bold">لا يوجد طلاب متفاعلون حالياً</div>
+                    <div className="p-4 text-center text-xs text-slate-500 font-bold">{siteLang === "en" ? "No active students at the moment" : "لا يوجد طلاب متفاعلون حالياً"}</div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 max-h-[460px] overflow-y-auto pr-1">
                       {topHonorStudents.map((s, idx) => (
@@ -3774,7 +3774,7 @@ export default function Home() {
                             <div className="text-[9px] text-slate-500 font-bold flex items-center gap-1.5 mt-0.5">
                               <span className="text-emerald-700 flex items-center gap-0.5"><IconThumbUp size={9} /> {s.totalLikes}</span>
                               <span>•</span>
-                              <span>{s.postsCount} مشاركة</span>
+                              <span>{s.postsCount} {siteLang === "en" ? "posts" : "مشاركة"}</span>
                             </div>
                           </div>
                         </div>
@@ -3790,13 +3790,13 @@ export default function Home() {
               <div className="flex items-center gap-3 w-full md:w-auto">
                 <IconPen size={24} className="text-emerald-primary" />
                 <div>
-                  <h2 className="font-black text-base text-slate-900">ساحة النقاش العامة</h2>
-                  <p className="text-xs text-slate-600">اطرح سؤالك أو شارك تجربتك مع بقية الطلاب في عموم العراق</p>
+                  <h2 className="font-black text-base text-slate-900">{siteLang === "en" ? "Student Discussion Forum" : "ساحة النقاش العامة"}</h2>
+                  <p className="text-xs text-slate-600">{siteLang === "en" ? "Ask questions and share your experience with students across Iraq" : "اطرح سؤالك أو شارك تجربتك مع بقية الطلاب في عموم العراق"}</p>
                 </div>
               </div>
               <button onClick={() => { if (!session) { setAuthModal(true); return; } setPostModal(true); }}
                 className="w-full md:w-auto px-5 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2">
-                <IconPlus size={14} /> أضف منشوراً جديداً
+                <IconPlus size={14} /> {siteLang === "en" ? "Add New Post" : "أضف منشوراً جديداً"}
               </button>
             </div>
 
@@ -3807,7 +3807,7 @@ export default function Home() {
                   <IconTag size={13} className="text-emerald-primary" /> {t("filterByTag")}
                 </span>
                 <span className="text-[10px] font-bold text-slate-500">
-                  {selectedFeedTag === "all" ? `${activePosts.length} منشور` : `${activePosts.filter(p => (selectedFeedTag === "discussion" ? (p.tag === "discussion" || !p.tag) : p.tag === selectedFeedTag)).length} منشور`}
+                  {selectedFeedTag === "all" ? `${activePosts.length} ${siteLang === "en" ? "posts" : "منشور"}` : `${activePosts.filter(p => (selectedFeedTag === "discussion" ? (p.tag === "discussion" || !p.tag) : p.tag === selectedFeedTag)).length} ${siteLang === "en" ? "posts" : "منشور"}`}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5">
@@ -4112,13 +4112,13 @@ export default function Home() {
               <div className="flex items-center gap-3 w-full md:w-auto">
                 <IconBook size={24} className="text-emerald-primary" />
                 <div>
-                  <h2 className="font-black text-base text-slate-900">المدرسين</h2>
-                  <p className="text-xs text-slate-600">دليل ومراجعات وتقييمات المدرسين في جميع محافظات العراق</p>
+                  <h2 className="font-black text-base text-slate-900">{siteLang === "en" ? "Teachers Directory" : "المدرسين"}</h2>
+                  <p className="text-xs text-slate-600">{siteLang === "en" ? "Directory, reviews, and ratings for teachers across all Iraqi governorates" : "دليل ومراجعات وتقييمات المدرسين في جميع محافظات العراق"}</p>
                 </div>
               </div>
               <button onClick={() => { if (!session) { setAuthModal(true); return; } setTeacherModal(true); }}
                 className="w-full md:w-auto px-5 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center gap-2 shrink-0">
-                <IconPlus size={14} /> إضافة مدرس
+                <IconPlus size={14} /> {siteLang === "en" ? "Add Teacher" : "إضافة مدرس"}
               </button>
             </div>
 
@@ -4133,7 +4133,7 @@ export default function Home() {
                     type="text"
                     value={dirSearch}
                     onChange={e => setDirSearch(e.target.value)}
-                    placeholder="ابحث باسم المدرس، المادة، أو المحافظة..."
+                    placeholder={siteLang === "en" ? "Search by teacher name, subject, or governorate..." : "ابحث باسم المدرس، المادة، أو المحافظة..."}
                     className="w-full pr-9 pl-4 py-2 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
                   />
                 </div>
@@ -4145,7 +4145,7 @@ export default function Home() {
                     onChange={e => setFilterGov(e.target.value)}
                     className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    <option value="all">كل المحافظات</option>
+                    <option value="all">{siteLang === "en" ? "All Governorates" : "كل المحافظات"}</option>
                     {GOVERNORATES.map(g => (
                       <option key={g} value={g}>{g}</option>
                     ))}
@@ -4159,7 +4159,7 @@ export default function Home() {
                     onChange={e => setFilterSubject(e.target.value)}
                     className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    <option value="all">كل المواد</option>
+                    <option value="all">{siteLang === "en" ? "All Subjects" : "كل المواد"}</option>
                     {SUBJECT_OPTIONS.filter(s => s !== "أخرى").map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
@@ -4173,7 +4173,7 @@ export default function Home() {
                     onChange={e => setFilterGrade(e.target.value)}
                     className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    <option value="all">كل المراحل</option>
+                    <option value="all">{siteLang === "en" ? "All Grades" : "كل المراحل"}</option>
                     {GRADES.map(g => (
                       <option key={g} value={g}>{g}</option>
                     ))}
@@ -4187,10 +4187,10 @@ export default function Home() {
                     onChange={e => setFilterTeachingMode(e.target.value as any)}
                     className="w-full py-2 px-2 bg-slate-50 border-2 border-slate-900 text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    <option value="all">طرق التدريس: الكل</option>
-                    <option value="both">حضوري وإلكتروني</option>
-                    <option value="حضوري">حضوري فقط</option>
-                    <option value="إلكتروني">إلكتروني فقط</option>
+                    <option value="all">{siteLang === "en" ? "Teaching Modes: All" : "طرق التدريس: الكل"}</option>
+                    <option value="both">{siteLang === "en" ? "In-Person & Online" : "حضوري وإلكتروني"}</option>
+                    <option value="حضوري">{siteLang === "en" ? "In-Person Only" : "حضوري فقط"}</option>
+                    <option value="إلكتروني">{siteLang === "en" ? "Online Only" : "إلكتروني فقط"}</option>
                   </select>
                 </div>
               </div>
@@ -4198,30 +4198,30 @@ export default function Home() {
               {/* Row 2: Sort Buttons & Clear Filters */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-bold text-slate-500 text-[11px] ml-1">ترتيب حسب:</span>
+                  <span className="font-bold text-slate-500 text-[11px] ml-1">{siteLang === "en" ? "Sort by:" : "ترتيب حسب:"}</span>
                   <button
                     onClick={() => setSortTeacherBy("likes")}
                     className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "likes" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
                   >
-                    الأكثر إعجاباً
+                    {siteLang === "en" ? "Most Liked" : "الأكثر إعجاباً"}
                   </button>
                   <button
                     onClick={() => setSortTeacherBy("rating")}
                     className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "rating" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
                   >
-                    الأعلى قبولاً %
+                    {siteLang === "en" ? "Highest Rating %" : "الأعلى قبولاً %"}
                   </button>
                   <button
                     onClick={() => setSortTeacherBy("reviews")}
                     className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "reviews" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
                   >
-                    الأكثر مراجعات
+                    {siteLang === "en" ? "Most Reviews" : "الأكثر مراجعات"}
                   </button>
                   <button
                     onClick={() => setSortTeacherBy("newest")}
                     className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "newest" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
                   >
-                    الأحدث
+                    {siteLang === "en" ? "Newest" : "الأحدث"}
                   </button>
                 </div>
 
@@ -4230,7 +4230,7 @@ export default function Home() {
                     onClick={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); setFilterGrade("all"); setFilterTeachingMode("all"); setSortTeacherBy("likes"); }}
                     className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] border border-slate-900"
                   >
-                    إعادة ضبط الفلاتر
+                    {siteLang === "en" ? "Reset Filters" : "إعادة ضبط الفلاتر"}
                   </button>
                 )}
               </div>
@@ -4240,7 +4240,7 @@ export default function Home() {
             {/* Results Count & Grid */}
             {filteredTeachers.length === 0 ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                لا توجد نتائج مطابقة للبحث في قسم المدرسين.
+                {siteLang === "en" ? "No teachers found matching your search criteria." : "لا توجد نتائج مطابقة للبحث في قسم المدرسين."}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4352,10 +4352,10 @@ export default function Home() {
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                         <span className="font-bold text-slate-700 flex items-center gap-1 bg-slate-100 px-2 py-0.5 border border-slate-300">
                           <IconBook size={12} className="text-slate-600" />
-                          <span>{teacherPostsCount} منشور وتقييم</span>
+                          <span>{teacherPostsCount} {siteLang === "en" ? "posts & reviews" : "منشور وتقييم"}</span>
                         </span>
                         <span className="text-[11px] font-bold text-emerald-700 group-hover:underline flex items-center gap-0.5">
-                          عرض صفحة المدرس وكل المنشورات ←
+                          {siteLang === "en" ? "View teacher profile & posts →" : "عرض صفحة المدرس وكل المنشورات ←"}
                         </span>
                       </div>
                     </div>
@@ -4371,12 +4371,12 @@ export default function Home() {
           <section className="space-y-6">
             {!selectedTeacher ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-4">
-                <p className="text-sm font-black text-slate-700">لم يتم تحديد أي مدرس لعرض صفحته.</p>
+                <p className="text-sm font-black text-slate-700">{siteLang === "en" ? "No teacher selected." : "لم يتم تحديد أي مدرس لعرض صفحته."}</p>
                 <button
                   onClick={() => setTab("directory")}
                   className="px-5 py-2.5 bg-emerald-primary text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000]"
                 >
-                  ← العودة إلى قائمة المدرسين
+                  {siteLang === "en" ? "← Back to Teachers Directory" : "← العودة إلى قائمة المدرسين"}
                 </button>
               </div>
             ) : (
@@ -4387,7 +4387,7 @@ export default function Home() {
                     onClick={() => setTab("directory")}
                     className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-800 font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
                   >
-                    ← العودة إلى قائمة المدرسين
+                    {siteLang === "en" ? "← Back to Teachers Directory" : "← العودة إلى قائمة المدرسين"}
                   </button>
 
                   {session && (session.role === "owner" || session.role === "mod") && (
@@ -4446,7 +4446,7 @@ export default function Home() {
 
                         {selectedTeacher.grades && (
                           <p className="text-xs text-slate-600 font-bold">
-                            المراحل الدراسية: <span className="text-slate-900 font-semibold">{selectedTeacher.grades}</span>
+                            {siteLang === "en" ? "Grades: " : "المراحل الدراسية: "}<span className="text-slate-900 font-semibold">{selectedTeacher.grades}</span>
                           </p>
                         )}
                       </div>
@@ -4454,7 +4454,7 @@ export default function Home() {
 
                     {/* Teacher Rating & Bookmark Card */}
                     <div className="bg-slate-50 border-2 border-slate-900 p-4 shadow-[3px_3px_0px_#000] flex flex-col items-center gap-2.5 w-full sm:w-auto shrink-0">
-                      <span className="text-xs font-black text-slate-800">تقييم الطلاب للمدرس:</span>
+                      <span className="text-xs font-black text-slate-800">{siteLang === "en" ? "Student Rating:" : "تقييم الطلاب للمدرس:"}</span>
                       <div className="flex items-center gap-3 w-full sm:w-auto justify-center">
                         <button
                           onClick={() => voteTeacher(selectedTeacher.id, "like")}
@@ -4463,9 +4463,9 @@ export default function Home() {
                               ? "bg-emerald-600 text-white"
                               : "bg-white hover:bg-emerald-50 text-emerald-800"
                           }`}
-                          title="أعجبني"
+                          title={siteLang === "en" ? "Like" : "أعجبني"}
                         >
-                          <IconThumbUp size={16} /> {selectedTeacher.likes} أعجبني
+                          <IconThumbUp size={16} /> {selectedTeacher.likes} {siteLang === "en" ? "Like" : "أعجبني"}
                         </button>
                         <button
                           onClick={() => voteTeacher(selectedTeacher.id, "dislike")}
@@ -4474,9 +4474,9 @@ export default function Home() {
                               ? "bg-red-600 text-white"
                               : "bg-white hover:bg-red-50 text-red-800"
                           }`}
-                          title="لم يعجبني"
+                          title={siteLang === "en" ? "Dislike" : "لم يعجبني"}
                         >
-                          <IconThumbDown size={16} /> {selectedTeacher.dislikes} لم يعجبني
+                          <IconThumbDown size={16} /> {selectedTeacher.dislikes} {siteLang === "en" ? "Dislike" : "لم يعجبني"}
                         </button>
                       </div>
 
@@ -4485,10 +4485,10 @@ export default function Home() {
                         className={`w-full py-2 px-3 border-2 border-slate-900 text-xs font-black flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all ${
                           isBookmarked(selectedTeacher.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-100"
                         }`}
-                        title={isBookmarked(selectedTeacher.id) ? "إزالة من المحفوظات" : "حفظ المدرس في المحفوظات"}
+                        title={isBookmarked(selectedTeacher.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save teacher" : "حفظ المدرس في المحفوظات")}
                       >
                         <IconBookmark size={13} fill={isBookmarked(selectedTeacher.id) ? "currentColor" : "none"} />
-                        <span>{isBookmarked(selectedTeacher.id) ? "محفوظ في المحفوظات" : "حفظ المدرس في المحفوظات"}</span>
+                        <span>{isBookmarked(selectedTeacher.id) ? (siteLang === "en" ? "Saved in Bookmarks" : "محفوظ في المحفوظات") : (siteLang === "en" ? "Save Teacher" : "حفظ المدرس في المحفوظات")}</span>
                       </button>
                     </div>
                   </div>
@@ -4496,7 +4496,7 @@ export default function Home() {
                   {/* Toggle Review Form */}
                   <div className="pt-4 border-t-2 border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div className="text-xs text-slate-600 font-bold">
-                      هل درست عند الأستاذ {selectedTeacher.name}؟ شارك رأيك وتقييمك لمساعدة بقية الطلاب!
+                      {siteLang === "en" ? `Studied with ${selectedTeacher.name}? Share your review to help other students!` : `هل درست عند الأستاذ ${selectedTeacher.name}؟ شارك رأيك وتقييمك لمساعدة بقية الطلاب!`}
                     </div>
                     <button
                       onClick={() => {
@@ -4506,7 +4506,7 @@ export default function Home() {
                       className="w-full sm:w-auto px-5 py-2.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#000] flex items-center justify-center gap-2 transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none shrink-0"
                     >
                       <IconPen size={14} />
-                      {showReviewForm ? "إغلاق استمارة التقييم" : "اكتب مراجعة وتقييم للمدرس"}
+                      {showReviewForm ? (siteLang === "en" ? "Close Review Form" : "إغلاق استمارة التقييم") : (siteLang === "en" ? "Write a Review" : "اكتب مراجعة وتقييم للمدرس")}
                     </button>
                   </div>
 
@@ -4514,9 +4514,9 @@ export default function Home() {
                   {showReviewForm && (
                     <div className="bg-slate-50 border-2 border-slate-900 p-5 space-y-4 shadow-[3px_3px_0px_#000]">
                       <div className="border-b border-slate-300 pb-2">
-                        <h4 className="font-black text-sm text-slate-900">استمارة تقييم الأستاذ {selectedTeacher.name}</h4>
+                        <h4 className="font-black text-sm text-slate-900">{siteLang === "en" ? `Review Form for ${selectedTeacher.name}` : `استمارة تقييم الأستاذ ${selectedTeacher.name}`}</h4>
                         <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
-                          يجب تحديد ما إذا كان المدرس قد أعجبك أم لا كشرط أساسي لكتابة ونشر التقييم.
+                          {siteLang === "en" ? "Select whether you recommend this teacher before submitting your review." : "يجب تحديد ما إذا كان المدرس قد أعجبك أم لا كشرط أساسي لكتابة ونشر التقييم."}
                         </p>
                       </div>
 
@@ -4568,12 +4568,12 @@ export default function Home() {
                       {/* Review Body */}
                       <div>
                         <label className="block text-xs font-bold text-slate-800 mb-1">
-                          تفاصيل رأيك وتجربتك <span className="text-red-500">*</span>
+                          {siteLang === "en" ? "Review Details & Experience" : "تفاصيل رأيك وتجربتك"} <span className="text-red-500">*</span>
                         </label>
                         <textarea
                           value={reviewBody}
                           onChange={e => setReviewBody(e.target.value)}
-                          placeholder="اكتب بالتفصيل: طريقة الشرح، الواجبات، أسلوب التدريس، ومستوى الاستفادة..."
+                          placeholder={siteLang === "en" ? "Describe in detail: teaching style, assignments, exam preparation, and your key takeaways..." : "اكتب بالتفصيل: طريقة الشرح، الواجبات، أسلوب التدريس، ومستوى الاستفادة..."}
                           className="w-full p-2.5 bg-white border-2 border-slate-900 text-xs font-semibold min-h-[90px] resize-none focus:outline-none"
                         />
                       </div>
@@ -4584,7 +4584,7 @@ export default function Home() {
                           onClick={() => { setShowReviewForm(false); setReviewVerdict(null); }}
                           className="px-4 py-2 bg-slate-200 hover:bg-slate-300 font-bold text-xs border border-slate-900"
                         >
-                          إلغاء
+                          {siteLang === "en" ? "Cancel" : "إلغاء"}
                         </button>
                         <button
                           type="button"
@@ -4592,7 +4592,7 @@ export default function Home() {
                           disabled={!reviewVerdict || !reviewBody.trim()}
                           className="px-6 py-2 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none"
                         >
-                          نشر التقييم الآن
+                          {siteLang === "en" ? "Publish Review" : "نشر التقييم الآن"}
                         </button>
                       </div>
                     </div>
@@ -4604,16 +4604,16 @@ export default function Home() {
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                     <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
                       <IconBook size={18} />
-                      كل ما نُشر عن الأستاذ {selectedTeacher.name}
+                      {siteLang === "en" ? `All posts & reviews about ${selectedTeacher.name}` : `كل ما نُشر عن الأستاذ ${selectedTeacher.name}`}
                     </h3>
                     <span className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 border border-slate-300">
-                      {posts.filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id).length} منشور وتقييم
+                      {posts.filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id).length} {siteLang === "en" ? "posts & reviews" : "منشور وتقييم"}
                     </span>
                   </div>
 
                   {posts.filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id).length === 0 ? (
                     <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                      لا توجد منشورات أو تقييمات عن هذا المدرس حتى الآن. كن أول من يكتب عنه!
+                      {siteLang === "en" ? "No posts or reviews about this teacher yet. Be the first to write one!" : "لا توجد منشورات أو تقييمات عن هذا المدرس حتى الآن. كن أول من يكتب عنه!"}
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -4673,9 +4673,9 @@ export default function Home() {
                                         onClick={() => setPreviewImageModal(img)}
                                         className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
                                       >
-                                        <img src={img} alt={`مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                                        <img src={img} alt={siteLang === "en" ? `Attachment ${i + 1}` : `مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
                                         <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
-                                          عرض بالحجم الكامل
+                                          {siteLang === "en" ? "View Full Size" : "عرض بالحجم الكامل"}
                                         </div>
                                       </div>
                                     ))}
@@ -4694,7 +4694,7 @@ export default function Home() {
                                       className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
                                     >
                                       <IconVideo size={13} className="text-red-700" />
-                                      <span>شرح يوتيوب</span>
+                                      <span>{siteLang === "en" ? "YouTube Lesson" : "شرح يوتيوب"}</span>
                                     </a>
                                   )}
                                   {postItem.telegramUrl && (
@@ -4705,7 +4705,7 @@ export default function Home() {
                                       className="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-slate-900 text-xs font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] transition-all"
                                     >
                                       <IconLink size={13} className="text-blue-700" />
-                                      <span>ملزمة / ملف</span>
+                                      <span>{siteLang === "en" ? "Booklet / File" : "ملزمة / ملف"}</span>
                                     </a>
                                   )}
                                 </div>
@@ -4725,13 +4725,13 @@ export default function Home() {
                                     className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
                                       isBookmarked(postItem.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
-                                    title={isBookmarked(postItem.id) ? "إزالة من المحفوظات" : "حفظ في المحفوظات"}
+                                    title={isBookmarked(postItem.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save to bookmarks" : "حفظ في المحفوظات")}
                                   >
                                     <IconBookmark size={12} fill={isBookmarked(postItem.id) ? "currentColor" : "none"} />
-                                    <span>{isBookmarked(postItem.id) ? "محفوظ" : "حفظ"}</span>
+                                    <span>{isBookmarked(postItem.id) ? (siteLang === "en" ? "Saved" : "محفوظ") : (siteLang === "en" ? "Save" : "حفظ")}</span>
                                   </button>
                                   <button onClick={() => reportPost(postItem.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
-                                    <IconFlag size={12} /> بلاغ ({postItem.reports || 0}/20)
+                                    <IconFlag size={12} /> {siteLang === "en" ? "Report" : "بلاغ"} • {postItem.reports || 0}/20
                                   </button>
                                 </div>
                                 {canDelete && (
@@ -4744,13 +4744,13 @@ export default function Home() {
                               {/* Comments Section */}
                               <div className="bg-slate-50 p-3 border border-slate-200 space-y-2 text-xs">
                                 <div className="font-bold text-[11px] text-slate-500 flex items-center gap-1">
-                                  <IconComment size={12} /> التعليقات والردود ({postItem.comments?.length || 0}):
+                                  <IconComment size={12} /> {siteLang === "en" ? "Comments & Replies" : "التعليقات والردود"} • {postItem.comments?.length || 0}
                                 </div>
                                 {(() => {
                                   const topComments = (postItem.comments || []).filter(c => !c.parentId);
                                   return topComments.length === 0 ? (
                                     <div className="text-[11px] text-slate-400 py-1 font-semibold">
-                                      لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!
+                                      {siteLang === "en" ? "No comments yet. Be the first to write a comment!" : "لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!"}
                                     </div>
                                   ) : (
                                     <div className="space-y-2">
@@ -4762,7 +4762,7 @@ export default function Home() {
                                   <input
                                     type="text"
                                     id={`comment-${postItem.id}`}
-                                    placeholder="اكتب رداً أو تعليقاً..."
+                                    placeholder={siteLang === "en" ? "Write a comment or reply..." : "اكتب رداً أو تعليقاً..."}
                                     className="flex-1 p-1.5 bg-white border border-slate-900 text-xs focus:outline-none font-semibold"
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") addComment(postItem.id);
@@ -4772,7 +4772,7 @@ export default function Home() {
                                     onClick={() => addComment(postItem.id)}
                                     className="px-3 bg-slate-900 text-white font-bold text-xs active:bg-slate-700"
                                   >
-                                    إرسال
+                                    {siteLang === "en" ? "Send" : "إرسال"}
                                   </button>
                                 </div>
                               </div>
@@ -4795,15 +4795,15 @@ export default function Home() {
               <div className="flex items-center gap-3">
                 <IconBell size={24} className="text-emerald-primary" />
                 <div>
-                  <h2 className="font-black text-base text-slate-900">صندوق الإشعارات</h2>
-                  <p className="text-xs text-slate-600">التفاعلات، الردود، والتقارير الإدارية الخاصة بحسابك</p>
+                  <h2 className="font-black text-base text-slate-900">{siteLang === "en" ? "Notifications" : "صندوق الإشعارات"}</h2>
+                  <p className="text-xs text-slate-600">{siteLang === "en" ? "Interactions, replies, and moderation alerts for your account" : "التفاعلات، الردود، والتقارير الإدارية الخاصة بحسابك"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {myNotifications.length > 0 && (
                   <button onClick={markAllNotifsRead} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-900 flex items-center gap-1.5 shadow-[1px_1px_0px_#000]">
                     <IconCheck size={12} className="text-emerald-700" />
-                    <span>تحديد الكل كمقروء</span>
+                    <span>{siteLang === "en" ? "Mark all as read" : "تحديد الكل كمقروء"}</span>
                   </button>
                 )}
               </div>
@@ -4815,27 +4815,27 @@ export default function Home() {
                 onClick={() => setNotifFilter("all")}
                 className={`px-3 py-1 font-bold border transition-all ${notifFilter === "all" ? "bg-slate-900 text-white border-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"}`}
               >
-                الكل ({myNotifications.length})
+                {siteLang === "en" ? "All" : "الكل"} • {myNotifications.length}
               </button>
               <button
                 onClick={() => setNotifFilter("unread")}
                 className={`px-3 py-1 font-bold border transition-all ${notifFilter === "unread" ? "bg-slate-900 text-white border-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"}`}
               >
-                غير مقروءة ({unreadCount})
+                {siteLang === "en" ? "Unread" : "غير مقروءة"} • {unreadCount}
               </button>
               {canAdmin && (
                 <button
                   onClick={() => setNotifFilter("reports")}
                   className={`px-3 py-1 font-bold border transition-all ${notifFilter === "reports" ? "bg-red-700 text-white border-red-900 shadow-[1px_1px_0px_#000]" : "bg-white text-red-700 border-red-300 hover:border-red-600"}`}
                 >
-                  بلاغات الإشراف ({myNotifications.filter(n => n.type === "report_alert").length})
+                  {siteLang === "en" ? "Staff Reports" : "بلاغات الإشراف"} • {myNotifications.filter(n => n.type === "report_alert").length}
                 </button>
               )}
             </div>
 
             {myNotifications.length === 0 ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                لا توجد إشعارات جديدة حالياً.
+                {siteLang === "en" ? "No new notifications right now." : "لا توجد إشعارات جديدة حالياً."}
               </div>
             ) : (
               <div className="space-y-3">
@@ -4952,9 +4952,9 @@ export default function Home() {
           <section className="space-y-6">
             {!targetProfileUser ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-4">
-                <h3 className="text-base font-black">يجب تسجيل الدخول لمشاهدة وتعديل ملفك الشخصي</h3>
+                <h3 className="text-base font-black">{siteLang === "en" ? "You must be logged in to view and edit your profile" : "يجب تسجيل الدخول لمشاهدة وتعديل ملفك الشخصي"}</h3>
                 <button onClick={() => { setIsRegister(false); setAuthModal(true); }} className="px-6 py-2.5 bg-emerald-primary text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000]">
-                  تسجيل الدخول الآن
+                  {siteLang === "en" ? "Sign In Now" : "تسجيل الدخول الآن"}
                 </button>
               </div>
             ) : (
@@ -5046,7 +5046,7 @@ export default function Home() {
                         <Avatar username={targetProfileUser} size="w-20 h-20 text-2xl" />
                         {isOwnProfile && (
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity">
-                            تغيير
+                            {siteLang === "en" ? "Change" : "تغيير"}
                           </div>
                         )}
                       </div>
@@ -5059,7 +5059,7 @@ export default function Home() {
                           )}
                         </div>
                         <p className="text-xs text-slate-600 font-medium mt-1 max-w-md">
-                          {getProfile(targetProfileUser).bio || "لا توجد نبذة تعريفية بعد."}
+                          {getProfile(targetProfileUser).bio || (siteLang === "en" ? "No bio yet." : "لا توجد نبذة تعريفية بعد.")}
                         </p>
                       </div>
                     </div>
@@ -5137,7 +5137,7 @@ export default function Home() {
                       }`}
                     >
                       <IconBookmark size={13} />
-                      <span>{t("tabBookmarks")} ({userBookmarks.length})</span>
+                      <span>{t("tabBookmarks")} • {userBookmarks.length}</span>
                     </button>
                   )}
                 </div>
@@ -5147,9 +5147,9 @@ export default function Home() {
                     <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                       <h3 className="font-black text-sm text-slate-800 flex items-center gap-1.5">
                         <IconBookmark size={16} className="text-amber-500" />
-                        <span>العناصر المحفوظة للرجوع السريع ({userBookmarks.length})</span>
+                        <span>{siteLang === "en" ? "Saved Items" : "العناصر المحفوظة للرجوع السريع"} • {userBookmarks.length}</span>
                       </h3>
-                      <span className="text-[11px] text-slate-500 font-semibold">تُحفظ بحسابك للرجوع إليها في أي وقت</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">{siteLang === "en" ? "Saved to your account for quick access anytime" : "تُحفظ بحسابك للرجوع إليها في أي وقت"}</span>
                     </div>
 
                     {userBookmarks.length === 0 ? (
@@ -5331,10 +5331,10 @@ export default function Home() {
                                   <button
                                     onClick={() => openReportModal({ id: item.id, type: "post", title: item.title })}
                                     className="text-[11px] text-slate-500 hover:text-red-600 font-bold flex items-center gap-1 px-1.5 py-1"
-                                    title="إبلاغ عن محتوى"
+                                    title={siteLang === "en" ? "Report content" : "إبلاغ عن محتوى"}
                                   >
                                     <IconFlag size={12} />
-                                    <span>بلاغ ({item.reports || 0})</span>
+                                    <span>{siteLang === "en" ? "Report" : "بلاغ"} • {item.reports || 0}</span>
                                   </button>
                                 </>
                               ) : (
@@ -5342,24 +5342,24 @@ export default function Home() {
                                   <button
                                     onClick={() => item.postId && voteComment(item.postId, item.id, "like")}
                                     className={`${vbtn(commentVote === "like", "like")} py-0.5 px-2 text-[10px]`}
-                                    title="إعجاب"
+                                    title={siteLang === "en" ? "Like" : "إعجاب"}
                                   >
                                     <IconThumbUp size={10} /> {item.likes}
                                   </button>
                                   <button
                                     onClick={() => item.postId && voteComment(item.postId, item.id, "dislike")}
                                     className={`${vbtn(commentVote === "dislike", "dislike")} py-0.5 px-2 text-[10px]`}
-                                    title="عدم إعجاب"
+                                    title={siteLang === "en" ? "Dislike" : "عدم إعجاب"}
                                   >
                                     <IconThumbDown size={10} /> {item.dislikes}
                                   </button>
                                   <button
                                     onClick={() => item.postId && openReportModal({ id: item.id, type: "comment", title: item.content, parentPostId: item.postId })}
                                     className="text-[10px] text-slate-500 hover:text-red-600 font-bold flex items-center gap-0.5 px-1.5 py-1"
-                                    title="إبلاغ عن هذا التعليق"
+                                    title={siteLang === "en" ? "Report this comment" : "إبلاغ عن هذا التعليق"}
                                   >
                                     <IconFlag size={10} />
-                                    <span>بلاغ ({item.reports || 0})</span>
+                                    <span>{siteLang === "en" ? "Report" : "بلاغ"} • {item.reports || 0}</span>
                                   </button>
                                 </>
                               )}
@@ -5380,14 +5380,14 @@ export default function Home() {
                             <div className="bg-slate-50 p-3 border-2 border-slate-900 space-y-2.5 text-xs mt-2">
                               <div className="font-bold text-[11px] text-slate-600 flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
                                 <IconComment size={12} className="text-emerald-primary" />
-                                <span>الردود والتعليقات ({fullPost?.comments?.length || 0}):</span>
+                                <span>{siteLang === "en" ? "Comments & Replies" : "الردود والتعليقات"} • {fullPost?.comments?.length || 0}</span>
                               </div>
 
                               {(() => {
                                 const topComments = (fullPost?.comments || []).filter(c => !c.parentId);
                                 return topComments.length === 0 ? (
                                   <div className="text-[11px] text-slate-400 py-1 font-semibold">
-                                    لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!
+                                    {siteLang === "en" ? "No comments yet. Be the first to write a comment!" : "لا توجد تعليقات حتى الآن. كن أول من يكتب تعليقاً!"}
                                   </div>
                                 ) : (
                                   <div className="space-y-2">
@@ -5401,7 +5401,7 @@ export default function Home() {
                                 <input
                                   type="text"
                                   id={`profile-comment-${item.id}`}
-                                  placeholder="اكتب تعليقك هنا..."
+                                  placeholder={siteLang === "en" ? "Write your comment here..." : "اكتب تعليقك هنا..."}
                                   className="flex-1 p-2 bg-white border-2 border-slate-900 text-xs font-semibold focus:outline-none"
                                   onKeyDown={e => {
                                     if (e.key === "Enter") addComment(item.id);
@@ -5411,7 +5411,7 @@ export default function Home() {
                                   onClick={() => addComment(item.id)}
                                   className="px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all shrink-0"
                                 >
-                                  إرسال
+                                  {siteLang === "en" ? "Send" : "إرسال"}
                                 </button>
                               </div>
                             </div>
@@ -5481,7 +5481,7 @@ export default function Home() {
                   }`}
                 >
                   <IconShield size={14} />
-                  <span>البلاغات</span>
+                  <span>{siteLang === "en" ? "Reports" : "البلاغات"}</span>
                   {reportedPosts.length > 0 && (
                     <span className="px-1.5 py-0.2 bg-red-600 text-white text-[9px] font-black rounded-full">
                       {reportedPosts.length}
@@ -5500,7 +5500,7 @@ export default function Home() {
                   }`}
                 >
                   <IconLifeBuoy size={14} />
-                  <span>تذاكر الدعم</span>
+                  <span>{siteLang === "en" ? "Support Tickets" : "تذاكر الدعم"}</span>
                   {supportTickets.filter(t => t.status === "open").length > 0 && (
                     <span className="px-1.5 py-0.2 bg-blue-600 text-white text-[9px] font-black rounded-full">
                       {supportTickets.filter(t => t.status === "open").length}
@@ -5519,7 +5519,7 @@ export default function Home() {
                   }`}
                 >
                   <IconBook size={14} />
-                  <span>طلبات المعلمين</span>
+                  <span>{siteLang === "en" ? "Teacher Requests" : "طلبات المعلمين"}</span>
                   {pendingTeachers.length > 0 && (
                     <span className="px-1.5 py-0.2 bg-amber-600 text-white text-[9px] font-black rounded-full">
                       {pendingTeachers.length}
@@ -5538,7 +5538,7 @@ export default function Home() {
                   }`}
                 >
                   <IconUser size={14} />
-                  <span>المستخدمين</span>
+                  <span>{siteLang === "en" ? "Users & Sanctions" : "المستخدمين"}</span>
                 </button>
               )}
 
@@ -5572,7 +5572,7 @@ export default function Home() {
                 >
                   <IconActivity size={14} />
                   <span>{t("adminSubAudit")}</span>
-                  <span className="text-[10px] text-slate-400 font-bold">({auditLogs.length})</span>
+                  <span className="text-[10px] text-slate-400 font-bold">• {auditLogs.length}</span>
                 </button>
               )}
 
@@ -5588,7 +5588,7 @@ export default function Home() {
                 >
                   <IconSlash size={14} />
                   <span>{t("adminSubFilter")}</span>
-                  <span className="text-[10px] text-slate-400 font-bold">({customBannedWords.length})</span>
+                  <span className="text-[10px] text-slate-400 font-bold">• {customBannedWords.length}</span>
                 </button>
               )}
 
@@ -5614,16 +5614,16 @@ export default function Home() {
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                     <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
                       <IconInbox size={16} className="text-emerald-primary" />
-                      <span>طلبات إضافة المدرسين</span>
+                      <span>{siteLang === "en" ? "Teacher Addition Requests" : "طلبات إضافة المدرسين"}</span>
                     </h3>
                     <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">
-                        {pendingTeachers.length} معلق
+                        {pendingTeachers.length} {siteLang === "en" ? "pending" : "معلق"}
                       </span>
                     </div>
 
                     {pendingTeachers.length === 0 ? (
                       <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
-                        لا توجد طلبات معلقة حالياً في قائمة الانتظار.
+                        {siteLang === "en" ? "No pending teacher requests currently in the queue." : "لا توجد طلبات معلقة حالياً في قائمة الانتظار."}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -5636,18 +5636,18 @@ export default function Home() {
                                 <p className="text-xs text-emerald-800 font-bold">{t.subject} • {t.gov}</p>
                                 {t.grades && <p className="text-[11px] text-slate-600 font-semibold">{t.grades}</p>}
                                 <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                                  مُرسل الطلب: <span className="font-bold text-slate-800">{t.createdBy || t.created_by || "مستخدم"}</span>
+                                  {siteLang === "en" ? "Submitted by:" : "مُرسل الطلب:"} <span className="font-bold text-slate-800">{t.createdBy || t.created_by || (siteLang === "en" ? "User" : "مستخدم")}</span>
                                 </p>
                               </div>
                             </div>
                             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                               <button onClick={() => approveTeacher(t.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border border-slate-900 flex items-center gap-1 shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px transition-all">
                                 <IconCheck size={12} />
-                                <span>قبول ونشر</span>
+                                <span>{siteLang === "en" ? "Approve & Publish" : "قبول ونشر"}</span>
                               </button>
                               <button onClick={() => rejectTeacher(t.id)} className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all">
                                 <IconX size={12} />
-                                <span>رفض</span>
+                                <span>{siteLang === "en" ? "Reject" : "رفض"}</span>
                               </button>
                             </div>
                           </div>
@@ -5664,20 +5664,20 @@ export default function Home() {
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                       <h3 className="font-black text-sm flex items-center gap-1 text-slate-900">
                         <IconFlag size={14} className="text-red-600" />
-                        <span>مركز مراجعة البلاغات والملاحظات</span>
+                        <span>{siteLang === "en" ? "Reports & Review Center" : "مركز مراجعة البلاغات والملاحظات"}</span>
                       </h3>
                       <div className="flex items-center gap-1 text-[10px]">
                         <button
                           onClick={() => setAdminReportFilter("pending")}
                           className={`px-2 py-0.5 font-bold border transition-all ${adminReportFilter === "pending" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-300"}`}
                         >
-                          معلقة
+                          {siteLang === "en" ? "Pending" : "معلقة"}
                         </button>
                         <button
                           onClick={() => setAdminReportFilter("all")}
                           className={`px-2 py-0.5 font-bold border transition-all ${adminReportFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-300"}`}
                         >
-                          الكل
+                          {siteLang === "en" ? "All" : "الكل"}
                         </button>
                       </div>
                     </div>
@@ -5726,14 +5726,14 @@ export default function Home() {
                                 targetId: p.id,
                                 targetType: "post",
                                 targetTitle: p.title,
-                                reporter: "مستخدمين من مجتمع الطلاب",
+                                reporter: siteLang === "en" ? "Student community users" : "مستخدمين من مجتمع الطلاب",
                                 reason: "inappropriate",
-                                note: `تم تقديم ${p.reports} بلاغ على هذا المنشور عبر التطبيق.`,
+                                note: siteLang === "en" ? `${p.reports} reports submitted on this post.` : `تم تقديم ${p.reports} بلاغ على هذا المنشور عبر التطبيق.`,
                                 created_at: p.created_at,
                                 status: "pending",
                               }],
-                              allReporters: ["مجتمع الطلاب"],
-                              allNotes: [`${p.reports} بلاغات مسجلة`],
+                              allReporters: [siteLang === "en" ? "Student Community" : "مجتمع الطلاب"],
+                              allNotes: [siteLang === "en" ? `${p.reports} reports recorded` : `${p.reports} بلاغات مسجلة`],
                               reason: "inappropriate",
                               status: "pending",
                               created_at: p.created_at,
@@ -5747,7 +5747,7 @@ export default function Home() {
                       if (aggregatedList.length === 0) {
                         return (
                           <div className="text-xs text-slate-400 py-10 text-center font-semibold border-2 border-dashed border-slate-200">
-                            لا يوجد أي محتوى تم الإبلاغ عنه حالياً.
+                            {siteLang === "en" ? "No reported content currently." : "لا يوجد أي محتوى تم الإبلاغ عنه حالياً."}
                           </div>
                         );
                       }
@@ -5756,7 +5756,12 @@ export default function Home() {
                         <div className="space-y-3 max-h-[650px] overflow-y-auto pr-1">
                           {aggregatedList.map(r => {
                             const targetPost = posts.find(p => p.id === r.targetId);
-                            const reasonLabel = r.reason === "inappropriate" ? "محتوى غير لائق ومسيء" : r.reason === "wrong_info" ? "معلومات خاطئة ومضللة" : "مخالفة معايير";
+                            const reasonLabel =
+                              r.reason === "inappropriate"
+                                ? (siteLang === "en" ? "Inappropriate Content" : "محتوى غير لائق ومسيء")
+                                : r.reason === "wrong_info"
+                                ? (siteLang === "en" ? "Misleading Information" : "معلومات خاطئة ومضللة")
+                                : (siteLang === "en" ? "Policy Violation" : "مخالفة معايير");
                             const isResolved = r.status === "resolved" || r.status === "dismissed";
 
                             return (
@@ -5768,7 +5773,7 @@ export default function Home() {
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="px-2.5 py-0.5 text-xs font-black border uppercase tracking-wider bg-red-600 text-white border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
                                       <IconAlertTriangle size={12} className="shrink-0" />
-                                      <span>{r.reportCount} {r.reportCount > 1 ? "بلاغات" : "بلاغ"}</span>
+                                      <span>{r.reportCount} {siteLang === "en" ? (r.reportCount > 1 ? "reports" : "report") : (r.reportCount > 1 ? "بلاغات" : "بلاغ")}</span>
                                     </span>
                                     <span className={`px-2 py-0.5 text-[10px] font-black border ${
                                       r.reason === "inappropriate"
@@ -5815,40 +5820,40 @@ export default function Home() {
                                           onClick={() => restorePost(targetPost.id)}
                                           className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] border border-emerald-500"
                                         >
-                                          إعادة إظهار
+                                          {siteLang === "en" ? "Restore" : "إعادة إظهار"}
                                         </button>
                                       ) : (
                                         <button
                                           onClick={() => hidePost(targetPost.id)}
                                           className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] border border-amber-500"
                                         >
-                                          إخفاء المحتوى
+                                          {siteLang === "en" ? "Hide Content" : "إخفاء المحتوى"}
                                         </button>
                                       )
                                     )}
                                     <button
                                       onClick={() => deleteReportRecordOnly(r.targetId, r.targetType)}
                                       className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
-                                      title="حذف جميع البلاغات وتصفير العداد"
+                                      title={siteLang === "en" ? "Delete all reports and reset counter" : "حذف جميع البلاغات وتصفير العداد"}
                                     >
-                                      <IconTrash size={11} /> حذف البلاغات وتصفير العداد
+                                      <IconTrash size={11} /> {siteLang === "en" ? "Clear Reports" : "حذف البلاغات وتصفير العداد"}
                                     </button>
                                     <button
                                       onClick={() => adminDeleteReportedItem(r.targetId, r.targetType, r.id)}
                                       className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-500 flex items-center gap-1"
-                                      title="حذف المنشور أو التعليق نفسه نهائياً من الموقع"
+                                      title={siteLang === "en" ? "Permanently delete content from platform" : "حذف المنشور أو التعليق نفسه نهائياً من الموقع"}
                                     >
-                                      <IconTrash size={11} /> حذف المحتوى نهائياً
+                                      <IconTrash size={11} /> {siteLang === "en" ? "Delete Content" : "حذف المحتوى نهائياً"}
                                     </button>
                                     {targetPost && targetPost.author && (
                                       <button
                                         onClick={() => {
                                           setAdminSelectedUser(targetPost.author);
-                                          setAdminWarningReason(`مخالفة معايير المجتمع في المنشور "${r.targetTitle || targetPost.title}"`);
+                                          setAdminWarningReason(siteLang === "en" ? `Community guidelines violation in "${r.targetTitle || targetPost.title}"` : `مخالفة معايير المجتمع في المنشور "${r.targetTitle || targetPost.title}"`);
                                         }}
                                         className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] border border-slate-400"
                                       >
-                                        إدارة/إنذار الكاتب
+                                        {siteLang === "en" ? "Warn Author" : "إدارة/إنذار الكاتب"}
                                       </button>
                                     )}
                                   </div>
@@ -5858,7 +5863,7 @@ export default function Home() {
                                       onClick={() => dismissReport(r.targetId)}
                                       className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline"
                                     >
-                                      تجاهل وتبرئة
+                                      {siteLang === "en" ? "Dismiss & Clear" : "تجاهل وتبرئة"}
                                     </button>
                                   )}
                                 </div>
@@ -5943,7 +5948,7 @@ export default function Home() {
                                 </span>
                               </div>
                               <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                                إجمالي الإنذارات المسجلة: <strong className="text-red-600">{strikes.count}</strong>
+                                {siteLang === "en" ? "Total recorded warnings:" : "إجمالي الإنذارات المسجلة:"} <strong className="text-red-600">{strikes.count}</strong>
                               </p>
                             </div>
                           </div>
@@ -5952,18 +5957,18 @@ export default function Home() {
                             {muteStatus.muted ? (
                               <div className="flex items-center gap-2">
                                 <span className="px-2.5 py-1 bg-red-100 border border-red-600 text-red-800 font-black text-xs">
-                                  محظور مؤقتاً ({muteStatus.remainingText})
+                                  {siteLang === "en" ? `Temporarily Banned • ${muteStatus.remainingText}` : `محظور مؤقتاً • ${muteStatus.remainingText}`}
                                 </span>
                                 <button
                                   onClick={() => handleUnmuteUser(targetUser.username)}
                                   className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000]"
                                 >
-                                  رفع الحظر فوراً
+                                  {siteLang === "en" ? "Unban Immediately" : "رفع الحظر فوراً"}
                                 </button>
                               </div>
                             ) : (
                               <span className="px-2.5 py-1 bg-emerald-100 border border-emerald-600 text-emerald-800 font-black text-xs">
-                                الحساب نشط وغير محظور
+                                {siteLang === "en" ? "Account is active and not banned" : "الحساب نشط وغير محظور"}
                               </span>
                             )}
                           </div>
@@ -5974,11 +5979,11 @@ export default function Home() {
                           <div className="bg-white p-3 border border-slate-300 space-y-2.5">
                             <h5 className="font-black text-xs text-slate-800 flex items-center gap-1.5">
                               <IconVolumeX size={14} className="text-red-600" />
-                              <span>تطبيق حظر مؤقت على هذا الحساب:</span>
+                              <span>{siteLang === "en" ? "Apply temporary ban on this account:" : "تطبيق حظر مؤقت على هذا الحساب:"}</span>
                             </h5>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                               <div>
-                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">مدة الحظر</label>
+                                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">{siteLang === "en" ? "Ban Duration" : "مدة الحظر"}</label>
                                 <select
                                   value={adminMuteDuration}
                                   onChange={e => setAdminMuteDuration(e.target.value as any)}
@@ -5997,14 +6002,14 @@ export default function Home() {
                                     type="text"
                                     value={adminMuteReason}
                                     onChange={e => setAdminMuteReason(e.target.value)}
-                                    placeholder="مثال: ألفاظ غير لائقة في التعليقات..."
+                                    placeholder={siteLang === "en" ? "e.g. Inappropriate language in comments..." : "مثال: ألفاظ غير لائقة في التعليقات..."}
                                     className="flex-1 p-2 bg-slate-50 border border-slate-900 text-xs font-semibold"
                                   />
                                   <button
                                     onClick={() => handleMuteUser(targetUser.username, adminMuteDuration, adminMuteReason)}
                                     className="px-4 bg-red-600 hover:bg-red-700 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] shrink-0"
                                   >
-                                    تطبيق الحظر
+                                    {siteLang === "en" ? "Apply Ban" : "تطبيق الحظر"}
                                   </button>
                                 </div>
                               </div>
@@ -6016,21 +6021,21 @@ export default function Home() {
                         <div className="bg-white p-3 border border-slate-300 space-y-2">
                           <h5 className="font-black text-xs text-slate-800 flex items-center gap-1.5">
                             <IconAlertTriangle size={14} className="text-amber-600" />
-                            <span>توجيه إنذار رسمي دون حظر:</span>
+                            <span>{siteLang === "en" ? "Issue official warning without ban:" : "توجيه إنذار رسمي دون حظر:"}</span>
                           </h5>
                           <div className="flex gap-1.5">
                             <input
                               type="text"
                               value={adminWarningReason}
                               onChange={e => setAdminWarningReason(e.target.value)}
-                              placeholder="سبب الإنذار والتنبيه..."
+                              placeholder={siteLang === "en" ? "Warning notice reason..." : "سبب الإنذار والتنبيه..."}
                               className="flex-1 p-2 bg-slate-50 border border-slate-900 text-xs font-semibold"
                             />
                             <button
                               onClick={() => handleIssueWarning(targetUser.username, adminWarningReason)}
                               className="px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] shrink-0"
                             >
-                              إرسال الإنذار
+                              {siteLang === "en" ? "Send Warning" : "إرسال الإنذار"}
                             </button>
                           </div>
                         </div>
@@ -6068,16 +6073,16 @@ export default function Home() {
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                     <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
                       <IconLifeBuoy size={16} className="text-blue-600" />
-                      <span>تذاكر الدعم الفني واستفسارات الطلاب</span>
+                      <span>{siteLang === "en" ? "Technical Support & Student Inquiries" : "تذاكر الدعم الفني واستفسارات الطلاب"}</span>
                     </h3>
                     <span className="px-2 py-0.5 bg-blue-100 text-blue-900 font-bold text-xs border border-slate-900">
-                      {supportTickets.length} تذكرة
+                      {supportTickets.length} {siteLang === "en" ? "tickets" : "تذكرة"}
                     </span>
                   </div>
 
                   {supportTickets.length === 0 ? (
                     <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
-                      لا توجد تذاكر دعم فني واردة حالياً.
+                      {siteLang === "en" ? "No incoming support tickets currently." : "لا توجد تذاكر دعم فني واردة حالياً."}
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -6088,14 +6093,14 @@ export default function Home() {
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-black text-xs text-slate-900">{ticket.subject}</span>
                                 <span className={`px-2 py-0.5 text-[9px] font-black border border-slate-900 ${ticket.status === "resolved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                                  {ticket.status === "resolved" ? "تمت المعالجة" : "قيد المتابعة"}
+                                  {ticket.status === "resolved" ? (siteLang === "en" ? "Resolved" : "تمت المعالجة") : (siteLang === "en" ? "Under Review" : "قيد المتابعة")}
                                 </span>
                                 <span className="px-2 py-0.5 text-[9px] font-bold bg-slate-200 text-slate-700 border border-slate-400">
                                   {ticket.category}
                                 </span>
                               </div>
                               <p className="text-[10px] text-slate-500 font-semibold mt-1">
-                                المرسل: <strong className="text-slate-800">{ticket.sender}</strong> • {new Date(ticket.created_at).toLocaleDateString("ar-IQ")}
+                                {siteLang === "en" ? "Sender:" : "المرسل:"} <strong className="text-slate-800">{ticket.sender}</strong> • {new Date(ticket.created_at).toLocaleDateString(siteLang === "en" ? "en-US" : "ar-IQ")}
                               </p>
                             </div>
                             <div className="flex items-center gap-1.5 self-end sm:self-start">
@@ -6103,19 +6108,19 @@ export default function Home() {
                                 onClick={() => resolveSupportTicket(ticket.id)}
                                 className={`px-2.5 py-1 text-xs font-bold border border-slate-900 transition-all ${ticket.status === "resolved" ? "bg-slate-200 text-slate-700" : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-[1px_1px_0px_#000]"}`}
                               >
-                                {ticket.status === "resolved" ? "إعادة الفتح" : "معالجة التذكرة"}
+                                {ticket.status === "resolved" ? (siteLang === "en" ? "Reopen" : "إعادة الفتح") : (siteLang === "en" ? "Resolve Ticket" : "معالجة التذكرة")}
                               </button>
                               <button
                                 onClick={() => toggleAllowUserReply(ticket.id)}
                                 className={`px-2.5 py-1 text-xs font-bold border border-slate-900 transition-all ${ticket.allowUserReply ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}
                               >
-                                {ticket.allowUserReply ? "تعطيل رد الطالب" : "تفعيل رد الطالب"}
+                                {ticket.allowUserReply ? (siteLang === "en" ? "Disable User Reply" : "تعطيل رد الطالب") : (siteLang === "en" ? "Enable User Reply" : "تفعيل رد الطالب")}
                               </button>
                               <button
                                 onClick={() => deleteSupportTicket(ticket.id)}
                                 className="px-2 py-1 text-xs font-bold border border-red-600 bg-red-100 text-red-700 hover:bg-red-200"
                               >
-                                حذف
+                                {siteLang === "en" ? "Delete" : "حذف"}
                               </button>
                             </div>
                           </div>
@@ -6130,7 +6135,7 @@ export default function Home() {
                                 <div key={reply.id} className="bg-slate-100 p-2 border border-slate-200 text-xs text-slate-700">
                                   <div className="flex justify-between items-center mb-1">
                                     <strong className="text-slate-900">{reply.sender}</strong>
-                                    <span className="text-[9px] text-slate-500">{new Date(reply.created_at).toLocaleTimeString("ar-IQ")}</span>
+                                    <span className="text-[9px] text-slate-500">{new Date(reply.created_at).toLocaleTimeString(siteLang === "en" ? "en-US" : "ar-IQ")}</span>
                                   </div>
                                   <div className="whitespace-pre-wrap">{reply.message}</div>
                                 </div>
@@ -6144,14 +6149,14 @@ export default function Home() {
                               type="text"
                               value={ticketReplyTexts[ticket.id] || ""}
                               onChange={e => setTicketReplyTexts(prev => ({ ...prev, [ticket.id]: e.target.value }))}
-                              placeholder="اكتب رداً..."
+                              placeholder={siteLang === "en" ? "Write a reply..." : "اكتب رداً..."}
                               className="flex-1 p-1.5 text-xs border border-slate-300 focus:outline-none focus:border-slate-900"
                             />
                             <button
                               onClick={() => submitSupportReply(ticket.id)}
                               className="px-3 py-1.5 bg-slate-900 text-white text-xs font-bold border-2 border-slate-900 hover:bg-slate-800"
                             >
-                              إرسال
+                              {siteLang === "en" ? "Send" : "إرسال"}
                             </button>
                           </div>
                         </div>
@@ -6398,7 +6403,7 @@ export default function Home() {
                         type="text"
                         value={newBannedWordInput}
                         onChange={e => setNewBannedWordInput(e.target.value)}
-                        placeholder="اكتب الكلمة المحظورة هنا..."
+                        placeholder={siteLang === "en" ? "Enter forbidden word here..." : "اكتب الكلمة المحظورة هنا..."}
                         className="flex-1 p-2 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none"
                         onKeyDown={e => {
                           if (e.key === "Enter") handleAddBannedWord(newBannedWordInput);
@@ -6408,7 +6413,7 @@ export default function Home() {
                         onClick={() => handleAddBannedWord(newBannedWordInput)}
                         className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5"
                       >
-                        + إضافة للفلتر
+                        {siteLang === "en" ? "+ Add to Filter" : "+ إضافة للفلتر"}
                       </button>
                     </div>
                   </div>
@@ -6416,10 +6421,10 @@ export default function Home() {
                   {/* Custom Banned Words */}
                   <div className="space-y-2 pt-2">
                     <span className="text-xs font-black text-slate-800 block">
-                      الكلمات المخصصة المضافة حديثاً ({customBannedWords.length}):
+                      {siteLang === "en" ? `Recently Added Custom Words • ${customBannedWords.length}:` : `الكلمات المخصصة المضافة حديثاً • ${customBannedWords.length}:`}
                     </span>
                     {customBannedWords.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">لا توجد كلمات مخصصة مضافة حالياً.</p>
+                      <p className="text-xs text-slate-400 italic">{siteLang === "en" ? "No custom forbidden words added currently." : "لا توجد كلمات مخصصة مضافة حالياً."}</p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {customBannedWords.map(w => (
@@ -6431,7 +6436,7 @@ export default function Home() {
                             <button
                               onClick={() => handleRemoveBannedWord(w)}
                               className="text-red-500 hover:text-red-800 font-black text-xs p-0.5"
-                              title="إزالة الكلمة من الحظر"
+                              title={siteLang === "en" ? "Remove word from filter" : "إزالة الكلمة من الحظر"}
                             >
                               <IconX size={11} />
                             </button>
@@ -6637,7 +6642,7 @@ export default function Home() {
                             type="text"
                             value={staffSearchQuery}
                             onChange={e => setStaffSearchQuery(e.target.value)}
-                            placeholder="ابحث بالاسم عن أي طالب أو مشرف لترقيته أو تعديل صلاحياته..."
+                            placeholder={siteLang === "en" ? "Search student or moderator to promote or edit permissions..." : "ابحث بالاسم عن أي طالب أو مشرف لترقيته أو تعديل صلاحياته..."}
                             className="w-full pr-8 pl-8 py-2 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
                           />
                           <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
@@ -6663,7 +6668,7 @@ export default function Home() {
                                 : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"
                             }`}
                           >
-                            الكل ({allUsers.length})
+                            {siteLang === "en" ? `All • ${allUsers.length}` : `الكل • ${allUsers.length}`}
                           </button>
                           <button
                             type="button"
@@ -6674,7 +6679,7 @@ export default function Home() {
                                 : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"
                             }`}
                           >
-                            مشرفين ({modCount})
+                            {siteLang === "en" ? `Moderators • ${modCount}` : `مشرفين • ${modCount}`}
                           </button>
                           <button
                             type="button"
@@ -6685,7 +6690,7 @@ export default function Home() {
                                 : "bg-white text-slate-700 border-slate-300 hover:border-slate-900"
                             }`}
                           >
-                            طلاب ({studentCount})
+                            {siteLang === "en" ? `Students • ${studentCount}` : `طلاب • ${studentCount}`}
                           </button>
                         </div>
                       </div>
@@ -6704,7 +6709,7 @@ export default function Home() {
                       if (filteredUsers.length === 0) {
                         return (
                           <div className="text-xs text-slate-400 py-8 text-center font-bold border-2 border-dashed border-slate-200">
-                            لا يوجد أي مستخدم يطابق البحث: "{staffSearchQuery}"
+                            {siteLang === "en" ? `No users match search: "${staffSearchQuery}"` : `لا يوجد أي مستخدم يطابق البحث: "${staffSearchQuery}"`}
                           </div>
                         );
                       }
@@ -6726,7 +6731,7 @@ export default function Home() {
                                       <span className={`px-2 py-0.2 text-[9px] font-black border border-slate-900 ${
                                         u.role === "owner" ? "bg-amber-400 text-slate-950" : u.role === "mod" ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-800"
                                       }`}>
-                                        {u.role === "owner" ? "مالك المنصة" : u.role === "mod" ? "مشرف" : "طالب"}
+                                        {u.role === "owner" ? (siteLang === "en" ? "Owner" : "مالك المنصة") : u.role === "mod" ? (siteLang === "en" ? "Moderator" : "مشرف") : (siteLang === "en" ? "Student" : "طالب")}
                                       </span>
                                       {u.role === "mod" && (
                                         <span className={`px-2 py-0.2 text-[9px] font-bold border border-slate-900 ${
@@ -6759,13 +6764,13 @@ export default function Home() {
                                         className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all"
                                       >
                                         <IconSliders size={13} />
-                                        <span>تعديل الصلاحيات</span>
+                                        <span>{siteLang === "en" ? "Edit Permissions" : "تعديل الصلاحيات"}</span>
                                       </button>
                                       <button
                                         onClick={() => handleDemoteToStudent(u.username)}
                                         className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold text-xs border border-red-400 active:translate-x-px active:translate-y-px transition-all"
                                       >
-                                        تخفيض إلى طالب
+                                        {siteLang === "en" ? "Demote to Student" : "تخفيض إلى طالب"}
                                       </button>
                                     </>
                                   ) : (
@@ -6774,7 +6779,7 @@ export default function Home() {
                                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1.5 active:translate-x-px active:translate-y-px transition-all"
                                     >
                                       <IconKey size={13} />
-                                      <span>ترقية وتعيين الصلاحيات</span>
+                                      <span>{siteLang === "en" ? "Promote & Assign Permissions" : "ترقية وتعيين الصلاحيات"}</span>
                                     </button>
                                   )}
                                 </div>
@@ -7011,7 +7016,9 @@ export default function Home() {
                 }}
                 className="text-xs text-emerald-700 hover:text-emerald-900 font-bold underline"
               >
-                {isRegister ? "لديك حساب بالفعل؟ اضغط لتسجيل الدخول" : "ليس لديك حساب بعد؟ اضغط لإنشاء حساب جديد"}
+                {isRegister
+                  ? (siteLang === "en" ? "Already have an account? Click to sign in" : "لديك حساب بالفعل؟ اضغط لتسجيل الدخول")
+                  : (siteLang === "en" ? "Don't have an account yet? Click to register" : "ليس لديك حساب بعد؟ اضغط لإنشاء حساب جديد")}
               </button>
             </div>
           </div>
@@ -7650,7 +7657,7 @@ export default function Home() {
                   <span>{siteLang === "en" ? "Reporters and reasons list:" : "قائمة المُبلّغين والأسباب بالتفصيل:"}</span>
                 </span>
                 <span className="text-slate-500 font-bold">
-                  ({(inspectingReport.reportsList || [inspectingReport]).length} {siteLang === "en" ? "reports" : "بلاغ"})
+                  • {(inspectingReport.reportsList || [inspectingReport]).length} {siteLang === "en" ? "reports" : "بلاغ"}
                 </span>
               </h4>
 
@@ -8277,7 +8284,7 @@ export default function Home() {
             </div>
             <button onClick={completeGrades} disabled={selectedGrades.length === 0}
               className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none">
-              {siteLang === "en" ? `Continue (${selectedGrades.length})` : "متابعة"}
+              {siteLang === "en" ? `Continue • ${selectedGrades.length}` : `متابعة • ${selectedGrades.length}`}
             </button>
           </div>
         </div>
