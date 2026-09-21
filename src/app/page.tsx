@@ -26,7 +26,6 @@ import {
   isAllowedYoutubeUrl, isAllowedTelegramUrl,
   verifySessionRole,
 } from "@/utils/security";
-import { submitPostServer, submitCommentServer } from "./actions";
 
 function isValidYoutubeUrl(url: string): boolean {
   if (!url || !url.trim()) return true;
@@ -1277,17 +1276,14 @@ export default function Home() {
     setPostImages([]); setPostYoutube(""); setPostTelegram(""); setPostTag("discussion");
     setPostModal(false); rerender();
 
-    // Send to server for moderation check and insertion in background
+    // Send to Supabase in background
     try {
-      const { data, error } = await submitPostServer(newPostPayload, customBannedWords);
+      const { data, error } = await supabase.from('posts').insert([newPostPayload]).select('id').single();
       if (!error && data) {
         setPostsList(prev => prev.map(p => p.id === tempPost.id ? { ...p, id: data.id } : p));
-      } else if (error) {
-        console.error("Server validation/insertion error:", error);
-        // Optional: revert optimistic UI on failure
       }
     } catch (e) {
-      console.error("Error creating post via Server Action:", e);
+      console.error("Error creating post in Supabase:", e);
     }
   }
 
@@ -1687,21 +1683,18 @@ export default function Home() {
 
     if (input) input.value = "";
 
-    // Send to server for moderation check and insertion
+    // Send to Supabase Central Database
     try {
-      const { error } = await submitCommentServer({
+      await supabase.from('comments').insert([{
         post_id: postId,
         author: session.username,
         text: commentText,
         likes: 0,
         dislikes: 0,
         reports: 0,
-      }, customBannedWords);
-      if (error) {
-        console.error("Server validation/insertion error:", error);
-      }
+      }]);
     } catch (e) {
-      console.error("Error creating comment via Server Action:", e);
+      console.error("Error creating comment in Supabase:", e);
     }
 
     rerender();
