@@ -557,7 +557,7 @@ export default function Home() {
   const [userStrikes, setUserStrikesState] = useState<Record<string, { count: number; history: UserStrikeItem[] }>>({});
   const [customBannedWords, setCustomBannedWordsState] = useState<string[]>([]);
   const [modPermissionsMap, setModPermissionsMap] = useState<Record<string, ModPermissions>>({});
-  const [adminSubTab, setAdminSubTab] = useState<"moderation" | "announcement" | "audit" | "filter" | "owner">("moderation");
+  const [adminSubTab, setAdminSubTab] = useState<"reports" | "support" | "teachers" | "users" | "announcement" | "audit" | "filter" | "owner">("reports");
 
   // Admin interactive input states
   const [adminUserSearch, setAdminUserSearch] = useState("");
@@ -1136,9 +1136,12 @@ export default function Home() {
     rerender();
   }
 
-  // ─── Voting (Persisted to Supabase & Central Database) ────────────
   async function castVote(itemKey: string, type: "like" | "dislike", updateFn: (delta: { likes: number; dislikes: number }) => void) {
     if (!session) { setAuthModal(true); return; }
+    if (profiles[session.username]?.isBanned) {
+      alert("حسابك محظور نهائياً.");
+      return;
+    }
 
     let amount = 1;
     if (session.role === "owner") {
@@ -1207,6 +1210,10 @@ export default function Home() {
   // ─── Post Handlers (Persisted to Supabase) ─────────────────────────
   async function submitPost() {
     if (!session || !postTitle.trim() || !postBody.trim()) return;
+    if (profiles[session.username]?.isBanned) {
+      alert("حسابك محظور نهائياً. لا يمكنك المشاركة أو النشر في المنصة.");
+      return;
+    }
     if (postTitle.length > 100 || postBody.length > 1500) return;
 
     // Phase 5: Sanitize post inputs
@@ -1409,10 +1416,14 @@ export default function Home() {
     }
   }
 
-  async function dismissReport(reportId: string, targetId: string) {
-    const list = getReportRecords().map(r => r.id === reportId ? { ...r, status: "dismissed" as const } : r);
+  async function dismissReport(targetId: string) {
+    const list = getReportRecords().map(r => r.targetId === targetId ? { ...r, status: "dismissed" as const } : r);
     localStorage.setItem("report_records_v1", JSON.stringify(list));
     setReportRecordsList(list);
+
+    try {
+      await supabase.from('reports').update({ status: 'dismissed' }).eq('target_id', targetId);
+    } catch(e) {}
 
     setPostsList(prev => prev.map(p => {
       if (p.id === targetId) return { ...p, reports: 0, status: "active" };
@@ -1436,16 +1447,16 @@ export default function Home() {
     rerender();
   }
 
-  async function deleteReportRecordOnly(reportId: string, targetId: string, targetType: "post" | "comment") {
-    if (!confirm("هل أنت متأكد من حذف هذا البلاغ؟ سيتم إزالة البلاغ وإتاحة إمكانية الإبلاغ للمستخدمين مجدداً.")) return;
+  async function deleteReportRecordOnly(targetId: string, targetType: "post" | "comment") {
+    if (!confirm("هل أنت متأكد من حذف البلاغات؟ سيتم إزالة جميع البلاغات وإتاحة إمكانية الإبلاغ للمستخدمين مجدداً.")) return;
 
     // Remove from report records
-    const list = getReportRecords().filter(r => r.id !== reportId);
+    const list = getReportRecords().filter(r => r.targetId !== targetId);
     localStorage.setItem("report_records_v1", JSON.stringify(list));
     setReportRecordsList(list);
 
     try {
-      await supabase.from('reports').delete().eq('id', reportId);
+      await supabase.from('reports').delete().eq('target_id', targetId);
       await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
     } catch (e) {}
 
@@ -1549,6 +1560,10 @@ export default function Home() {
 
   async function submitReport() {
     if (!session) { setAuthModal(true); return; }
+    if (profiles[session.username]?.isBanned) {
+      alert("حسابك محظور نهائياً.");
+      return;
+    }
     if (!reportTarget) return;
     if (getWordCount(reportNote) > 50) {
       alert("الملاحظة يجب ألا تتجاوز 50 كلمة.");
@@ -1644,6 +1659,10 @@ export default function Home() {
 
   async function addComment(postId: string, textOverride?: string) {
     if (!session) { setAuthModal(true); return; }
+    if (profiles[session.username]?.isBanned) {
+      alert("حسابك محظور نهائياً. لا يمكنك المشاركة أو النشر في المنصة.");
+      return;
+    }
 
     const muteCheck = isUserCurrentlyMuted(session.username);
     if (muteCheck.muted) {
@@ -2165,6 +2184,10 @@ export default function Home() {
 
   // ─── Support Inquiries Handlers ──────────────────────────────────
   async function submitSupportTicket() {
+    if (session && profiles[session.username]?.isBanned) {
+      alert("حسابك محظور نهائياً. لا يمكنك إرسال تذاكر دعم.");
+      return;
+    }
     if (!supportSubject.trim() || !supportMessage.trim()) {
       alert(siteLang === "en" ? "Please fill in the subject and message." : "يرجى كتابة عنوان ورسالة الاستفسار.");
       return;
@@ -2380,41 +2403,43 @@ export default function Home() {
     };
   }
 
-  function handleMuteUser(username: string, duration: "24h" | "7d" | "30d" | "permanent", reason: string) {
+  async function handleMuteUser(username: string, duration: "24h" | "7d" | "30d" | "permanent", reason: string) {
     if (!session || (session.role !== "owner" && session.role !== "mod")) return;
     if (username === session.username) {
       alert("لا يمكنك حظر حسابك الشخصي!");
       return;
     }
-    const targetUser = getUsers().find(u => u.username === username);
-    if (targetUser?.role === "owner") {
+    const targetProf = profiles[username];
+    if (targetProf?.role === "owner") {
       alert("لا يمكن حظر مالك المنصة!");
       return;
     }
-    if (session.role === "mod" && targetUser?.role === "mod") {
+    if (session.role === "mod" && targetProf?.role === "mod") {
       alert("لا يمكن لمشرف حظر مشرف آخر!");
       return;
     }
 
-    let ms = 24 * 60 * 60 * 1000;
-    if (duration === "7d") ms = 7 * 24 * 60 * 60 * 1000;
-    if (duration === "30d") ms = 30 * 24 * 60 * 60 * 1000;
-    if (duration === "permanent") ms = 365 * 10 * 24 * 60 * 60 * 1000;
-
-    const until = Date.now() + ms;
     const finalReason = reason.trim() || "مخالفة معايير المجتمع وقواعد النشر";
 
-    const mutedMap = getMutedUsers();
-    mutedMap[username] = { until, reason: finalReason, mutedBy: session.username };
-    setMutedUsers(mutedMap);
-    setMutedUsersState({ ...mutedMap });
+    // Optimistic UI update
+    setProfilesMap(prev => ({
+      ...prev,
+      [username]: { ...(prev[username] || { avatarColor: "#0d9488", bio: "", avatarUrl: "" }), isBanned: true }
+    }));
+    
+    // Save to Supabase
+    try {
+      await supabase.from('profiles').update({ is_banned: true }).eq('username', username);
+    } catch (e) {
+      console.error("Error banning user in Supabase:", e);
+    }
 
     const strikesMap = getUserStrikes();
     const current = strikesMap[username] || { count: 0, history: [] };
     current.count += 1;
     current.history.unshift({
       date: new Date().toISOString(),
-      reason: `حظر (${duration}): ${finalReason}`,
+      reason: `حظر نهائي: ${finalReason}`,
       by: session.username,
     });
     strikesMap[username] = current;
@@ -2423,13 +2448,14 @@ export default function Home() {
 
     sendNotificationToUser(username, {
       type: "report",
-      message: `تم حظر حسابك مؤقتاً لمدة (${duration}) من قبل الإدارة. السبب: ${finalReason}`,
+      message: `تم حظر حسابك نهائياً من قبل الإدارة. السبب: ${finalReason}`,
+      title: "حظر الحساب",
     });
 
-    addAuditLog("حظر مؤقت لمستخدم", username, `حظر لمدة ${duration}، السبب: ${finalReason}`);
+    addAuditLog("حظر طالب", username, `حظر رقم #${current.count}: ${finalReason}`);
     setAdminMuteReason("");
     rerender();
-    alert(`تم تطبيق الحظر المؤقت على المستخدم ${username} بنجاح.`);
+    alert(`تم حظر حساب الطالب ${username} نهائياً ومنعه من النشر.`);
   }
 
   function handleUnmuteUser(username: string) {
@@ -5127,22 +5153,74 @@ export default function Home() {
 
             {/* Admin Sub-Tabs Navigation */}
             <div className="bg-white border-2 border-slate-900 shadow-[3px_3px_0px_#000] p-1.5 flex items-center gap-1.5 overflow-x-auto">
-              {(canOwner || hasPermission("canApproveTeachers") || hasPermission("canModeratePosts") || hasPermission("canManageTickets") || hasPermission("canDisciplineUsers")) && (
+              {(canOwner || hasPermission("canModeratePosts")) && (
                 <button
-                  onClick={() => setAdminSubTab("moderation")}
+                  onClick={() => setAdminSubTab("reports")}
                   className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
-                    adminSubTab === "moderation"
+                    adminSubTab === "reports"
                       ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
                       : "border-transparent text-slate-700 hover:border-slate-300"
                   }`}
                 >
                   <IconShield size={14} />
-                  <span>{t("adminSubMod")}</span>
-                  {(pendingTeachers.length > 0 || reportedPosts.length > 0) && (
+                  <span>البلاغات</span>
+                  {reportedPosts.length > 0 && (
                     <span className="px-1.5 py-0.2 bg-red-600 text-white text-[9px] font-black rounded-full">
-                      {pendingTeachers.length + reportedPosts.length}
+                      {reportedPosts.length}
                     </span>
                   )}
+                </button>
+              )}
+              
+              {(canOwner || hasPermission("canManageTickets")) && (
+                <button
+                  onClick={() => setAdminSubTab("support")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "support"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconHeadset size={14} />
+                  <span>تذاكر الدعم</span>
+                  {supportTickets.filter(t => t.status === "open").length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-blue-600 text-white text-[9px] font-black rounded-full">
+                      {supportTickets.filter(t => t.status === "open").length}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {(canOwner || hasPermission("canApproveTeachers")) && (
+                <button
+                  onClick={() => setAdminSubTab("teachers")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "teachers"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconBooks size={14} />
+                  <span>طلبات المعلمين</span>
+                  {pendingTeachers.length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-amber-600 text-white text-[9px] font-black rounded-full">
+                      {pendingTeachers.length}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {(canOwner || hasPermission("canDisciplineUsers")) && (
+                <button
+                  onClick={() => setAdminSubTab("users")}
+                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 shrink-0 transition-all ${
+                    adminSubTab === "users"
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]"
+                      : "border-transparent text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  <IconUsers size={14} />
+                  <span>المستخدمين</span>
                 </button>
               )}
 
@@ -5212,39 +5290,15 @@ export default function Home() {
               )}
             </div>
 
-            {/* ═══════ SUB-TAB 1: MODERATION & QUEUE ═══════ */}
-            {adminSubTab === "moderation" && (
+            {adminSubTab === "teachers" && (
               <div className="space-y-6">
-                {/* Quick Stats Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
-                    <div className="text-2xl font-black text-amber-700">{pendingTeachers.length}</div>
-                    <div className="text-xs font-bold text-slate-600 mt-0.5">طلبات مدرسين معلقة</div>
-                  </div>
-                  <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
-                    <div className="text-2xl font-black text-red-600">{reportedPosts.length}</div>
-                    <div className="text-xs font-bold text-slate-600 mt-0.5">منشورات عليها بلاغات</div>
-                  </div>
-                  <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
-                    <div className="text-2xl font-black text-blue-700">{supportTickets.length}</div>
-                    <div className="text-xs font-bold text-slate-600 mt-0.5">تذاكر الدعم الفني</div>
-                  </div>
-                  <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-4 text-center">
-                    <div className="text-2xl font-black text-slate-800">{Object.keys(mutedUsers).length}</div>
-                    <div className="text-xs font-bold text-slate-600 mt-0.5">مستخدمين محظورين</div>
-                  </div>
-                </div>
-
-                {/* Main Moderation Grid: Teacher Submissions & Reports Queue */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {/* Column 1: Teacher Requests */}
-                  <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
-                    <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
-                      <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
-                        <IconInbox size={16} className="text-emerald-primary" />
-                        <span>طلبات إضافة المدرسين</span>
-                      </h3>
-                      <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">
+                <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
+                  <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
+                    <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
+                      <IconInbox size={16} className="text-emerald-primary" />
+                      <span>طلبات إضافة المدرسين</span>
+                    </h3>
+                    <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-bold text-xs border border-slate-900">
                         {pendingTeachers.length} معلق
                       </span>
                     </div>
@@ -5280,11 +5334,14 @@ export default function Home() {
                         ))}
                       </div>
                     )}
-                  </div>
+                </div>
+              </div>
+            )}
 
-                  {/* Column 2: Reports & Moderation Queue */}
-                  <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
-                    <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
+            {adminSubTab === "reports" && (
+              <div className="space-y-6">
+                <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
+                  <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                       <h3 className="font-black text-sm flex items-center gap-1 text-slate-900">
                         <IconFlag size={14} className="text-red-600" />
                         <span>مركز مراجعة البلاغات والملاحظات</span>
@@ -5311,17 +5368,30 @@ export default function Home() {
                       </div>
                     ) : (
                       <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                        {reportRecordsList
+                        {Object.values(reportRecordsList
                           .filter(r => adminReportFilter === "all" || (r.status || "pending") === adminReportFilter)
+                          .reduce((acc, r) => {
+                            if (!acc[r.targetId]) {
+                              acc[r.targetId] = { ...r, reportCount: 1, allReporters: [r.reporter], allNotes: r.note ? [r.note] : [] };
+                            } else {
+                              acc[r.targetId].reportCount++;
+                              if (!acc[r.targetId].allReporters.includes(r.reporter)) acc[r.targetId].allReporters.push(r.reporter);
+                              if (r.note && !acc[r.targetId].allNotes.includes(r.note)) acc[r.targetId].allNotes.push(r.note);
+                            }
+                            return acc;
+                          }, {} as Record<string, any>))
                           .map(r => {
                             const targetPost = posts.find(p => p.id === r.targetId);
                             const reasonLabel = r.reason === "inappropriate" ? "محتوى غير لائق ومسيء" : r.reason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
                             const isResolved = r.status === "resolved" || r.status === "dismissed";
 
                             return (
-                              <div key={r.id} className={`p-3.5 border-2 space-y-2.5 transition-all ${isResolved ? "bg-slate-50/70 border-slate-200 opacity-75" : "bg-white border-slate-900 shadow-[2px_2px_0px_#000]"}`}>
+                              <div key={r.targetId} className={`p-3.5 border-2 space-y-2.5 transition-all ${isResolved ? "bg-slate-50/70 border-slate-200 opacity-75" : "bg-white border-slate-900 shadow-[2px_2px_0px_#000]"}`}>
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="px-2 py-0.5 text-[10px] font-black border uppercase tracking-wider bg-red-600 text-white border-red-800">
+                                      ⚠️ {r.reportCount} بلاغات
+                                    </span>
                                     <span className={`px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
                                       r.reason === "inappropriate"
                                         ? "bg-red-100 text-red-900 border-red-400"
@@ -5332,7 +5402,7 @@ export default function Home() {
                                       {reasonLabel}
                                     </span>
                                     <span className="text-[10px] text-slate-500 font-bold">
-                                      من قِبل: <span className="text-slate-800">{r.reporter}</span>
+                                      من قِبل: <span className="text-slate-800">{r.allReporters.join(", ")}</span>
                                     </span>
                                   </div>
                                   <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(r.created_at)}</span>
@@ -5351,10 +5421,12 @@ export default function Home() {
                                   )}
                                 </div>
 
-                                {r.note && (
+                                {r.allNotes.length > 0 && (
                                   <div className="text-xs bg-amber-50 border border-amber-200 p-2 text-amber-950">
-                                    <span className="font-bold block text-[10px] text-amber-800 mb-0.5">ملاحظة المُبلغ للمشرفين:</span>
-                                    <p className="text-[11px] leading-relaxed font-semibold">"{r.note}"</p>
+                                    <span className="font-bold block text-[10px] text-amber-800 mb-0.5">ملاحظات المُبلغين للمشرفين:</span>
+                                    {r.allNotes.map((note: string, idx: number) => (
+                                      <p key={idx} className="text-[11px] leading-relaxed font-semibold">"{note}"</p>
+                                    ))}
                                   </div>
                                 )}
 
@@ -5378,11 +5450,11 @@ export default function Home() {
                                       )
                                     )}
                                     <button
-                                      onClick={() => deleteReportRecordOnly(r.id, r.targetId, r.targetType)}
+                                      onClick={() => deleteReportRecordOnly(r.targetId, r.targetType)}
                                       className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
-                                      title="حذف البلاغ فقط والسماح بالإبلاغ مجدداً"
+                                      title="حذف جميع البلاغات وإعادة المحتوى لطبيعته"
                                     >
-                                      <IconTrash size={11} /> حذف البلاغ
+                                      <IconTrash size={11} /> حذف البلاغات
                                     </button>
                                     <button
                                       onClick={() => adminDeleteReportedItem(r.targetId, r.targetType, r.id)}
@@ -5406,7 +5478,7 @@ export default function Home() {
 
                                   {!isResolved && (
                                     <button
-                                      onClick={() => dismissReport(r.id, r.targetId)}
+                                      onClick={() => dismissReport(r.targetId)}
                                       className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline"
                                     >
                                       تجاهل وتبرئة
@@ -5491,9 +5563,12 @@ export default function Home() {
                     )}
                   </div>
                 </div>
+            )}
 
+            {adminSubTab === "users" && (
+              <div className="space-y-6">
                 {/* User Disciplinary & Strike Management Center */}
-                <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#000] p-5 space-y-4">
+                <div className="bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-4">
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                     <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
                       <IconVolumeX size={16} className="text-red-600" />
@@ -5673,8 +5748,11 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
 
-                {/* Support Inquiries Management */}
+            {adminSubTab === "support" && (
+              <div className="space-y-6">
                 <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-3">
                   <div className="flex items-center justify-between border-b-2 border-slate-200 pb-2">
                     <h3 className="font-black text-sm flex items-center gap-1.5 text-slate-900">
@@ -8191,9 +8269,19 @@ export default function Home() {
                             <div className="flex justify-between items-center">
                               <span className="font-black text-xs text-slate-900">{ticket.subject}</span>
                               <span className={`px-2 py-0.5 text-[9px] font-black border border-slate-900 ${ticket.status === "resolved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                                {ticket.status === "resolved" ? "تمت المعالجة" : "قيد المتابعة"}
+                                {ticket.status === "resolved" ? "تمت المراجعة" : "قيد المراجعة"}
                               </span>
                             </div>
+                            
+                            {ticket.status !== "resolved" && (
+                              <button 
+                                onClick={() => resolveSupportTicket(ticket.id)}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold border border-slate-900 shadow-[1px_1px_0px_#000]"
+                              >
+                                تحديد كـ محلولة (إغلاق التذكرة)
+                              </button>
+                            )}
+
                             <div className="text-xs text-slate-700 whitespace-pre-wrap">{ticket.message}</div>
                             
                             {/* Replies */}
