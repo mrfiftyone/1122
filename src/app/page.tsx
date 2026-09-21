@@ -538,6 +538,15 @@ export default function Home() {
   const [reportNote, setReportNote] = useState("");
   const [adminReportFilter, setAdminReportFilter] = useState<"all" | "pending" | "resolved">("pending");
   const [reportRecordsList, setReportRecordsList] = useState<ReportRecord[]>([]);
+  const [inspectingReport, setInspectingReport] = useState<any | null>(null);
+  const [dismissedReportIds, setDismissedReportIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      return new Set(JSON.parse(localStorage.getItem("dismissed_reports_v1") || "[]"));
+    } catch {
+      return new Set();
+    }
+  });
 
   // Platform Administration & Owner States
   const [platformSettings, setPlatformSettingsState] = useState<PlatformSettings>({
@@ -1422,6 +1431,12 @@ export default function Home() {
     localStorage.setItem("report_records_v1", JSON.stringify(list));
     setReportRecordsList(list);
 
+    setDismissedReportIds(prev => {
+      const next = new Set(prev).add(targetId);
+      try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
+
     try {
       await supabase.from('reports').update({ status: 'dismissed' }).eq('target_id', targetId);
     } catch(e) {}
@@ -1448,12 +1463,18 @@ export default function Home() {
   }
 
   async function deleteReportRecordOnly(targetId: string, targetType: "post" | "comment") {
-    if (!confirm("هل أنت متأكد من حذف البلاغات؟ سيتم إزالة جميع البلاغات وإتاحة إمكانية الإبلاغ للمستخدمين مجدداً.")) return;
+    if (!confirm("هل أنت متأكد من حذف البلاغات؟ سيتم إزالة جميع البلاغات وتصفير العداد.")) return;
 
     // Remove from report records
     const list = getReportRecords().filter(r => r.targetId !== targetId);
     localStorage.setItem("report_records_v1", JSON.stringify(list));
     setReportRecordsList(list);
+
+    setDismissedReportIds(prev => {
+      const next = new Set(prev).add(targetId);
+      try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
 
     try {
       await supabase.from('reports').delete().eq('target_id', targetId);
@@ -1479,14 +1500,19 @@ export default function Home() {
       }
     }
     rerender();
-    alert("تم حذف البلاغ بنجاح وإعادة تفعيل المحتوى ليكون جاهزاً للإبلاغ من جديد.");
+    alert("تم حذف البلاغ بنجاح وتصفير العداد.");
   }
 
   async function adminDeleteReportedItem(targetId: string, targetType: "post" | "comment", reportId?: string) {
-    if (!confirm("هل أنت متأكد من الحذف النهائي لهذا المحتوى؟")) return;
+    if (!confirm("هل أنت متأكد من الحذف النهائي لهذا المحتوى من المنصة بالكامل؟")) return;
 
     if (targetType === "post") {
-      deletePost(targetId);
+      setPostsList(prev => prev.filter(item => item.id !== targetId));
+      try {
+        await supabase.from('posts').delete().eq('id', targetId);
+      } catch (e) {
+        console.error("Error deleting post from Supabase:", e);
+      }
     } else {
       const parentPost = posts.find(p => p.comments?.some(c => c.id === targetId));
       if (parentPost) {
@@ -1507,11 +1533,22 @@ export default function Home() {
       }
     }
 
-    if (reportId) {
-      const list = getReportRecords().map(r => r.id === reportId ? { ...r, status: "resolved" as const } : r);
-      localStorage.setItem("report_records_v1", JSON.stringify(list));
-      setReportRecordsList(list);
-    }
+    // Clean up all reports for this target
+    const list = getReportRecords().filter(r => r.targetId !== targetId);
+    localStorage.setItem("report_records_v1", JSON.stringify(list));
+    setReportRecordsList(list);
+
+    setDismissedReportIds(prev => {
+      const next = new Set(prev).add(targetId);
+      try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
+
+    try {
+      await supabase.from('reports').delete().eq('target_id', targetId);
+      await supabase.from('notifications').delete().eq('post_id', targetId);
+    } catch (e) {}
+
     rerender();
   }
 
@@ -1618,6 +1655,13 @@ export default function Home() {
       status: "pending",
     };
     await saveReportRecord(record);
+
+    setDismissedReportIds(prev => {
+      const next = new Set(prev);
+      next.delete(record.targetId);
+      try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
 
     // Notify all moderators and owners of this incoming report
     let adminUsernames: string[] = ["hh"];
@@ -5362,76 +5406,132 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {reportRecordsList.length === 0 && reportedPosts.length === 0 ? (
-                      <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
-                        لا يوجد محتوى تم الإبلاغ عنه حالياً.
-                      </div>
-                    ) : (
-                      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
-                        {Object.values(reportRecordsList
-                          .filter(r => adminReportFilter === "all" || (r.status || "pending") === adminReportFilter)
-                          .reduce((acc, r) => {
-                            if (!acc[r.targetId]) {
-                              acc[r.targetId] = { ...r, reportCount: 1, allReporters: [r.reporter], allNotes: r.note ? [r.note] : [] };
-                            } else {
-                              acc[r.targetId].reportCount++;
-                              if (!acc[r.targetId].allReporters.includes(r.reporter)) acc[r.targetId].allReporters.push(r.reporter);
-                              if (r.note && !acc[r.targetId].allNotes.includes(r.note)) acc[r.targetId].allNotes.push(r.note);
-                            }
-                            return acc;
-                          }, {} as Record<string, any>))
-                          .map(r => {
+                    {(() => {
+                      // Unified report aggregation: ensures all reports and reported posts are combined with zero duplicates
+                      const groupsMap: Record<string, any> = {};
+
+                      // 1. Group from reportRecordsList
+                      reportRecordsList
+                        .filter(r => adminReportFilter === "all" || (r.status || "pending") === adminReportFilter)
+                        .forEach(r => {
+                          if (dismissedReportIds.has(r.targetId) && r.status === "dismissed") return;
+                          if (!groupsMap[r.targetId]) {
+                            groupsMap[r.targetId] = {
+                              targetId: r.targetId,
+                              targetType: r.targetType || "post",
+                              targetTitle: r.targetTitle,
+                              reportCount: 1,
+                              reportsList: [r],
+                              allReporters: [r.reporter],
+                              allNotes: r.note ? [r.note] : [],
+                              reason: r.reason,
+                              status: r.status || "pending",
+                              created_at: r.created_at,
+                            };
+                          } else {
+                            groupsMap[r.targetId].reportCount++;
+                            groupsMap[r.targetId].reportsList.push(r);
+                            if (!groupsMap[r.targetId].allReporters.includes(r.reporter)) groupsMap[r.targetId].allReporters.push(r.reporter);
+                            if (r.note && !groupsMap[r.targetId].allNotes.includes(r.note)) groupsMap[r.targetId].allNotes.push(r.note);
+                          }
+                        });
+
+                      // 2. Add posts that have reports > 0 if not already tracked and not dismissed
+                      posts.forEach(p => {
+                        if (p.reports && p.reports > 0 && !dismissedReportIds.has(p.id) && !groupsMap[p.id]) {
+                          if (adminReportFilter === "all" || adminReportFilter === "pending") {
+                            groupsMap[p.id] = {
+                              targetId: p.id,
+                              targetType: "post",
+                              targetTitle: p.title,
+                              reportCount: p.reports,
+                              reportsList: [{
+                                id: "rep_post_" + p.id,
+                                targetId: p.id,
+                                targetType: "post",
+                                targetTitle: p.title,
+                                reporter: "مستخدمين من مجتمع الطلاب",
+                                reason: "inappropriate",
+                                note: `تم تقديم ${p.reports} بلاغ على هذا المنشور عبر التطبيق.`,
+                                created_at: p.created_at,
+                                status: "pending",
+                              }],
+                              allReporters: ["مجتمع الطلاب"],
+                              allNotes: [`${p.reports} بلاغات مسجلة`],
+                              reason: "inappropriate",
+                              status: "pending",
+                              created_at: p.created_at,
+                            };
+                          }
+                        }
+                      });
+
+                      const aggregatedList = Object.values(groupsMap);
+
+                      if (aggregatedList.length === 0) {
+                        return (
+                          <div className="text-xs text-slate-400 py-10 text-center font-semibold border-2 border-dashed border-slate-200">
+                            لا يوجد أي محتوى تم الإبلاغ عنه حالياً.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-3 max-h-[650px] overflow-y-auto pr-1">
+                          {aggregatedList.map(r => {
                             const targetPost = posts.find(p => p.id === r.targetId);
-                            const reasonLabel = r.reason === "inappropriate" ? "محتوى غير لائق ومسيء" : r.reason === "wrong_info" ? "معلومات خاطئة ومضللة" : "سبب آخر";
+                            const reasonLabel = r.reason === "inappropriate" ? "محتوى غير لائق ومسيء" : r.reason === "wrong_info" ? "معلومات خاطئة ومضللة" : "مخالفة معايير";
                             const isResolved = r.status === "resolved" || r.status === "dismissed";
 
                             return (
-                              <div key={r.targetId} className={`p-3.5 border-2 space-y-2.5 transition-all ${isResolved ? "bg-slate-50/70 border-slate-200 opacity-75" : "bg-white border-slate-900 shadow-[2px_2px_0px_#000]"}`}>
+                              <div
+                                key={r.targetId}
+                                className={`p-4 border-2 space-y-3 transition-all ${isResolved ? "bg-slate-50/70 border-slate-200 opacity-75" : "bg-white border-slate-900 shadow-[3px_3px_0px_#000]"}`}
+                              >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="px-2 py-0.5 text-[10px] font-black border uppercase tracking-wider bg-red-600 text-white border-red-800">
-                                      ⚠️ {r.reportCount} بلاغات
+                                    <span className="px-2.5 py-0.5 text-xs font-black border uppercase tracking-wider bg-red-600 text-white border-slate-900 shadow-[1px_1px_0px_#000]">
+                                      ⚠️ {r.reportCount} {r.reportCount > 1 ? "بلاغات" : "بلاغ"}
                                     </span>
-                                    <span className={`px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
+                                    <span className={`px-2 py-0.5 text-[10px] font-black border ${
                                       r.reason === "inappropriate"
-                                        ? "bg-red-100 text-red-900 border-red-400"
-                                        : r.reason === "wrong_info"
-                                        ? "bg-amber-100 text-amber-900 border-amber-400"
-                                        : "bg-slate-100 text-slate-800 border-slate-400"
+                                        ? "bg-red-100 text-red-900 border-red-300"
+                                        : "bg-amber-100 text-amber-900 border-amber-300"
                                     }`}>
                                       {reasonLabel}
                                     </span>
-                                    <span className="text-[10px] text-slate-500 font-bold">
-                                      من قِبل: <span className="text-slate-800">{r.allReporters.join(", ")}</span>
+                                    <span className="text-[11px] text-slate-600 font-bold">
+                                      من قِبل: <span className="text-slate-900 font-black">{r.allReporters.slice(0, 3).join(", ")}{r.allReporters.length > 3 ? ` و ${r.allReporters.length - 3} آخرين` : ""}</span>
                                     </span>
                                   </div>
-                                  <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(r.created_at)}</span>
+                                  <span className="text-[10px] text-slate-400 font-bold shrink-0">{getRelativeTime(r.created_at)}</span>
                                 </div>
 
-                                <div className="bg-slate-50 p-2 border border-slate-200 text-xs">
-                                  <div className="font-black text-slate-900">{r.targetTitle || targetPost?.title || "محتوى محدد"}</div>
+                                <div className="bg-slate-50 p-2.5 border border-slate-200 text-xs space-y-1">
+                                  <div className="font-black text-slate-900 text-sm">{r.targetTitle || targetPost?.title || "محتوى محدد"}</div>
                                   {targetPost?.body && (
-                                    <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{targetPost.body}</p>
+                                    <p className="text-[11px] text-slate-600 line-clamp-2">{targetPost.body}</p>
                                   )}
                                   {targetPost && (
-                                    <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
-                                      <span>الكاتب: <strong className="text-teal-800">{targetPost.author}</strong></span>
-                                      <span>الحالة: <strong className={targetPost.status === "hidden" ? "text-red-600" : "text-emerald-700"}>{targetPost.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
+                                    <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 flex items-center justify-between">
+                                      <span>الكاتب: <strong className="text-slate-900 font-bold">{targetPost.author}</strong></span>
+                                      <span>الحالة: <strong className={targetPost.status === "hidden" ? "text-red-600 font-bold" : "text-emerald-700 font-bold"}>{targetPost.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
                                     </div>
                                   )}
                                 </div>
 
-                                {r.allNotes.length > 0 && (
-                                  <div className="text-xs bg-amber-50 border border-amber-200 p-2 text-amber-950">
-                                    <span className="font-bold block text-[10px] text-amber-800 mb-0.5">ملاحظات المُبلغين للمشرفين:</span>
-                                    {r.allNotes.map((note: string, idx: number) => (
-                                      <p key={idx} className="text-[11px] leading-relaxed font-semibold">"{note}"</p>
-                                    ))}
-                                  </div>
-                                )}
+                                {/* Click to Inspect Detailed Reports Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setInspectingReport(r)}
+                                  className="w-full py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-950 border border-blue-300 text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-[1px_1px_0px_#93c5fd]"
+                                >
+                                  <IconSearch size={14} className="text-blue-700" />
+                                  <span>اضغط هنا لعرض تفاصيل المُبلّغين وأسباب البلاغات بالتفصيل ({r.reportsList?.length || r.reportCount})</span>
+                                </button>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     {targetPost && (
                                       targetPost.status === "hidden" ? (
                                         <button
@@ -5452,9 +5552,9 @@ export default function Home() {
                                     <button
                                       onClick={() => deleteReportRecordOnly(r.targetId, r.targetType)}
                                       className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
-                                      title="حذف جميع البلاغات وإعادة المحتوى لطبيعته"
+                                      title="حذف جميع البلاغات وتصفير العداد"
                                     >
-                                      <IconTrash size={11} /> حذف البلاغات
+                                      <IconTrash size={11} /> حذف البلاغات وتصفير العداد
                                     </button>
                                     <button
                                       onClick={() => adminDeleteReportedItem(r.targetId, r.targetType, r.id)}
@@ -5488,79 +5588,9 @@ export default function Home() {
                               </div>
                             );
                           })}
-
-                        {/* Reported posts that don't have an explicit report record in list */}
-                        {posts
-                          .filter(p => ((p.reports && p.reports > 0) || p.status === "hidden") && !reportRecordsList.some(r => r.targetId === p.id && r.status !== "dismissed" && r.status !== "resolved"))
-                          .map(p => (
-                            <div key={`post_rep_${p.id}`} className="p-3.5 border-2 space-y-2.5 bg-white border-slate-900 shadow-[2px_2px_0px_#000]">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider bg-red-100 text-red-900 border-red-400">
-                                    بلاغ من مجتمع الطلاب ({p.reports || 1} بلاغات)
-                                  </span>
-                                  <span className="text-[10px] text-slate-500 font-bold">
-                                    الكاتب: <span className="text-slate-800">{p.author}</span>
-                                  </span>
-                                </div>
-                                <span className="text-[9px] text-slate-400 font-bold shrink-0">{getRelativeTime(p.created_at)}</span>
-                              </div>
-
-                              <div className="bg-slate-50 p-2 border border-slate-200 text-xs">
-                                <div className="font-black text-slate-900">{p.title}</div>
-                                {p.body && <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{p.body}</p>}
-                                <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
-                                  <span>عدد البلاغات المسجلة: <strong className="text-red-700">{p.reports || 1}</strong></span>
-                                  <span>الحالة: <strong className={p.status === "hidden" ? "text-red-600" : "text-emerald-700"}>{p.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 text-xs">
-                                <div className="flex items-center gap-1.5">
-                                  {p.status === "hidden" ? (
-                                    <button
-                                      onClick={() => restorePost(p.id)}
-                                      className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] border border-emerald-500"
-                                    >
-                                      إعادة إظهار
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => hidePost(p.id)}
-                                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-[11px] border border-amber-500"
-                                    >
-                                      إخفاء المحتوى
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => deleteReportRecordOnly(p.id, "post")}
-                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-900 flex items-center gap-1"
-                                    title="حذف البلاغ وتصفير العداد"
-                                  >
-                                    <IconTrash size={11} /> حذف البلاغ وتصفير العداد
-                                  </button>
-                                  <button
-                                    onClick={() => adminDeleteReportedItem(p.id, "post")}
-                                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-[11px] border border-red-500 flex items-center gap-1"
-                                    title="حذف المنشور نهائياً"
-                                  >
-                                    <IconTrash size={11} /> حذف المحتوى نهائياً
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setAdminSelectedUser(p.author);
-                                      setAdminWarningReason(`مخالفة معايير المجتمع في المنشور "${p.title}"`);
-                                    }}
-                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] border border-slate-400"
-                                  >
-                                    إدارة/إنذار الكاتب
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
             )}
@@ -7264,6 +7294,141 @@ export default function Home() {
                   إرسال البلاغ
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ INSPECT REPORT DETAILS MODAL (تفاصيل المُبلّغين والأسباب) ═══════ */}
+      {inspectingReport && (
+        <div className="fixed inset-0 z-[75] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-3 border-slate-900 shadow-[8px_8px_0px_#000] w-full max-w-xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
+              <div className="space-y-0.5">
+                <h3 className="font-black text-base flex items-center gap-2 text-slate-900">
+                  <IconFlag size={20} className="text-red-600" />
+                  <span>تفاصيل البلاغات والمُبلّغين</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-semibold">
+                  مراجعة دقيقة لجميع الحسابات التي قدمت بلاغاً مع الأسباب والملاحظات
+                </p>
+              </div>
+              <button
+                onClick={() => setInspectingReport(null)}
+                className="p-1 hover:bg-slate-100 border border-transparent hover:border-slate-900 transition-all"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            {/* Target Item Details */}
+            <div className="bg-slate-50 border-2 border-slate-900 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-black text-slate-900 text-sm">{inspectingReport.targetTitle}</span>
+                <span className="px-2.5 py-0.5 bg-red-600 text-white font-black text-xs border border-slate-900 shadow-[1px_1px_0px_#000]">
+                  ⚠️ {inspectingReport.reportCount || inspectingReport.reportsList?.length || 1} بلاغات
+                </span>
+              </div>
+              {(() => {
+                const targetPost = posts.find(p => p.id === inspectingReport.targetId);
+                return targetPost ? (
+                  <div className="space-y-1.5 text-xs">
+                    {targetPost.body && (
+                      <p className="text-slate-700 bg-white p-2 border border-slate-200 line-clamp-4 leading-relaxed font-medium">
+                        {targetPost.body}
+                      </p>
+                    )}
+                    <div className="text-[11px] text-slate-600 pt-1 flex items-center justify-between flex-wrap gap-2">
+                      <span>الكاتب: <strong className="text-slate-900 font-black">{targetPost.author}</strong></span>
+                      <span>الحالة: <strong className={targetPost.status === "hidden" ? "text-red-600 font-black" : "text-emerald-700 font-black"}>{targetPost.status === "hidden" ? "مخفي" : "نشط"}</strong></span>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+            </div>
+
+            {/* List of Individual Reports */}
+            <div className="space-y-2.5">
+              <h4 className="font-black text-xs text-slate-900 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <IconUser size={15} className="text-emerald-700" />
+                  <span>قائمة المُبلّغين والأسباب بالتفصيل:</span>
+                </span>
+                <span className="text-slate-500 font-bold">
+                  ({(inspectingReport.reportsList || [inspectingReport]).length} بلاغ)
+                </span>
+              </h4>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {(inspectingReport.reportsList || [inspectingReport]).map((rep: any, idx: number) => {
+                  const reasonLabel =
+                    rep.reason === "inappropriate"
+                      ? "محتوى غير لائق أو مسيء"
+                      : rep.reason === "wrong_info"
+                      ? "معلومات خاطئة أو مضللة"
+                      : "سبب آخر / مخالفة معايير";
+
+                  return (
+                    <div
+                      key={rep.id || idx}
+                      className="p-3 bg-slate-50 border-2 border-slate-900 shadow-[2px_2px_0px_#000] text-xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-slate-900 flex items-center gap-1.5 text-xs">
+                          <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
+                          <span>مُقدّم البلاغ: <strong>{rep.reporter}</strong></span>
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-bold">{getRelativeTime(rep.created_at)}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 text-[10px] font-black border ${
+                          rep.reason === "inappropriate"
+                            ? "bg-red-100 text-red-900 border-red-400"
+                            : rep.reason === "wrong_info"
+                            ? "bg-amber-100 text-amber-900 border-amber-400"
+                            : "bg-slate-100 text-slate-800 border-slate-400"
+                        }`}>
+                          السبب المختار: {reasonLabel}
+                        </span>
+                      </div>
+
+                      {rep.note ? (
+                        <div className="bg-white p-2 border border-slate-300 text-[11px] text-slate-800 font-semibold space-y-0.5">
+                          <span className="text-[10px] text-slate-500 font-bold block">الملاحظة المكتوبة:</span>
+                          <p className="leading-relaxed">"{rep.note}"</p>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 italic">لم تتم كتابة ملاحظة إضافية مع هذا البلاغ</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-3 border-t-2 border-slate-200 flex flex-wrap gap-2 justify-between items-center text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  deleteReportRecordOnly(inspectingReport.targetId, inspectingReport.targetType);
+                  setInspectingReport(null);
+                }}
+                className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 active:translate-x-0.5 active:translate-y-0.5"
+              >
+                <IconTrash size={13} />
+                <span>حذف جميع البلاغات وتصفير العداد</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInspectingReport(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold border-2 border-slate-900"
+              >
+                إغلاق النافذة
+              </button>
             </div>
           </div>
         </div>
