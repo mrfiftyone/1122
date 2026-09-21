@@ -807,6 +807,25 @@ export default function Home() {
         localStorage.setItem("report_records_v1", JSON.stringify(mergedReps.slice(0, 200)));
         setReportRecordsList(mergedReps);
       }
+
+      // Fetch support tickets from Supabase
+      try {
+        const { data: ticketData } = await supabase.from('support_tickets').select('*').order('created_at', { ascending: false }).limit(100);
+        if (ticketData) {
+          const formatted: SupportTicket[] = ticketData.map((t: any) => ({
+            id: t.id,
+            sender: t.sender,
+            category: t.category || "other",
+            subject: t.subject,
+            message: t.message,
+            status: t.status || "open",
+            created_at: t.created_at,
+            replies: t.replies || [],
+            allowUserReply: t.allow_user_reply || false,
+          }));
+          setSupportTickets(formatted);
+        }
+      } catch {}
     } catch (err) {
       console.error("Supabase load error:", err);
     }
@@ -929,6 +948,7 @@ export default function Home() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, scheduleFetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, scheduleFetch)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, scheduleFetch)
       .subscribe();
 
     // Auto-poll in background every 12 seconds to guarantee sync even if realtime publications aren't active
@@ -2126,7 +2146,7 @@ export default function Home() {
   }
 
   // ─── Support Inquiries Handlers ──────────────────────────────────
-  function submitSupportTicket() {
+  async function submitSupportTicket() {
     if (!supportSubject.trim() || !supportMessage.trim()) {
       alert(siteLang === "en" ? "Please fill in the subject and message." : "يرجى كتابة عنوان ورسالة الاستفسار.");
       return;
@@ -2143,54 +2163,74 @@ export default function Home() {
       allowUserReply: false,
     };
 
-    const existing = getSupportTickets();
-    const updated = [newTicket, ...existing];
-    setSupportTicketsStorage(updated);
-    setSupportTickets(updated);
+    // Optimistic UI
+    setSupportTickets(prev => [newTicket, ...prev]);
 
     setSupportSubject("");
     setSupportMessage("");
-    setSettingsModal(false); // Close the settings modal directly after submitting
-    
-    // Using a quick alert or toast instead of supportSuccess state which keeps the modal open waiting for timeout
+    setSettingsModal(false);
+
     alert("تم ارسال رسالتك بنجاح. سيتم الرد عليك قريباً في قسم التنبيهات أو الدعم.");
+
+    // Persist to Supabase
+    try {
+      await supabase.from('support_tickets').insert([{
+        id: newTicket.id,
+        sender: newTicket.sender,
+        category: newTicket.category,
+        subject: newTicket.subject,
+        message: newTicket.message,
+        status: newTicket.status,
+        replies: [],
+        allow_user_reply: false,
+      }]);
+    } catch (e) {
+      console.error("Error inserting support ticket:", e);
+    }
   }
 
-  function resolveSupportTicket(id: string) {
-    const existing = getSupportTickets();
-    const updated = existing.map(t => t.id === id ? { ...t, status: (t.status === "open" ? "resolved" : "open") as any } : t);
-    setSupportTicketsStorage(updated);
-    setSupportTickets(updated);
+  async function resolveSupportTicket(id: string) {
+    const ticket = supportTickets.find(t => t.id === id);
+    const newStatus = ticket?.status === "open" ? "resolved" : "open";
+    setSupportTickets(prev => prev.map(t => t.id === id ? { ...t, status: newStatus as any } : t));
+    try {
+      await supabase.from('support_tickets').update({ status: newStatus }).eq('id', id);
+    } catch (e) {
+      console.error("Error updating ticket status:", e);
+    }
   }
 
-  function toggleAllowUserReply(id: string) {
-    const existing = getSupportTickets();
-    const updated = existing.map(t => t.id === id ? { ...t, allowUserReply: !t.allowUserReply } : t);
-    setSupportTicketsStorage(updated);
-    setSupportTickets(updated);
+  async function toggleAllowUserReply(id: string) {
+    const ticket = supportTickets.find(t => t.id === id);
+    const newVal = !ticket?.allowUserReply;
+    setSupportTickets(prev => prev.map(t => t.id === id ? { ...t, allowUserReply: newVal } : t));
+    try {
+      await supabase.from('support_tickets').update({ allow_user_reply: newVal }).eq('id', id);
+    } catch (e) {
+      console.error("Error toggling allow_user_reply:", e);
+    }
   }
 
-  function submitSupportReply(id: string) {
+  async function submitSupportReply(id: string) {
     const replyText = ticketReplyTexts[id];
     if (!replyText || !replyText.trim() || !session) return;
     
-    const existing = getSupportTickets();
-    const targetTicket = existing.find(t => t.id === id);
+    const targetTicket = supportTickets.find(t => t.id === id);
 
-    const updated = existing.map(t => {
+    const newReply: SupportReply = {
+      id: "rep_" + Date.now(),
+      sender: session.username,
+      message: replyText.trim(),
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistic UI
+    setSupportTickets(prev => prev.map(t => {
       if (t.id === id) {
-        const newReply: SupportReply = {
-          id: "rep_" + Date.now(),
-          sender: session.username,
-          message: replyText.trim(),
-          created_at: new Date().toISOString(),
-        };
         return { ...t, replies: [...(t.replies || []), newReply] };
       }
       return t;
-    });
-    setSupportTicketsStorage(updated);
-    setSupportTickets(updated);
+    }));
 
     // Send notification to the user or admins
     if (targetTicket) {
@@ -2215,16 +2255,26 @@ export default function Home() {
     }
     
     setTicketReplyTexts(prev => ({ ...prev, [id]: "" }));
+
+    // Persist updated replies to Supabase
+    try {
+      const updatedReplies = [...(targetTicket?.replies || []), newReply];
+      await supabase.from('support_tickets').update({ replies: updatedReplies }).eq('id', id);
+    } catch (e) {
+      console.error("Error updating ticket replies:", e);
+    }
   }
 
-  function deleteSupportTicket(id: string) {
+  async function deleteSupportTicket(id: string) {
     if (!confirm(siteLang === "en" ? "Delete this support ticket?" : "هل أنت متأكد من حذف تذكرة الدعم هذه؟")) return;
-    const existing = getSupportTickets();
-    const updated = existing.filter(t => t.id !== id);
-    setSupportTicketsStorage(updated);
-    setSupportTickets(updated);
+    setSupportTickets(prev => prev.filter(t => t.id !== id));
     addAuditLog("حذف تذكرة دعم", `تذكرة #${id}`, "حذف تذكرة الدعم الفني");
     rerender();
+    try {
+      await supabase.from('support_tickets').delete().eq('id', id);
+    } catch (e) {
+      console.error("Error deleting support ticket:", e);
+    }
   }
 
   // ─── Platform Administration & Moderation Actions ─────────────────
