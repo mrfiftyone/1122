@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { normalizeTeacherName } from "@/utils/normalization";
 import {
   calculateWilsonScore,
@@ -9,16 +9,6 @@ import {
   calculateStudentReputation,
   matchesArabicFuzzy,
 } from "@/utils/algorithms";
-import {
-  getBaghdadCycleInfo,
-  getHonorBadges,
-  saveHonorBadge,
-  removeHonorBadge,
-  hasUserHonorBadge,
-  buildHonorBoardSnapshot,
-  HonorBadgeRecord,
-  BaghdadCycleInfo,
-} from "@/utils/honorBoard";
 import { containsProfanity, getBlockedWordsList } from "@/utils/moderation";
 import { getRelativeTime, isWithinEditWindow } from "@/utils/time";
 import {
@@ -158,7 +148,7 @@ interface NotificationItem {
   id: string;
   recipient: string; // username of recipient
   actor: string; // who triggered notification
-  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected" | "report_alert" | "admin_warning" | "support_reply" | "promotion" | "badge";
+  type: "comment" | "reply" | "like" | "teacher_approved" | "teacher_rejected" | "report_alert" | "admin_warning" | "support_reply" | "promotion";
   postId: string;
   targetTitle: string;
   commentText?: string;
@@ -998,8 +988,6 @@ export default function Home() {
   // Extra modals / views
   const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
   const [showHonorBoard, setShowHonorBoard] = useState(false);
-  const [honorBadges, setHonorBadgesMap] = useState<Record<string, HonorBadgeRecord>>({});
-  const [cycleInfo, setCycleInfo] = useState<BaghdadCycleInfo>(() => getBaghdadCycleInfo());
 
   // Settings, Theme & Language
   const [settingsModal, setSettingsModal] = useState(false);
@@ -1044,8 +1032,6 @@ export default function Home() {
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileServerVerified, setTurnstileServerVerified] = useState(false);
-  const [isVerifyingTurnstile, setIsVerifyingTurnstile] = useState(false);
-  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
@@ -1053,14 +1039,11 @@ export default function Home() {
   const resetTurnstile = useCallback(() => {
     setTurnstileToken(null);
     setTurnstileServerVerified(false);
-    setIsVerifyingTurnstile(false);
     setTurnstileResetKey(prev => prev + 1);
   }, []);
 
   const handleTurnstileVerify = useCallback(async (token: string) => {
     setTurnstileToken(token);
-    setIsVerifyingTurnstile(true);
-    setAuthError("");
     try {
       const res = await fetch("/api/verify-turnstile", {
         method: "POST",
@@ -1074,16 +1057,16 @@ export default function Home() {
       } else {
         console.warn("Turnstile server verification failed:", data);
         setTurnstileServerVerified(false);
-        setAuthError(siteLang === "en" ? "Security verification failed. Please retry." : "فشل التحقق الأمني. يرجى إعادة المحاولة.");
+        setAuthError(siteLang === "en" ? "Security verification failed. Please try again." : "فشل التحقق الأمني. يرجى إعادة المحاولة.");
+        resetTurnstile();
       }
     } catch (e) {
       console.warn("Turnstile verify error:", e);
       setTurnstileServerVerified(false);
       setAuthError(siteLang === "en" ? "Unable to reach security service. Check connection." : "تعذر الاتصال بخدمة الأمان. يرجى التحقق من اتصالك.");
-    } finally {
-      setIsVerifyingTurnstile(false);
+      resetTurnstile();
     }
-  }, [siteLang]);
+  }, [siteLang, resetTurnstile]);
 
   // Action Cooldown Guard (protects from rapid spamming across posts, reviews, comments)
   const checkActionCooldown = useCallback((actionType: "post" | "comment" | "review" | "report" | "teacher", cooldownMs: number): { allowed: boolean; remainingSec: number } => {
@@ -1149,16 +1132,12 @@ export default function Home() {
   }, [showToast]);
 
   const handleTurnstileExpire = useCallback(() => {
-    setTurnstileToken(null);
-    setTurnstileServerVerified(false);
-    setIsVerifyingTurnstile(false);
-  }, []);
+    resetTurnstile();
+  }, [resetTurnstile]);
 
   const handleTurnstileError = useCallback(() => {
-    setTurnstileToken(null);
-    setTurnstileServerVerified(false);
-    setIsVerifyingTurnstile(false);
-  }, []);
+    resetTurnstile();
+  }, [resetTurnstile]);
 
   const canOwner = !!(session && (session.role === "owner" || (session.username || "").trim().toLowerCase() === "hh"));
   const canAdmin = !!(session && (session.role === "owner" || session.role === "mod" || (session.username || "").trim().toLowerCase() === "hh"));
@@ -1516,12 +1495,6 @@ export default function Home() {
     setSiteTheme(savedTheme);
     setSiteLang(savedLang);
 
-    setHonorBadgesMap(getHonorBadges());
-    setCycleInfo(getBaghdadCycleInfo());
-    const cycleTimer = setInterval(() => {
-      setCycleInfo(getBaghdadCycleInfo());
-    }, 60000);
-
     // Fetch live data immediately
     fetchSupabaseData();
     if (currUser) fetchVotesFromSupabase(currUser.username);
@@ -1582,7 +1555,6 @@ export default function Home() {
     return () => {
       clearInterval(expireCheckInterval);
       clearInterval(livePollInterval);
-      clearInterval(cycleTimer);
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
       window.removeEventListener("popstate", handlePopState);
@@ -1647,10 +1619,8 @@ export default function Home() {
   // ─── Auth ─────────────────────────────────────────────────────────
   async function handleAuth() {
     setAuthError("");
-    setIsSubmittingAuth(true);
 
-    try {
-      if (!isRegister && lockoutRemaining > 0) {
+    if (!isRegister && lockoutRemaining > 0) {
       setAuthError(
         siteLang === "en"
           ? `Login temporarily locked. Please wait ${lockoutRemaining}s.`
@@ -1799,9 +1769,6 @@ export default function Home() {
       setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
     }
     rerender();
-    } finally {
-      setIsSubmittingAuth(false);
-    }
   }
 
   function logout() {
@@ -3549,96 +3516,6 @@ export default function Home() {
     rerender();
   }
 
-  // ─── Student Honor Badge Handlers (Owner & Board) ─────────────────
-  async function handleToggleOwnerHonorBadge(targetUsername: string, grant: boolean) {
-    if (!canOwner || !targetUsername) return;
-
-    if (grant) {
-      const record: HonorBadgeRecord = {
-        username: targetUsername,
-        awardedAt: new Date().toISOString(),
-        source: "owner",
-        awardedBy: session?.username || "owner",
-        monthKey: cycleInfo.monthKey,
-        note: siteLang === "en" ? "Officially awarded by platform owner" : "ممنوح رسمياً بقرار من مالك المنصة",
-      };
-      saveHonorBadge(record);
-      setHonorBadgesMap(prev => ({ ...prev, [targetUsername]: record }));
-
-      // Send in-app notification to the recipient student
-      const notifId = `notif_badge_${Date.now()}`;
-      const newNotif: NotificationItem = {
-        id: notifId,
-        recipient: targetUsername,
-        actor: session?.username || "Owner",
-        type: "badge",
-        postId: targetUsername,
-        targetTitle: siteLang === "en" ? "Student Honor Badge" : "وسام لوحة الشرف",
-        created_at: new Date().toISOString(),
-        read: false,
-        commentText: siteLang === "en"
-          ? "You have been awarded the Student Honor Badge by the platform owner!"
-          : "تم منحك وسام لوحة الشرف للطلاب بقرار من مالك المنصة تقديراً لمشاركاتك وتفاعلك المميز!",
-      };
-      const currentNotifs = getNotifications();
-      currentNotifs.unshift(newNotif);
-      setNotifications(currentNotifs);
-      setAllNotifications(currentNotifs);
-
-      try {
-        await supabase.from('notifications').insert([{
-          id: notifId,
-          recipient: targetUsername,
-          actor: session?.username || "Owner",
-          type: "badge",
-          target_id: targetUsername,
-          target_title: siteLang === "en" ? "Student Honor Badge" : "وسام لوحة الشرف",
-          created_at: new Date().toISOString(),
-          read: false,
-          comment_text: newNotif.commentText,
-        }]);
-      } catch (err) {
-        console.warn("Could not insert badge notification to Supabase:", err);
-      }
-
-      addAuditLog("منح وسام الشرف", targetUsername, "وسام لوحة الشرف الطلابي");
-      showToast(
-        siteLang === "en"
-          ? `Student Honor Badge awarded to @${targetUsername}.`
-          : `تم منح وسام الشرف للطالب @${targetUsername} بنجاح.`,
-        "success"
-      );
-    } else {
-      removeHonorBadge(targetUsername);
-      setHonorBadgesMap(prev => {
-        const next = { ...prev };
-        delete next[targetUsername];
-        return next;
-      });
-      addAuditLog("سحب وسام الشرف", targetUsername, "سحب وسام لوحة الشرف");
-      showToast(
-        siteLang === "en"
-          ? `Honor Badge removed from @${targetUsername}.`
-          : `تم سحب وسام الشرف من الطالب @${targetUsername}.`,
-        "info"
-      );
-    }
-    rerender();
-  }
-
-  function handleManualRefreshSnapshot() {
-    const refreshedCycle = getBaghdadCycleInfo();
-    setCycleInfo(refreshedCycle);
-    setHonorBadgesMap(getHonorBadges());
-    showToast(
-      siteLang === "en"
-        ? "Honor Board snapshot refreshed."
-        : "تم تحديث لقطة لوحة الشرف بنجاح.",
-      "success"
-    );
-    rerender();
-  }
-
   function handleSaveAnnouncement(
     text: string,
     type: "ministerial" | "warning" | "info",
@@ -4028,23 +3905,51 @@ export default function Home() {
     .slice(0, 5);
 
   // Top students ranked by multi-factor reputation (posts, reviews, comments, and approval)
-  // Evaluated for the active monthly cycle and frozen to the 24-hour 4:00 PM Baghdad snapshot.
-  const allStudentUsernames = useMemo(() => Array.from(
+  const allStudentUsernames = Array.from(
     new Set([
       ...Object.keys(profiles),
       ...posts.map(p => p.author).filter(Boolean),
       ...getUsers().map((u: User) => u.username).filter(Boolean),
     ])
-  ), [profiles, posts]);
+  );
+  const topHonorStudents = allStudentUsernames.map(username => {
+    const userPosts = posts.filter(p => p.author === username);
+    const userLikes = userPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
+    const userDislikes = userPosts.reduce((sum, p) => sum + (p.dislikes || 0), 0);
+    const userReviews = userPosts.filter(p => p.grade_level?.includes("تقييم أستاذ") || p.teacher_id || p.teacherId).length;
+    
+    let userCommentLikes = 0;
+    for (const post of posts) {
+      if (Array.isArray(post.comments)) {
+        for (const c of post.comments) {
+          if (c.author === username) {
+            userCommentLikes += (c.likes || 0);
+          }
+        }
+      }
+    }
 
-  const { students: topHonorStudents, top10: top10HonorStudents } = useMemo(() => {
-    return buildHonorBoardSnapshot({
-      posts,
-      profiles,
-      usernames: allStudentUsernames,
-      cycleInfo,
+    const { reputationScore, approvalRate } = calculateStudentReputation({
+      likes: userLikes,
+      dislikes: userDislikes,
+      postsCount: userPosts.length,
+      reviewsCount: userReviews,
+      commentsLikes: userCommentLikes,
     });
-  }, [posts, profiles, allStudentUsernames, cycleInfo]);
+
+    return {
+      username,
+      profile: profiles[username] || { avatarColor: "#0d9488", bio: "" },
+      totalLikes: userLikes,
+      totalDislikes: userDislikes,
+      reviewsCount: userReviews,
+      postsCount: userPosts.length,
+      approvalRate,
+      reputationScore,
+    };
+  })
+  .filter(s => s.postsCount > 0 || s.totalLikes > 0 || s.reputationScore > 0)
+  .sort((a, b) => b.reputationScore - a.reputationScore || b.totalLikes - a.totalLikes);
 
   // Teacher Badges & Milestones Helper
   function getTeacherBadges(t: Teacher): { label: string; cls: string; type: "favorite" | "top_subject" | "active" }[] {
@@ -4182,15 +4087,6 @@ export default function Home() {
             >
               <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
               <span className="font-bold text-teal-800">{c.author}</span>
-              {hasUserHonorBadge(c.author, honorBadges) && (
-                <span
-                  title={siteLang === "en" ? "Top Contributor • Student Honor Badge" : "طالب متميز • وسام لوحة الشرف"}
-                  className="inline-flex items-center gap-0.5 px-1 py-0.2 bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000] text-[8px] font-black"
-                >
-                  <IconAward size={9} />
-                  <span>{siteLang === "en" ? "Honor" : "وسام"}</span>
-                </span>
-              )}
               {parentComment && (
                 <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-0.5">
                   <IconReply size={10} className="inline opacity-70" />
@@ -4661,7 +4557,7 @@ export default function Home() {
 
             {/* 2. Student Honor Board (لوحة شرف الطلاب) */}
             <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-4 space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 bg-amber-400 border border-slate-900 text-slate-900 flex items-center justify-center font-bold shadow-[1px_1px_0px_#000]">
                     <IconAward size={16} />
@@ -4679,36 +4575,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Baghdad 24h Update & Monthly Season Status Bar */}
-              <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-100">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 border border-slate-900 text-[10px] font-bold text-slate-800 shadow-[1px_1px_0px_#000]">
-                  <IconClock size={11} className="text-slate-700" />
-                  <span>
-                    {siteLang === "en"
-                      ? `24h Snapshot (4:00 PM Baghdad) • Next update in ${cycleInfo.hoursUntilNextUpdate}h ${cycleInfo.minutesUntilNextUpdate}m`
-                      : `تحديث كل 24 ساعة (4:00 م بتوقيت بغداد) • التحديث القادم بعد ${cycleInfo.hoursUntilNextUpdate} س و ${cycleInfo.minutesUntilNextUpdate} د`}
-                  </span>
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 border border-amber-600 text-[10px] font-bold text-amber-900 shadow-[1px_1px_0px_#000]">
-                  <IconAward size={11} className="text-amber-700" />
-                  <span>
-                    {siteLang === "en"
-                      ? `Monthly Season: ${cycleInfo.monthNameEn} • Top 10 Earn Honor Badge`
-                      : `دورة شهر: ${cycleInfo.monthNameAr} • أفضل 10 طلاب يحصلون على وسام الشرف`}
-                  </span>
-                </span>
-                {canOwner && (
-                  <button
-                    onClick={handleManualRefreshSnapshot}
-                    title={siteLang === "en" ? "Recalculate 24h snapshot" : "إعادة حساب لقطة الـ 24 ساعة"}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-900 text-[10px] font-bold text-slate-900 shadow-[1px_1px_0px_#000] transition-all ms-auto"
-                  >
-                    <IconRotateCcw size={10} />
-                    <span>{siteLang === "en" ? "Recalculate" : "إعادة الحساب"}</span>
-                  </button>
-                )}
-              </div>
-
               {showHonorBoard && (
                 <div className="pt-2.5 border-t border-slate-200">
                   {topHonorStudents.length === 0 ? (
@@ -4719,15 +4585,12 @@ export default function Home() {
                         <div
                           key={s.username}
                           onClick={() => { setViewedUser(s.username); setTab("profile"); }}
-                          className={`p-2 border border-slate-900 shadow-[1px_1px_0px_#000] cursor-pointer transition-all flex items-center gap-2 ${
-                            idx < 10 ? "bg-amber-50/80 hover:bg-amber-100/80" : "bg-slate-50 hover:bg-slate-100"
-                          }`}
+                          className="p-2 border border-slate-900 bg-slate-50 hover:bg-amber-50/70 shadow-[1px_1px_0px_#000] cursor-pointer transition-all flex items-center gap-2"
                         >
                           <div className={`font-black text-[10px] px-1.5 py-0.5 border border-slate-900 shrink-0 ${
                             idx === 0 ? "bg-amber-300 text-slate-950 font-black shadow-[1px_1px_0px_#000]" : 
                             idx === 1 ? "bg-slate-300 text-slate-900 font-black shadow-[1px_1px_0px_#000]" : 
                             idx === 2 ? "bg-amber-700 text-white font-black shadow-[1px_1px_0px_#000]" : 
-                            idx < 10 ? "bg-amber-200 text-amber-950 font-black" :
                             "bg-white text-slate-700"
                           }`}>
                             #{idx + 1}
@@ -4736,20 +4599,10 @@ export default function Home() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">
                               <span className="font-black text-xs text-slate-900 truncate">{s.username}</span>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {idx < 10 && (
-                                  <span
-                                    title={siteLang === "en" ? "Top 10 Honor Badge Winner" : "فائز بوسام الشرف لأفضل 10 طلاب"}
-                                    className="p-0.5 bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000]"
-                                  >
-                                    <IconAward size={10} />
-                                  </span>
-                                )}
-                                <span className="text-[10px] font-black px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-500 rounded flex items-center gap-0.5">
-                                  <IconStar size={9} fill="currentColor" className="text-amber-600" />
-                                  {s.approvalRate}%
-                                </span>
-                              </div>
+                              <span className="text-[10px] font-black px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-500 rounded flex items-center gap-0.5 shrink-0">
+                                <IconStar size={9} fill="currentColor" className="text-amber-600" />
+                                {s.approvalRate}%
+                              </span>
                             </div>
                             <div className="text-[9px] text-slate-500 font-bold flex items-center gap-1.5 mt-0.5">
                               <span className="text-emerald-700 flex items-center gap-0.5"><IconThumbUp size={9} /> {s.totalLikes}</span>
@@ -4973,15 +4826,6 @@ export default function Home() {
                             <button onClick={() => { setViewedUser(p.author); setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
                               <Avatar username={p.author} />
                               <span className="text-xs font-black text-slate-700">{p.author}</span>
-                              {hasUserHonorBadge(p.author, honorBadges) && (
-                                <span
-                                  title={siteLang === "en" ? "Top Contributor • Student Honor Badge" : "طالب متميز • وسام لوحة الشرف"}
-                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000] text-[9px] font-black"
-                                >
-                                  <IconAward size={10} className="text-slate-950" />
-                                  <span>{siteLang === "en" ? "Honor" : "وسام الشرف"}</span>
-                                </span>
-                              )}
                             </button>
 
                             {/* Post Tag Badge */}
@@ -5721,15 +5565,6 @@ export default function Home() {
                                 >
                                   <Avatar username={postItem.author} />
                                   <span className="text-xs font-black text-slate-800">{postItem.author}</span>
-                                  {hasUserHonorBadge(postItem.author, honorBadges) && (
-                                    <span
-                                      title={siteLang === "en" ? "Top Contributor • Student Honor Badge" : "طالب متميز • وسام لوحة الشرف"}
-                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000] text-[9px] font-black"
-                                    >
-                                      <IconAward size={10} className="text-slate-950" />
-                                      <span>{siteLang === "en" ? "Honor" : "وسام الشرف"}</span>
-                                    </span>
-                                  )}
                                   {isReview ? (
                                     isDislikeReview ? (
                                       <span className="px-2 py-0.5 bg-red-100 border border-red-500 text-[10px] font-black text-red-900 flex items-center gap-1">
@@ -6172,19 +6007,10 @@ export default function Home() {
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
                           <h3 className="text-xl font-black text-slate-900">{targetProfileUser}</h3>
                           {getUsers().find(u => u.username === targetProfileUser) && (
                             <RoleIcon role={getUsers().find(u => u.username === targetProfileUser)?.role || "student"} />
-                          )}
-                          {hasUserHonorBadge(targetProfileUser, honorBadges) && (
-                            <span
-                              title={siteLang === "en" ? "Top Contributor • Student Honor Badge" : "طالب متميز • وسام لوحة الشرف"}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-300 text-slate-950 border border-slate-900 shadow-[1px_1px_0px_#000] text-[10px] font-black"
-                            >
-                              <IconAward size={12} className="text-slate-950" />
-                              <span>{siteLang === "en" ? "Honor Student" : "وسام الشرف"}</span>
-                            </span>
                           )}
                         </div>
                         <p className="text-xs text-slate-600 font-medium mt-1 max-w-md">
@@ -6193,55 +6019,25 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
-                      {/* Owner Honor Badge Management Button */}
-                      {canOwner && targetProfileUser && (
-                        hasUserHonorBadge(targetProfileUser, honorBadges) ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-3 py-1.5 bg-amber-100 text-amber-900 border-2 border-amber-600 text-xs font-black flex items-center gap-1.5 shadow-[2px_2px_0px_#d97706]">
-                              <IconAward size={14} className="text-amber-700" />
-                              <span>{siteLang === "en" ? "Has Honor Badge" : "حاصل على وسام الشرف"}</span>
-                            </span>
-                            <button
-                              onClick={() => handleToggleOwnerHonorBadge(targetProfileUser, false)}
-                              className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs border-2 border-red-600 shadow-[2px_2px_0px_#dc2626] active:translate-x-px active:translate-y-px transition-all"
-                              title={siteLang === "en" ? "Revoke honor badge as owner" : "سحب وسام الشرف كمالك"}
-                            >
-                              {siteLang === "en" ? "Revoke Badge" : "سحب الوسام"}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleToggleOwnerHonorBadge(targetProfileUser, true)}
-                            className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all flex items-center gap-1.5"
-                            title={siteLang === "en" ? "Award Student Honor Badge as owner" : "منح وسام الشرف الطلابي كمالك"}
-                          >
-                            <IconAward size={15} />
-                            <span>{siteLang === "en" ? "Award Honor Badge" : "منح وسام الشرف"}</span>
-                          </button>
-                        )
-                      )}
+                    {isOwnProfile && (
+                      <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={openProfileEditor}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
+                        >
+                          <IconPalette size={14} /> {t("editProfile")}
+                        </button>
 
-                      {isOwnProfile && (
-                        <>
-                          <button
-                            onClick={openProfileEditor}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
-                          >
-                            <IconPalette size={14} /> {t("editProfile")}
-                          </button>
-
-                          {/* History Button (Only for user or owner) */}
-                          <button
-                            onClick={() => setHistoryModal(true)}
-                            className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-xs border-2 border-amber-600 shadow-[2px_2px_0px_#d97706] flex items-center gap-1.5"
-                            title={t("interactionHistory")}
-                          >
-                            <IconHistory size={14} /> {t("interactionHistory")}
-                          </button>
-                        </>
-                      )}
-                    </div>
+                        {/* History Button (Only for user or owner) */}
+                        <button
+                          onClick={() => setHistoryModal(true)}
+                          className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 font-black text-xs border-2 border-amber-600 shadow-[2px_2px_0px_#d97706] flex items-center gap-1.5"
+                          title={t("interactionHistory")}
+                        >
+                          <IconHistory size={14} /> {t("interactionHistory")}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Stats Grid (No emojis, SVG icons only) */}
@@ -6271,42 +6067,6 @@ export default function Home() {
                       <div className="text-[10px] font-bold text-red-600">{t("dislikesReceived")}</div>
                     </div>
                   </div>
-
-                  {/* Honor Badge Showcase Banner */}
-                  {hasUserHonorBadge(targetProfileUser, honorBadges) && (() => {
-                    const badgeInfo = honorBadges[targetProfileUser];
-                    return (
-                      <div className="bg-gradient-to-r from-amber-50 via-amber-100/70 to-yellow-50 border-2 border-amber-500 shadow-[3px_3px_0px_#d97706] p-4 flex items-center justify-between gap-3 mt-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-amber-400 border-2 border-slate-900 flex items-center justify-center text-slate-950 shrink-0 shadow-[1px_1px_0px_#000]">
-                            <IconAward size={22} />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-black text-sm text-slate-900">
-                                {siteLang === "en" ? "Student Honor Badge" : "وسام لوحة الشرف للطلاب"}
-                              </h4>
-                              <span className="px-2 py-0.5 bg-amber-300 border border-slate-900 text-[10px] font-black text-slate-950 shadow-[1px_1px_0px_#000]">
-                                {badgeInfo?.source === "owner"
-                                  ? (siteLang === "en" ? "Awarded by Platform Owner" : "ممنوح رسمياً من مالك المنصة")
-                                  : (siteLang === "en" ? `Top 10 Contributor (${badgeInfo?.monthKey || cycleInfo.monthKey})` : `ضمن أفضل 10 طلاب (${badgeInfo?.monthKey || cycleInfo.monthKey})`)}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-600 font-semibold mt-0.5">
-                              {siteLang === "en"
-                                ? "Honored for sharing verified reviews and helpful guidance in the student community."
-                                : "تكريم رسمي لنشر المراجعات الموثوقة والإجابات النموذجية ومساعدة الزملاء."}
-                            </p>
-                          </div>
-                        </div>
-                        {badgeInfo?.awardedAt && (
-                          <span className="text-[10px] font-bold text-slate-500 shrink-0 hidden sm:inline-block">
-                            {new Date(badgeInfo.awardedAt).toLocaleDateString(siteLang === "en" ? "en-US" : "ar-IQ")}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Profile Sub-Tabs: Activity vs Bookmarks (المحفوظات) */}
@@ -8255,7 +8015,6 @@ export default function Home() {
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-slate-800 flex items-center gap-1">
-                    <IconShield size={13} className="text-emerald-700" />
                     <span>{siteLang === "en" ? "Security Verification:" : "التحقق الأمني:"}</span>
                   </label>
                   {turnstileServerVerified ? (
@@ -8272,22 +8031,16 @@ export default function Home() {
                         {siteLang === "en" ? "Retry" : "إعادة التحقق"}
                       </button>
                     </div>
-                  ) : isVerifyingTurnstile ? (
-                    <span className="text-[10px] text-amber-700 font-bold flex items-center gap-1.5 animate-pulse">
-                      <span className="w-2.5 h-2.5 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" />
-                      <span>{siteLang === "en" ? "Verifying..." : "جاري الفحص..."}</span>
-                    </span>
                   ) : turnstileToken ? (
-                    <span className="text-[10px] text-amber-700 font-bold flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" />
-                      <span>{siteLang === "en" ? "Verifying..." : "جاري الفحص..."}</span>
+                    <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
+                      <IconCheck size={12} className="text-emerald-700" /> {siteLang === "en" ? "Verified" : "تم التحقق"}
                     </span>
                   ) : (
                     <span className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "Required" : "مطلوب"}</span>
                   )}
                 </div>
                 <Turnstile
-                  siteLang={siteLang}
+                  key={`turnstile_${turnstileResetKey}`}
                   resetKey={turnstileResetKey}
                   onVerify={handleTurnstileVerify}
                   onExpire={handleTurnstileExpire}
@@ -8297,20 +8050,10 @@ export default function Home() {
 
               <button
                 onClick={handleAuth}
-                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileServerVerified || isSubmittingAuth || isVerifyingTurnstile}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken}
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed"
               >
-                {isSubmittingAuth ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>{isRegister ? (siteLang === "en" ? "Creating Account..." : "جاري إنشاء الحساب...") : (siteLang === "en" ? "Logging In..." : "جاري تسجيل الدخول...")}</span>
-                  </span>
-                ) : isVerifyingTurnstile ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>{siteLang === "en" ? "Verifying Security..." : "جاري فحص الأمان..."}</span>
-                  </span>
-                ) : !isRegister && lockoutRemaining > 0 ? (
+                {!isRegister && lockoutRemaining > 0 ? (
                   <span>{siteLang === "en" ? `Locked - ${lockoutRemaining}s remaining` : `مقفل مؤقتاً - باقي ${lockoutRemaining} ثانية`}</span>
                 ) : (
                   <span className="flex items-center justify-center gap-1.5">
