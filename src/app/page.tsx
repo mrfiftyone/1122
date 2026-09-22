@@ -8648,12 +8648,12 @@ export default function Home() {
                       }}
                       className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
                         siteTheme === "dark"
-                          ? "border-slate-900 bg-slate-900 text-white shadow-[3px_3px_0px_#000]"
+                          ? "border-slate-500 bg-slate-800 text-white shadow-[3px_3px_0px_#020617]"
                           : "border-slate-300 bg-white hover:border-slate-800"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 border-2 border-white bg-slate-800 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                        <div className="w-10 h-10 border-2 border-slate-500 bg-slate-900 text-teal-400 flex items-center justify-center font-bold shadow-[2px_2px_0px_#020617]">
                           <IconMoon size={20} />
                         </div>
                         <div>
@@ -8666,7 +8666,7 @@ export default function Home() {
                         </div>
                       </div>
                       {siteTheme === "dark" && (
-                        <div className="w-6 h-6 bg-white text-slate-900 flex items-center justify-center border border-white">
+                        <div className="w-6 h-6 bg-teal-500 text-slate-950 flex items-center justify-center border border-teal-400 font-bold">
                           <IconCheck size={14} />
                         </div>
                       )}
@@ -8680,22 +8680,22 @@ export default function Home() {
                       }}
                       className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
                         siteTheme === "pink"
-                          ? "border-pink-900 bg-pink-50 shadow-[3px_3px_0px_#db2777]"
+                          ? "border-pink-900 bg-pink-100 shadow-[3px_3px_0px_#831843]"
                           : "border-slate-300 bg-white hover:border-pink-500"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 border-2 border-slate-900 bg-pink-500 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                        <div className="w-10 h-10 border-2 border-pink-900 bg-pink-500 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#831843]">
                           <IconPalette size={20} />
                         </div>
                         <div>
-                          <div className="font-black text-xs sm:text-sm text-pink-900 flex items-center gap-2">
+                          <div className="font-black text-xs sm:text-sm text-pink-950 flex items-center gap-2">
                             <span>{t("themePink")}</span>
                             <span className="text-[9px] font-bold px-1.5 py-0.2 bg-pink-200 text-pink-900 border border-pink-400">
-                              Cute Pink
+                              Vibrant Pink
                             </span>
                           </div>
-                          <p className="text-[11px] text-pink-700 font-semibold">{t("themePinkDesc")}</p>
+                          <p className="text-[11px] text-pink-800 font-semibold">{t("themePinkDesc")}</p>
                         </div>
                       </div>
                       {siteTheme === "pink" && (
@@ -8713,22 +8713,22 @@ export default function Home() {
                       }}
                       className={`p-3.5 border-2 cursor-pointer transition-all flex items-center justify-between ${
                         siteTheme === "plants"
-                          ? "border-emerald-950 bg-emerald-50 shadow-[3px_3px_0px_#15803d]"
+                          ? "border-emerald-950 bg-emerald-100 shadow-[3px_3px_0px_#14532d]"
                           : "border-slate-300 bg-white hover:border-emerald-700"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 border-2 border-slate-900 bg-emerald-700 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#000]">
+                        <div className="w-10 h-10 border-2 border-emerald-950 bg-emerald-700 text-white flex items-center justify-center font-bold shadow-[2px_2px_0px_#14532d]">
                           <IconBook size={20} />
                         </div>
                         <div>
                           <div className="font-black text-xs sm:text-sm text-emerald-950 flex items-center gap-2">
                             <span>{t("themePlants")}</span>
                             <span className="text-[9px] font-bold px-1.5 py-0.2 bg-emerald-200 text-emerald-900 border border-emerald-600">
-                              Green Botany
+                              Lush Green
                             </span>
                           </div>
-                          <p className="text-[11px] text-emerald-800 font-semibold">{t("themePlantsDesc")}</p>
+                          <p className="text-[11px] text-emerald-900 font-semibold">{t("themePlantsDesc")}</p>
                         </div>
                       </div>
                       {siteTheme === "plants" && (
