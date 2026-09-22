@@ -27,6 +27,7 @@ import { Language, getT } from "@/utils/i18n";
 
 import Link from "next/link";
 import Turnstile from "@/components/Turnstile";
+import PostImageCarousel from "@/components/PostImageCarousel";
 import { supabase } from "@/utils/supabase";
 import {
   hashPassword, verifyPassword, generateSalt,
@@ -879,6 +880,7 @@ export default function Home() {
   const [postTeacher, setPostTeacher] = useState("");
   const [postTeacherSearch, setPostTeacherSearch] = useState("");
   const [postImages, setPostImages] = useState<string[]>([]);
+  const [isCompressingImages, setIsCompressingImages] = useState(false);
   const [postYoutube, setPostYoutube] = useState("");
   const [postTelegram, setPostTelegram] = useState("");
   const [postTag, setPostTag] = useState<PostTag>("discussion");
@@ -2015,18 +2017,27 @@ export default function Home() {
 
   async function handlePostImagesUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) return;
     if (postImages.length + files.length > 4) {
-      alert(siteLang === "en" ? "You can only upload up to 4 images." : "يمكنك رفع 4 صور كحد أقصى.");
+      showToast(siteLang === "en" ? "You can only upload up to 4 images." : "يمكنك رفع 4 صور كحد أقصى.", "warning");
+      e.target.value = "";
       return;
     }
     const fileList = Array.from(files);
-    
-    for (const file of fileList) {
-      const compressed = await compressImage(file, 800, 800, 0.7);
-      if (compressed) {
-        setPostImages(prev => [...prev, compressed]);
+    setIsCompressingImages(true);
+    try {
+      for (const file of fileList) {
+        const compressed = await compressImage(file, 900, 900, 0.72);
+        if (compressed) {
+          setPostImages(prev => [...prev, compressed]);
+        }
       }
+    } catch (err) {
+      console.error("Image compression error:", err);
+      showToast(siteLang === "en" ? "Failed to process some images." : "فشل في معالجة بعض الصور.", "error");
+    } finally {
+      setIsCompressingImages(false);
+      e.target.value = "";
     }
   }
 
@@ -2613,7 +2624,15 @@ export default function Home() {
           const ctx = canvas.getContext("2d");
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL("image/jpeg", quality));
+            try {
+              let dataUrl = canvas.toDataURL("image/webp", quality);
+              if (!dataUrl.startsWith("data:image/webp")) {
+                dataUrl = canvas.toDataURL("image/jpeg", quality);
+              }
+              resolve(dataUrl);
+            } catch {
+              resolve(canvas.toDataURL("image/jpeg", quality));
+            }
           } else {
             resolve(e.target?.result as string || "");
           }
@@ -4867,26 +4886,14 @@ export default function Home() {
                           <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{p.body}</p>
                         </div>
 
-                        {/* Multi-Image Gallery */}
+                        {/* Multi-Image Gallery / Swipe Carousel */}
                         {p.images && p.images.length > 0 && (
-                          <div className="pt-2">
-                            <div className={`grid gap-2 ${
-                              p.images.length === 1 ? "grid-cols-1" : p.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
-                            }`}>
-                              {p.images.map((img, i) => (
-                                <div
-                                  key={i}
-                                  onClick={() => setPreviewImageModal(img)}
-                                  className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
-                                >
-                                  <img src={img} alt={`مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
-                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
-                                    عرض بالحجم الكامل
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                          <PostImageCarousel
+                            images={p.images}
+                            altTitle={p.title}
+                            onPreviewImage={setPreviewImageModal}
+                            siteLang={siteLang}
+                          />
                         )}
 
                         {/* External Study Links (YouTube & Telegram) */}
@@ -5583,26 +5590,14 @@ export default function Home() {
                                 <p className="text-xs text-slate-700 mt-1 leading-relaxed whitespace-pre-wrap">{postItem.body}</p>
                               </div>
 
-                              {/* Multi-Image Gallery */}
+                              {/* Multi-Image Gallery / Swipe Carousel */}
                               {postItem.images && postItem.images.length > 0 && (
-                                <div className="pt-2">
-                                  <div className={`grid gap-2 ${
-                                    postItem.images.length === 1 ? "grid-cols-1" : postItem.images.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
-                                  }`}>
-                                    {postItem.images.map((img, i) => (
-                                      <div
-                                        key={i}
-                                        onClick={() => setPreviewImageModal(img)}
-                                        className="relative group cursor-pointer border-2 border-slate-900 overflow-hidden bg-slate-100 shadow-[2px_2px_0px_#000] hover:shadow-[3px_3px_0px_#000] transition-all max-h-56"
-                                      >
-                                        <img src={img} alt={siteLang === "en" ? `Attachment ${i + 1}` : `مرفق ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
-                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-black transition-opacity">
-                                          {siteLang === "en" ? "View Full Size" : "عرض بالحجم الكامل"}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
+                                <PostImageCarousel
+                                  images={postItem.images}
+                                  altTitle={postItem.title}
+                                  onPreviewImage={setPreviewImageModal}
+                                  siteLang={siteLang}
+                                />
                               )}
 
                               {/* External Study Links (YouTube & Telegram) */}
@@ -8218,11 +8213,22 @@ export default function Home() {
                   />
                   <label
                     htmlFor="post-images-input"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] cursor-pointer transition-all"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] cursor-pointer transition-all ${
+                      isCompressingImages ? "opacity-60 cursor-not-allowed pointer-events-none" : ""
+                    }`}
                   >
                     <IconImage size={14} className="text-emerald-primary" />
-                    <span>{siteLang === "en" ? "+ Add images from device" : "+ إضافة صور من جهازك"}</span>
+                    <span>
+                      {isCompressingImages
+                        ? (siteLang === "en" ? "Compressing images..." : "جاري ضغط الصور...")
+                        : (siteLang === "en" ? "+ Add images from device" : "+ إضافة صور من جهازك")}
+                    </span>
                   </label>
+                  <p className="text-[11px] text-slate-500">
+                    {siteLang === "en"
+                      ? "Images are automatically compressed. Multi-image posts support swipe slider."
+                      : "يتم ضغط الصور تلقائياً. المنشورات متعددة الصور تدعم التمرير بالسحب."}
+                  </p>
 
                   {postImages.length > 0 && (
                     <div className="flex flex-wrap gap-2 justify-center pt-2">

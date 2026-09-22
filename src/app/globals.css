@@ -502,7 +502,7 @@ html:has([data-theme="purple"]) body,
   box-shadow: 3px 3px 0px #c4b5fd !important;
 }
 
-/* Tactile Active Reset Across All Themes */
+
 [data-theme] .active\:shadow-none:active {
   box-shadow: none !important;
 }
