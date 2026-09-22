@@ -18,7 +18,7 @@ export function proxy(request: NextRequest) {
     let windowMs = 60000;
 
     if (pathname === "/api/verify-turnstile") {
-      maxRequests = 15; // Max 15 verifications per minute per IP
+      maxRequests = 30; // Max 30 verifications per minute per IP
       windowMs = 60000;
     } else if (pathname === "/api/admin-verify") {
       maxRequests = 30; // Max 30 admin checks per minute per IP
