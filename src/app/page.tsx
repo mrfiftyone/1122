@@ -4127,7 +4127,7 @@ export default function Home() {
     }`;
 
   // Helper: Get user role (consistently resolved across Supabase, sessions, and local cache)
-  const getUserRole = useCallback((username?: string | null): "student" | "mod" | "owner" => {
+  function getUserRole(username?: string | null): "student" | "mod" | "owner" {
     if (!username) return "student";
     const uTrim = username.trim();
     const uLower = uTrim.toLowerCase();
@@ -4147,7 +4147,7 @@ export default function Home() {
     if (localUser?.role === "owner" || localUser?.role === "mod") return localUser.role;
 
     return "student";
-  }, [profiles, session]);
+  }
 
   // Helper: role icon (Owner crown, Moderator shield)
   const RoleIcon = ({ role, username, showStudent = false }: { role?: string; username?: string; showStudent?: boolean }) => {
