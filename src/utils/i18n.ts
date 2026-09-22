@@ -129,6 +129,7 @@ export const T_DICT: TranslationDict = {
   settingsSub: { ar: "تخصيص المظهر اللوني، اللغة، والوصول إلى الدعم والأسئلة الشائعة", en: "Customize theme, language, support, and FAQ" },
   tabTheme: { ar: "المظهر والثيم", en: "Theme & Colors" },
   tabLang: { ar: "اللغة", en: "Language" },
+  tabAbout: { ar: "عن المنصة", en: "About Us" },
   tabFaq: { ar: "الأسئلة الشائعة", en: "FAQ" },
   tabSupport: { ar: "الدعم والمساعدة", en: "Support" },
 

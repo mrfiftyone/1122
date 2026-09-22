@@ -20,7 +20,8 @@ import {
   IconSettings, IconPalette, IconGlobe, IconHelpCircle, IconLifeBuoy,
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
-  IconKey, IconClock, IconStar, IconReply, IconReplies,
+  IconKey, IconClock, IconStar, IconReply, IconReplies, IconInfo,
+  IconUsers, IconRotateCcw,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -388,6 +389,214 @@ function setBookmarks(u: string, b: BookmarkItem[]) {
   if (typeof window === "undefined" || !u) return;
   try { localStorage.setItem(`bookmarks_${u}`, JSON.stringify(b)); } catch {}
 }
+
+export interface FaqItem {
+  id: string;
+  q: { ar: string; en: string };
+  a: { ar: string; en: string };
+}
+
+export interface AboutPillar {
+  id: string;
+  titleAr: string;
+  titleEn: string;
+  descAr: string;
+  descEn: string;
+  icon: string;
+}
+
+export interface AboutButton {
+  id: string;
+  labelAr: string;
+  labelEn: string;
+  url: string;
+  variant: "primary" | "secondary" | "outline";
+}
+
+export interface AboutUsData {
+  headlineAr: string;
+  headlineEn: string;
+  subtitleAr: string;
+  subtitleEn: string;
+  missionTitleAr: string;
+  missionTitleEn: string;
+  missionDescAr: string;
+  missionDescEn: string;
+  pillars: AboutPillar[];
+  buttons: AboutButton[];
+}
+
+const DEFAULT_FAQS: FaqItem[] = [
+  {
+    id: "faq_1",
+    q: {
+      ar: "كيف يتم احتساب نسبة قبول المدرس وتقييماته؟",
+      en: "How are teacher approval percentages and ratings calculated?",
+    },
+    a: {
+      ar: "يتم احتساب نسبة القبول عبر معادلة ويلسون الإحصائية المعتمدة عالمياً لقياس مدى رضا الطلاب بدرجة موثوقية 95% واستبعاد العينات العشوائية الصغيرة، مما يمنع تصدر المدرسين ذوي التقييم الفردي الواحد.",
+      en: "Approval is calculated using the Wilson Score confidence interval at 95% certainty, preventing small single-vote sample distortions.",
+    },
+  },
+  {
+    id: "faq_2",
+    q: {
+      ar: "كيف أقوم باقتراح مدرس جديد لإضافته إلى المنصة؟",
+      en: "How do I propose a new teacher to be added?",
+    },
+    a: {
+      ar: "اضغط على زر (إضافة مدرس) في قسم المدرسين، ثم املأ اسم المدرس، محافظته، المادة الدراسية، المراحل، وطريقة تدريسه (حضوري أو إلكتروني أو كلاهما). ينتقل الطلب مباشرة إلى قائمة الانتظار للمراجعة من قبل الإدارة.",
+      en: "Click 'Add Teacher' in the directory tab, fill in the teacher's details, and submit. The request goes to the administration waiting list for verification.",
+    },
+  },
+  {
+    id: "faq_3",
+    q: {
+      ar: "ما هي شروط كتابة مراجعة وتقييم للمدرس؟",
+      en: "What are the rules for writing a review on a teacher?",
+    },
+    a: {
+      ar: "يشترط أولاً تسجيل الدخول واختيار (أنصح بيه أو ما أنصح بيه). يجب أن تكون المراجعة موضوعية ومحترمة وخالية من أي ألفاظ مسيئة أو تجريح شخصي وفق معايير مجتمع طلاب العراق.",
+      en: "You must be logged in and explicitly select your recommendation verdict. Reviews must remain respectful, objective, and constructive without personal insults.",
+    },
+  },
+  {
+    id: "faq_4",
+    q: {
+      ar: "كيف تعمل لوحة شرف الطلاب وما هي معايير الترتيب؟",
+      en: "How does the Student Honor Board work and how are ranks decided?",
+    },
+    a: {
+      ar: "تُكرّم لوحة الشرف الطلاب المتميزين اعتماداً على نقاط السمعة متعددة العوامل: الردود المفيدة، حل الأسئلة الصعبة، المراجعات الموثوقة، ونسبة القبول الإيجابية من بقية الزملاء.",
+      en: "The Honor Board recognizes top students using a multi-factor reputation score factoring in helpful answers, constructive reviews, and community approval.",
+    },
+  },
+  {
+    id: "faq_5",
+    q: {
+      ar: "كيف أتحكم في مظهر وثيم ولغة الموقع؟",
+      en: "How do I change the website theme and language?",
+    },
+    a: {
+      ar: "يمكنك في أي وقت الضغط على زر (الإعدادات) في الشريط العلوي للاختيار بين 5 ثيمات متنوعة ومميزة (الكلاسيكي، الوضع الليلي المريح، الطبيعة الخضراء، الوردي، والبنفسجي التقني)، بالإضافة للتبديل الفوري بين العربية والإنجليزية.",
+      en: "Click on the Settings button in the top navigation at any time to switch between 5 visual Neo-brutalist themes or toggle between Arabic and English with full directional layout support.",
+    },
+  },
+];
+
+const DEFAULT_ABOUT_US: AboutUsData = {
+  headlineAr: "منصة طلاب العراق • المنظومة الأكاديمية المستقلة الأولى",
+  headlineEn: "Iraq Students Platform • Independent Academic Community",
+  subtitleAr: "أكبر تجمع طلابي تفاعلي في العراق لتقييم المدرسين ومشاركة الملازم والحلول الوزارية النموذجية.",
+  subtitleEn: "The premier student-led academic network in Iraq for statistical teacher reviews, discussion, and ministerial exam prep.",
+  missionTitleAr: "رسالتنا ورؤيتنا للتعليم العراقي",
+  missionTitleEn: "Our Academic Mission & Vision",
+  missionDescAr: "منصة تعليمية طلابية غير ربحية صُممت لخدمة طلبة المراحل المنتهية (السادس إعدادي والثالث متوسط) في عموم العراق. هدفنا تمكين كل طالب من الوصول إلى تقييمات موثوقة ومحايدة للأساتذة، وساحة نقاش تفاعلية لحل الأسئلة المنهجية والوزارية، ومكتبة مفتوحة للملازم والمراجعات المركزة مجاناً.",
+  missionDescEn: "A non-profit student initiative designed to empower preparatory and secondary students across all governorates of Iraq. Our mission is to provide transparent, statistical teacher ratings, peer-to-peer discussion for complex questions, and open access to verified revision booklets and ministerial materials.",
+  pillars: [
+    {
+      id: "p1",
+      titleAr: "تقييمات علمية موثوقة",
+      titleEn: "Unbiased Statistical Ratings",
+      descAr: "فرز المدرسين وفق معادلة ويلسون الإحصائية المعتمدة عالمياً، مما يمنع التقييمات العشوائية والتضليل التجاري.",
+      descEn: "Teacher ratings calculated using the Wilson statistical confidence interval to eliminate artificial bias and commercial manipulation.",
+      icon: "star",
+    },
+    {
+      id: "p2",
+      titleAr: "مجتمع طلابي تكافلي",
+      titleEn: "Student-Led Community",
+      descAr: "مساحة نقاش مفتوحة لتبادل الحلول النموذجية، شرح المسائل الصعبة، وتكريم الطلاب الأكثر مساعدة لزملائهم.",
+      descEn: "An open space to exchange model answers, clarify complex topics, and honor students who actively help their peers.",
+      icon: "users",
+    },
+    {
+      id: "p3",
+      titleAr: "بيئة أكاديمية منضبطة",
+      titleEn: "Clean Academic Space",
+      descAr: "رقابة نشطة وفلاتر ذكية تمنع الألفاظ المسيئة والروابط العشوائية للحفاظ على تجربة دراسية محترمة ومركزة.",
+      descEn: "Strict academic moderation and automated language filters to keep study discussions productive and safe.",
+      icon: "shield",
+    },
+    {
+      id: "p4",
+      titleAr: "ملازم ومصادر مجانية",
+      titleEn: "Free Study Materials",
+      descAr: "تجميع وتنظيم الملازم الوزارية والمراجعات المركزة وقنوات الأساتذة الرسمية دون أي اشتراكات مدفوعة.",
+      descEn: "Direct access to curated ministerial revision booklets and verified teacher channels without fees or subscriptions.",
+      icon: "book",
+    },
+  ],
+  buttons: [
+    {
+      id: "b1",
+      labelAr: "قناة التلغرام الرسمية",
+      labelEn: "Official Telegram Channel",
+      url: "https://t.me",
+      variant: "primary",
+    },
+    {
+      id: "b2",
+      labelAr: "دليل الامتحانات الوزارية",
+      labelEn: "Ministerial Exam Guide",
+      url: "https://epedu.gov.iq",
+      variant: "secondary",
+    },
+  ],
+};
+
+function getStoredFaqs(): FaqItem[] {
+  if (typeof window === "undefined") return DEFAULT_FAQS;
+  try {
+    const saved = localStorage.getItem("iq_site_faqs_v2");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_FAQS;
+}
+
+function setStoredFaqs(faqs: FaqItem[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("iq_site_faqs_v2", JSON.stringify(faqs));
+  } catch {}
+}
+
+function getStoredAboutUs(): AboutUsData {
+  if (typeof window === "undefined") return DEFAULT_ABOUT_US;
+  try {
+    const saved = localStorage.getItem("iq_about_us_v1");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.headlineAr) return parsed;
+    }
+  } catch {}
+  return DEFAULT_ABOUT_US;
+}
+
+function setStoredAboutUs(data: AboutUsData) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("iq_about_us_v1", JSON.stringify(data));
+  } catch {}
+}
+
+function renderPillarIcon(iconName: string, size = 18) {
+  switch (iconName) {
+    case "users": return <IconUsers size={size} />;
+    case "shield": return <IconShield size={size} />;
+    case "book": return <IconBook size={size} />;
+    case "grad": return <IconGrad size={size} />;
+    case "flame": return <IconFlame size={size} />;
+    case "info": return <IconInfo size={size} />;
+    case "star":
+    default:
+      return <IconStar size={size} />;
+  }
+}
+
 function getSession(): User | null {
   if (typeof window === "undefined") return null;
   try { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -634,11 +843,25 @@ export default function Home() {
   const [showHonorBoard, setShowHonorBoard] = useState(false);
 
   // Settings, Theme & Language
+  const [settingsModal, setSettingsModal] = useState(false);
   const [siteTheme, setSiteTheme] = useState<"light" | "dark" | "pink" | "plants" | "purple">("light");
   const [siteLang, setSiteLang] = useState<Language>("ar");
-  const [settingsModal, setSettingsModal] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"theme" | "lang" | "faq" | "support">("theme");
+  const [settingsTab, setSettingsTab] = useState<"theme" | "lang" | "about" | "faq" | "support">("theme");
   const [faqExpanded, setFaqExpanded] = useState<number | null>(null);
+
+  // Dynamic FAQ and About Us Management
+  const [faqList, setFaqList] = useState<FaqItem[]>([]);
+  const [aboutUsData, setAboutUsData] = useState<AboutUsData>(DEFAULT_ABOUT_US);
+  const [isEditingAbout, setIsEditingAbout] = useState(false);
+  const [editAboutDraft, setEditAboutDraft] = useState<AboutUsData>(DEFAULT_ABOUT_US);
+
+  // FAQ Modal / Editing state for Owner
+  const [faqModalOpen, setFaqModalOpen] = useState(false);
+  const [editingFaqId, setEditingFaqId] = useState<string | null>(null);
+  const [faqDraftQAr, setFaqDraftQAr] = useState("");
+  const [faqDraftQEn, setFaqDraftQEn] = useState("");
+  const [faqDraftAAr, setFaqDraftAAr] = useState("");
+  const [faqDraftAEn, setFaqDraftAEn] = useState("");
 
   // Support Form State
   const [supportCategory, setSupportCategory] = useState<"bug" | "teacher" | "content" | "account" | "other">("bug");
@@ -797,7 +1020,26 @@ export default function Home() {
       ]);
 
       if (pRes.data) {
-        const formattedPosts: Post[] = pRes.data.map((p: any) => {
+        const configPost = pRes.data.find((p: any) => p.title === "SYSTEM_SITE_CONFIG");
+        if (configPost && configPost.body) {
+          try {
+            const parsedConfig = JSON.parse(configPost.body);
+            if (parsedConfig.about && parsedConfig.about.headlineAr) {
+              setAboutUsData(parsedConfig.about);
+              setStoredAboutUs(parsedConfig.about);
+            }
+            if (parsedConfig.faqs && Array.isArray(parsedConfig.faqs) && parsedConfig.faqs.length > 0) {
+              setFaqList(parsedConfig.faqs);
+              setStoredFaqs(parsedConfig.faqs);
+            }
+          } catch (e) {
+            console.error("Error parsing system site config:", e);
+          }
+        }
+
+        const formattedPosts: Post[] = pRes.data
+          .filter((p: any) => p.title !== "SYSTEM_SITE_CONFIG")
+          .map((p: any) => {
           let cleanBody = p.body || "";
           let meta: any = {};
           const metaMatch = cleanBody.match(/<!--meta:(.*?)-->/);
@@ -1017,6 +1259,8 @@ export default function Home() {
     setReportRecordsList(getReportRecords());
     setSupportTickets(getSupportTickets());
     setPinnedPostIds(getPinnedPostIds());
+    setFaqList(getStoredFaqs());
+    setAboutUsData(getStoredAboutUs());
 
     const pSettings = getPlatformSettings();
     setPlatformSettingsState(pSettings);
@@ -3062,58 +3306,170 @@ export default function Home() {
     addAuditLog("تصدير نسخة احتياطية", "قاعدة البيانات", "تحميل ملف JSON كامل للمنصة");
   }
 
-  const faqList = [
-    {
-      q: {
-        ar: "كيف يتم احتساب نسبة قبول المدرس وتقييماته؟",
-        en: "How are teacher approval percentages and ratings calculated?",
-      },
-      a: {
-        ar: "يتم احتساب نسبة القبول من خلال قياس نسبة الطلاب الذين اختاروا (أعجبني) مقارنة بإجمالي عدد المصوتين مع استبعاد التكرارات العشوائية. كما تظهر مراجعات الطلاب التفصيلية لتوضح مميزات وطريقة تدريس كل أستاذ بحيادية تامة.",
-        en: "The approval percentage is calculated by dividing positive votes (thumbs up) by total votes. Detailed written reviews provide students with honest insight into teaching methods.",
-      },
-    },
-    {
-      q: {
-        ar: "كيف أقوم باقتراح مدرس جديد لإضافته إلى المنصة؟",
-        en: "How do I propose a new teacher to be added?",
-      },
-      a: {
-        ar: "اضغط على زر (إضافة مدرس) في قسم المدرسين، ثم املأ اسم المدرس، محافظته، المادة الدراسية، المراحل، وطريقة تدريسه (حضوري أو إلكتروني أو كلاهما)، ثم ارفع ملف صورة المدرس. ينتقل الطلب مباشرة إلى قائمة الانتظار للمراجعة من قبل المشرفين.",
-        en: "Click 'Add Teacher' in the directory tab, fill in the teacher's name, governorate, subject, grades, and teaching mode (in-person, online, or both), and upload an image file. The request is submitted to the admin waiting list for verification.",
-      },
-    },
-    {
-      q: {
-        ar: "ما هي شروط كتابة مراجعة وتقييم للمدرس؟",
-        en: "What are the rules for writing a review on a teacher?",
-      },
-      a: {
-        ar: "يشترط أولاً تسجيل الدخول واختيار (أعجبني أو لم يعجبني) كشرط إلزامي قبل كتابة التقييم. يجب أن تكون المراجعة موضوعية ومحترمة وخالية من أي ألفاظ مسيئة أو تجريح شخصي وفق معايير مجتمع طلاب العراق.",
-        en: "You must be logged in and explicitly select your recommendation verdict (Recommend / Dislike). Reviews must remain respectful, objective, and constructive without personal insults.",
-      },
-    },
-    {
-      q: {
-        ar: "كيف تعمل لوحة شرف الطلاب وما هي معايير الترتيب؟",
-        en: "How does the Student Honor Board work and how are ranks decided?",
-      },
-      a: {
-        ar: "تُكرّم لوحة الشرف أفضل ١٠ طلاب في المنصة اعتماداً على مجموع الإعجابات التي حصلوا عليها على منشوراتهم ومراجعاتهم وردودهم المفيدة ومساهماتهم الفعالة في مساعدة زملائهم الطلاب في عموم العراق.",
-        en: "The Honor Board recognizes the top 10 most helpful students based on total positive feedback, likes received on study advice, and verified teacher reviews.",
-      },
-    },
-    {
-      q: {
-        ar: "كيف أتحكم في مظهر وثيم ولغة الموقع؟",
-        en: "How do I change the website theme and language?",
-      },
-      a: {
-        ar: "يمكنك في أي وقت الضغط على زر (الإعدادات) في الشريط العلوي للاختيار بين 5 ثيمات متنوعة (الكلاسيكي، الوضع الليلي، النمر الوردي، الطبيعة الخضراء، والأرجواني التقني)، بالإضافة للتبديل الفوري بين العربية والإنجليزية.",
-        en: "Click on the Settings button in the top navigation at any time to switch between 5 visual Neo-brutalist themes or toggle between Arabic and English with full directional layout support.",
-      },
-    },
-  ];
+  // ─── System Config (About Us & FAQs) Handlers ─────────────────────
+  async function syncSystemConfig(newAbout?: AboutUsData, newFaqs?: FaqItem[]) {
+    const currentAbout = newAbout || aboutUsData;
+    const currentFaqs = newFaqs || faqList;
+    const payload = {
+      about: currentAbout,
+      faqs: currentFaqs,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      const { data: existing } = await supabase
+        .from('posts')
+        .select('id')
+        .eq('title', 'SYSTEM_SITE_CONFIG')
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from('posts')
+          .update({
+            body: JSON.stringify(payload),
+            status: 'hidden',
+            author: session?.username || 'owner',
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('posts')
+          .insert([{
+            title: 'SYSTEM_SITE_CONFIG',
+            body: JSON.stringify(payload),
+            status: 'hidden',
+            author: session?.username || 'owner',
+            grade_level: 'General',
+            likes: 0,
+            dislikes: 0,
+            reports: 0,
+          }]);
+      }
+    } catch (e) {
+      console.error("Error syncing system config to Supabase:", e);
+    }
+  }
+
+  // FAQ Handlers (Owner only)
+  function handleOpenAddFaq() {
+    if (!canOwner) return;
+    setEditingFaqId(null);
+    setFaqDraftQAr("");
+    setFaqDraftQEn("");
+    setFaqDraftAAr("");
+    setFaqDraftAEn("");
+    setFaqModalOpen(true);
+  }
+
+  function handleOpenEditFaq(item: FaqItem) {
+    if (!canOwner) return;
+    setEditingFaqId(item.id);
+    setFaqDraftQAr(item.q.ar || "");
+    setFaqDraftQEn(item.q.en || "");
+    setFaqDraftAAr(item.a.ar || "");
+    setFaqDraftAEn(item.a.en || "");
+    setFaqModalOpen(true);
+  }
+
+  function handleSaveFaq() {
+    if (!canOwner) return;
+    const qAr = faqDraftQAr.trim();
+    const aAr = faqDraftAAr.trim();
+    const qEn = faqDraftQEn.trim() || qAr;
+    const aEn = faqDraftAEn.trim() || aAr;
+
+    if (!qAr || !aAr) {
+      alert(siteLang === "en" ? "Question and answer in Arabic are required." : "يرجى كتابة السؤال والجواب بالعربية.");
+      return;
+    }
+
+    let updated: FaqItem[];
+    if (editingFaqId) {
+      updated = faqList.map(item => item.id === editingFaqId ? { ...item, q: { ar: qAr, en: qEn }, a: { ar: aAr, en: aEn } } : item);
+    } else {
+      const newItem: FaqItem = {
+        id: "faq_" + Date.now(),
+        q: { ar: qAr, en: qEn },
+        a: { ar: aAr, en: aEn },
+      };
+      updated = [...faqList, newItem];
+    }
+
+    setFaqList(updated);
+    setStoredFaqs(updated);
+    syncSystemConfig(undefined, updated);
+    setFaqModalOpen(false);
+  }
+
+  function handleDeleteFaq(faqId: string) {
+    if (!canOwner) return;
+    const confirmMsg = siteLang === "en" ? "Are you sure you want to delete this FAQ question?" : "هل أنت متأكد من رغبتك في حذف هذا السؤال؟";
+    if (!window.confirm(confirmMsg)) return;
+
+    const updated = faqList.filter(item => item.id !== faqId);
+    setFaqList(updated);
+    setStoredFaqs(updated);
+    syncSystemConfig(undefined, updated);
+  }
+
+  // About Us Handlers (Owner only)
+  function handleStartEditAbout() {
+    if (!canOwner) return;
+    setEditAboutDraft(JSON.parse(JSON.stringify(aboutUsData)));
+    setIsEditingAbout(true);
+  }
+
+  function handleSaveAbout() {
+    if (!canOwner) return;
+    setAboutUsData(editAboutDraft);
+    setStoredAboutUs(editAboutDraft);
+    syncSystemConfig(editAboutDraft, undefined);
+    setIsEditingAbout(false);
+  }
+
+  function handleCancelEditAbout() {
+    setIsEditingAbout(false);
+  }
+
+  function handleResetAboutDefault() {
+    if (!canOwner) return;
+    const confirmMsg = siteLang === "en" ? "Reset About Us content to platform default?" : "استعادة المحتوى الافتراضي لصفحة عن المنصة؟";
+    if (window.confirm(confirmMsg)) {
+      setEditAboutDraft(DEFAULT_ABOUT_US);
+    }
+  }
+
+  function handleAddPillar() {
+    const newP: AboutPillar = {
+      id: "p_" + Date.now(),
+      titleAr: "عنوان جديد",
+      titleEn: "New Box Title",
+      descAr: "اكتب وصف هذه الميزة أو الركيزة هنا...",
+      descEn: "Write the description of this feature or value here...",
+      icon: "star",
+    };
+    setEditAboutDraft(prev => ({ ...prev, pillars: [...prev.pillars, newP] }));
+  }
+
+  function handleRemovePillar(id: string) {
+    setEditAboutDraft(prev => ({ ...prev, pillars: prev.pillars.filter(p => p.id !== id) }));
+  }
+
+  function handleAddButton() {
+    const newB: AboutButton = {
+      id: "b_" + Date.now(),
+      labelAr: "زر جديد",
+      labelEn: "New Link Button",
+      url: "https://",
+      variant: "primary",
+    };
+    setEditAboutDraft(prev => ({ ...prev, buttons: [...prev.buttons, newB] }));
+  }
+
+  function handleRemoveButton(id: string) {
+    setEditAboutDraft(prev => ({ ...prev, buttons: prev.buttons.filter(b => b.id !== id) }));
+  }
 
   // ─── Grade onboarding ─────────────────────────────────────────────
   function completeGrades() { localStorage.setItem("gradesDone", JSON.stringify(selectedGrades)); setGradeModal(false); }
@@ -8576,6 +8932,17 @@ export default function Home() {
                 <span>{t("tabLang")}</span>
               </button>
               <button
+                onClick={() => setSettingsTab("about")}
+                className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all shrink-0 ${
+                  settingsTab === "about"
+                    ? "border-slate-900 bg-white text-slate-900 shadow-[2px_2px_0px_#000]"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <IconInfo size={14} />
+                <span>{t("tabAbout")}</span>
+              </button>
+              <button
                 onClick={() => setSettingsTab("faq")}
                 className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all shrink-0 ${
                   settingsTab === "faq"
@@ -8833,12 +9200,527 @@ export default function Home() {
                 </div>
               )}
 
-              {/* TAB 3: FAQ ACCORDION */}
+              {/* TAB 3: ABOUT US */}
+              {settingsTab === "about" && (
+                <div className="space-y-4">
+                  {/* Top Bar: Title + Owner Controls */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b-2 border-slate-200 gap-2">
+                    <div>
+                      <h4 className="font-black text-sm text-slate-900 flex items-center gap-2">
+                        <IconInfo size={16} />
+                        <span>{siteLang === "en" ? "About Our Platform" : "عن المنصة التعليمية"}</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-semibold">
+                        {siteLang === "en"
+                          ? "Our mission, core pillars, and direct educational links for students."
+                          : "تعرف على رؤية المنصة ورسالتها التعليمية والروابط الخدمية المباشرة."}
+                      </p>
+                    </div>
+
+                    {canOwner && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isEditingAbout ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleResetAboutDefault}
+                              className="px-2.5 py-1 text-[11px] font-bold border-2 border-slate-300 bg-white hover:bg-slate-100 text-slate-700 flex items-center gap-1 shadow-[1px_1px_0px_#000]"
+                              title={siteLang === "en" ? "Reset Default" : "استعادة الافتراضي"}
+                            >
+                              <IconRotateCcw size={12} />
+                              <span>{siteLang === "en" ? "Reset" : "افتراضي"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEditAbout}
+                              className="px-2.5 py-1 text-[11px] font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 text-slate-900 flex items-center gap-1 shadow-[1px_1px_0px_#000]"
+                            >
+                              <IconX size={12} />
+                              <span>{siteLang === "en" ? "Cancel" : "إلغاء"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSaveAbout}
+                              className="px-3 py-1 text-[11px] font-black border-2 border-emerald-950 bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px"
+                            >
+                              <IconCheck size={13} />
+                              <span>{siteLang === "en" ? "Save Changes" : "حفظ التعديلات"}</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleStartEditAbout}
+                            className="px-3 py-1.5 text-xs font-black border-2 border-slate-900 bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px"
+                          >
+                            <IconPen size={13} />
+                            <span>{siteLang === "en" ? "Edit About Page" : "تعديل محتوى الصفحة"}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* If Owner is Editing: The Editor Interface */}
+                  {canOwner && isEditingAbout ? (
+                    <div className="space-y-4 bg-slate-50 p-3 sm:p-4 border-2 border-slate-900 shadow-[3px_3px_0px_#000]">
+                      <div className="bg-emerald-100 border border-emerald-800 p-2 text-[11px] font-bold text-emerald-950">
+                        {siteLang === "en"
+                          ? "Owner Mode: All edits will synchronize directly across all devices with zero database migrations."
+                          : "وضع المالك: سيتم حفظ التعديلات ومزامنتها مباشرة لجميع الطلاب دون أي تعديل في قاعدة البيانات."}
+                      </div>
+
+                      {/* 1. Main Headline & Subtitle */}
+                      <div className="space-y-3 bg-white p-3 border-2 border-slate-200">
+                        <div className="font-black text-xs text-slate-900 border-b border-slate-200 pb-1">
+                          {siteLang === "en" ? "1. Hero Banner Content" : "1. العنوان الرئيسي والمقدمة"}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <label className="block font-bold mb-1 text-slate-800">العنوان بالعربية:</label>
+                            <input
+                              type="text"
+                              value={editAboutDraft.headlineAr}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, headlineAr: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-bold focus:outline-none focus:bg-amber-50/20"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1 text-slate-800">Headline (English):</label>
+                            <input
+                              type="text"
+                              value={editAboutDraft.headlineEn}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, headlineEn: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-bold focus:outline-none focus:bg-amber-50/20"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1 text-slate-800">الوصف الفرعي بالعربية:</label>
+                            <input
+                              type="text"
+                              value={editAboutDraft.subtitleAr}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, subtitleAr: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-medium focus:outline-none focus:bg-amber-50/20"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1 text-slate-800">Subtitle (English):</label>
+                            <input
+                              type="text"
+                              value={editAboutDraft.subtitleEn}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, subtitleEn: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-medium focus:outline-none focus:bg-amber-50/20"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. Mission Section */}
+                      <div className="space-y-3 bg-white p-3 border-2 border-slate-200">
+                        <div className="font-black text-xs text-slate-900 border-b border-slate-200 pb-1">
+                          {siteLang === "en" ? "2. Mission Statement" : "2. رسالة المنصة والهدف الأساسي"}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <label className="block font-bold mb-1 text-slate-800">عنوان الرسالة بالعربية:</label>
+                            <input
+                              type="text"
+                              value={editAboutDraft.missionTitleAr}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, missionTitleAr: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-bold focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1 text-slate-800">Mission Title (English):</label>
+                            <input
+                              type="text"
+                              value={editAboutDraft.missionTitleEn}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, missionTitleEn: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-bold focus:outline-none"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block font-bold mb-1 text-slate-800">نص الرسالة بالعربية:</label>
+                            <textarea
+                              rows={3}
+                              value={editAboutDraft.missionDescAr}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, missionDescAr: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-medium text-xs focus:outline-none"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block font-bold mb-1 text-slate-800">Mission Body (English):</label>
+                            <textarea
+                              rows={3}
+                              value={editAboutDraft.missionDescEn}
+                              onChange={e => setEditAboutDraft(prev => ({ ...prev, missionDescEn: e.target.value }))}
+                              className="w-full p-2 border-2 border-slate-900 font-medium text-xs focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Feature Boxes / Pillars */}
+                      <div className="space-y-3 bg-white p-3 border-2 border-slate-200">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                          <span className="font-black text-xs text-slate-900">
+                            {siteLang === "en" ? "3. Feature Boxes & Pillars" : "3. صناديق الميزات والركائز"} ({editAboutDraft.pillars.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleAddPillar}
+                            className="px-2 py-1 text-[10px] font-black border border-slate-900 bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-[1px_1px_0px_#000]"
+                          >
+                            <IconPlus size={11} />
+                            <span>{siteLang === "en" ? "Add Box" : "إضافة صندوق"}</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {editAboutDraft.pillars.map((p, pIdx) => (
+                            <div key={p.id} className="p-3 border-2 border-slate-900 bg-slate-50 relative space-y-2 text-xs">
+                              <div className="flex items-center justify-between gap-2 border-b border-slate-300 pb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-5 h-5 bg-slate-900 text-white text-[10px] font-black flex items-center justify-center">
+                                    {pIdx + 1}
+                                  </span>
+                                  <label className="font-bold text-[11px] text-slate-700">
+                                    {siteLang === "en" ? "Icon:" : "الأيقونة:"}
+                                  </label>
+                                  <select
+                                    value={p.icon}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        pillars: prev.pillars.map(x => x.id === p.id ? { ...x, icon: val } : x),
+                                      }));
+                                    }}
+                                    className="p-1 border border-slate-900 font-bold bg-white text-xs"
+                                  >
+                                    <option value="star">نجمة (Star)</option>
+                                    <option value="users">مجتمع (Users)</option>
+                                    <option value="shield">أمان (Shield)</option>
+                                    <option value="book">مناهج (Book)</option>
+                                    <option value="grad">أساتذة (Grad)</option>
+                                    <option value="flame">نشاط (Flame)</option>
+                                    <option value="info">إرشاد (Info)</option>
+                                  </select>
+                                  <div className="p-1 border border-slate-900 bg-white text-slate-900">
+                                    {renderPillarIcon(p.icon, 14)}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemovePillar(p.id)}
+                                  className="p-1 text-rose-700 hover:bg-rose-100 border border-rose-800"
+                                  title={siteLang === "en" ? "Remove Box" : "حذف الصندوق"}
+                                >
+                                  <IconTrash size={13} />
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <input
+                                    type="text"
+                                    placeholder="العنوان (عربي)"
+                                    value={p.titleAr}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        pillars: prev.pillars.map(x => x.id === p.id ? { ...x, titleAr: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 font-bold bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                                <div>
+                                  <input
+                                    type="text"
+                                    placeholder="Title (English)"
+                                    value={p.titleEn}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        pillars: prev.pillars.map(x => x.id === p.id ? { ...x, titleEn: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 font-bold bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                                <div>
+                                  <textarea
+                                    rows={2}
+                                    placeholder="الوصف (عربي)"
+                                    value={p.descAr}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        pillars: prev.pillars.map(x => x.id === p.id ? { ...x, descAr: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 text-[11px] bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                                <div>
+                                  <textarea
+                                    rows={2}
+                                    placeholder="Description (English)"
+                                    value={p.descEn}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        pillars: prev.pillars.map(x => x.id === p.id ? { ...x, descEn: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 text-[11px] bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 4. Action Buttons & Links */}
+                      <div className="space-y-3 bg-white p-3 border-2 border-slate-200">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                          <span className="font-black text-xs text-slate-900">
+                            {siteLang === "en" ? "4. Action Buttons & Links" : "4. أزرار الروابط السريعة"} ({editAboutDraft.buttons.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleAddButton}
+                            className="px-2 py-1 text-[10px] font-black border border-slate-900 bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 shadow-[1px_1px_0px_#000]"
+                          >
+                            <IconPlus size={11} />
+                            <span>{siteLang === "en" ? "Add Link" : "إضافة رابط"}</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {editAboutDraft.buttons.map((b, bIdx) => (
+                            <div key={b.id} className="p-2.5 border-2 border-slate-900 bg-slate-50 space-y-2 text-xs">
+                              <div className="flex items-center justify-between gap-2 border-b border-slate-300 pb-1">
+                                <span className="font-black text-[10px] text-slate-600">#{bIdx + 1}</span>
+                                <div className="flex items-center gap-2">
+                                  <label className="font-bold text-[10px] text-slate-700">
+                                    {siteLang === "en" ? "Style:" : "النمط:"}
+                                  </label>
+                                  <select
+                                    value={b.variant}
+                                    onChange={e => {
+                                      const val = e.target.value as any;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        buttons: prev.buttons.map(x => x.id === b.id ? { ...x, variant: val } : x),
+                                      }));
+                                    }}
+                                    className="p-1 border border-slate-900 font-bold bg-white text-[11px]"
+                                  >
+                                    <option value="primary">أساسي (Primary)</option>
+                                    <option value="secondary">ثانوي (Emerald)</option>
+                                    <option value="outline">إطار (Outline)</option>
+                                  </select>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveButton(b.id)}
+                                  className="p-1 text-rose-700 hover:bg-rose-100 border border-rose-800"
+                                  title={siteLang === "en" ? "Remove Button" : "حذف الزر"}
+                                >
+                                  <IconTrash size={13} />
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div>
+                                  <input
+                                    type="text"
+                                    placeholder="نص الزر (عربي)"
+                                    value={b.labelAr}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        buttons: prev.buttons.map(x => x.id === b.id ? { ...x, labelAr: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 font-bold bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                                <div>
+                                  <input
+                                    type="text"
+                                    placeholder="Label (English)"
+                                    value={b.labelEn}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        buttons: prev.buttons.map(x => x.id === b.id ? { ...x, labelEn: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 font-bold bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                                <div>
+                                  <input
+                                    type="url"
+                                    placeholder="https://..."
+                                    value={b.url}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setEditAboutDraft(prev => ({
+                                        ...prev,
+                                        buttons: prev.buttons.map(x => x.id === b.id ? { ...x, url: val } : x),
+                                      }));
+                                    }}
+                                    className="w-full p-1.5 border border-slate-400 font-mono text-[11px] bg-white focus:outline-none focus:border-slate-900"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Bottom Save & Cancel */}
+                      <div className="flex items-center justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={handleCancelEditAbout}
+                          className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 text-slate-900 shadow-[1px_1px_0px_#000]"
+                        >
+                          {siteLang === "en" ? "Cancel" : "إلغاء"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveAbout}
+                          className="px-4 py-1.5 text-xs font-black border-2 border-emerald-950 bg-emerald-600 hover:bg-emerald-700 text-white shadow-[2px_2px_0px_#000]"
+                        >
+                          {siteLang === "en" ? "Save All Changes" : "حفظ جميع التعديلات"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* The Public / Read-only Live About Us View */
+                    <div className="space-y-4">
+                      {/* Hero Card */}
+                      <div className="p-4 sm:p-5 border-2 border-slate-900 bg-slate-900 text-white shadow-[3px_3px_0px_#000] relative overflow-hidden">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 border border-emerald-400/40 bg-emerald-900/60 text-emerald-300 text-[10px] font-black uppercase tracking-wider mb-2">
+                          <IconInfo size={12} />
+                          <span>{siteLang === "en" ? "Academic Platform" : "المنصة الأكاديمية"}</span>
+                        </div>
+                        <h3 className="text-base sm:text-lg font-black leading-tight text-white mb-1.5">
+                          {siteLang === "en" ? aboutUsData.headlineEn : aboutUsData.headlineAr}
+                        </h3>
+                        <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed max-w-2xl">
+                          {siteLang === "en" ? aboutUsData.subtitleEn : aboutUsData.subtitleAr}
+                        </p>
+                      </div>
+
+                      {/* Mission Statement Box */}
+                      <div className="p-4 border-2 border-slate-900 bg-emerald-50 shadow-[3px_3px_0px_#000] space-y-1.5">
+                        <div className="flex items-center gap-2 text-emerald-950 font-black text-xs sm:text-sm">
+                          <span className="w-6 h-6 border border-emerald-900 bg-emerald-600 text-white flex items-center justify-center">
+                            <IconGrad size={14} />
+                          </span>
+                          <span>
+                            {siteLang === "en" ? aboutUsData.missionTitleEn : aboutUsData.missionTitleAr}
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-900 font-medium leading-relaxed whitespace-pre-wrap">
+                          {siteLang === "en" ? aboutUsData.missionDescEn : aboutUsData.missionDescAr}
+                        </p>
+                      </div>
+
+                      {/* Pillars / Feature Boxes Grid */}
+                      {aboutUsData.pillars && aboutUsData.pillars.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {aboutUsData.pillars.map(pillar => (
+                            <div
+                              key={pillar.id}
+                              className="p-3.5 border-2 border-slate-900 bg-white shadow-[2px_2px_0px_#000] flex flex-col justify-between hover:translate-y-[-1px] transition-transform"
+                            >
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 border-2 border-slate-900 bg-amber-400 text-slate-900 flex items-center justify-center font-black shadow-[1px_1px_0px_#000] shrink-0">
+                                    {renderPillarIcon(pillar.icon, 15)}
+                                  </div>
+                                  <h5 className="font-black text-xs text-slate-900 leading-snug">
+                                    {siteLang === "en" ? pillar.titleEn : pillar.titleAr}
+                                  </h5>
+                                </div>
+                                <p className="text-[11px] text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">
+                                  {siteLang === "en" ? pillar.descEn : pillar.descAr}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Action Link Buttons */}
+                      {aboutUsData.buttons && aboutUsData.buttons.length > 0 && (
+                        <div className="pt-2 border-t-2 border-slate-200">
+                          <div className="text-[10px] font-black uppercase text-slate-500 mb-2">
+                            {siteLang === "en" ? "Official Channels & Direct Links" : "القنوات والروابط الرسمية"}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {aboutUsData.buttons.map(btn => {
+                              const variantClass =
+                                btn.variant === "primary"
+                                  ? "bg-slate-900 text-white hover:bg-slate-800 border-slate-900 shadow-[2px_2px_0px_#000]"
+                                  : btn.variant === "secondary"
+                                  ? "bg-emerald-600 text-white hover:bg-emerald-700 border-slate-900 shadow-[2px_2px_0px_#000]"
+                                  : "bg-white text-slate-900 hover:bg-slate-100 border-slate-900 shadow-[2px_2px_0px_#000]";
+
+                              return (
+                                <a
+                                  key={btn.id}
+                                  href={btn.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`px-3 py-2 text-xs font-black border-2 flex items-center gap-1.5 transition-all active:translate-x-px active:translate-y-px ${variantClass}`}
+                                >
+                                  <IconLink size={13} />
+                                  <span>{siteLang === "en" ? btn.labelEn : btn.labelAr}</span>
+                                </a>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: FAQ ACCORDION (With Owner Add/Edit/Delete Controls) */}
               {settingsTab === "faq" && (
                 <div className="space-y-3">
-                  <div className="border-b border-slate-200 pb-2">
-                    <h4 className="font-black text-sm text-slate-900">{t("faqTitle")}</h4>
-                    <p className="text-[11px] text-slate-500 font-semibold">{t("faqSub")}</p>
+                  <div className="border-b border-slate-200 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-black text-sm text-slate-900">{t("faqTitle")}</h4>
+                      <p className="text-[11px] text-slate-500 font-semibold">{t("faqSub")}</p>
+                    </div>
+
+                    {canOwner && (
+                      <button
+                        type="button"
+                        onClick={handleOpenAddFaq}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 self-start sm:self-auto active:translate-x-px active:translate-y-px"
+                      >
+                        <IconPlus size={13} />
+                        <span>{siteLang === "en" ? "Add Question" : "إضافة سؤال جديد"}</span>
+                      </button>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -8846,25 +9728,47 @@ export default function Home() {
                       const isExp = faqExpanded === idx;
                       return (
                         <div
-                          key={idx}
+                          key={item.id || idx}
                           className="border-2 border-slate-900 bg-white shadow-[2px_2px_0px_#000] overflow-hidden transition-all"
                         >
-                          <button
-                            type="button"
+                          <div
                             onClick={() => setFaqExpanded(isExp ? null : idx)}
-                            className="w-full p-3 text-start flex items-center justify-between gap-3 bg-slate-50 hover:bg-slate-100 transition-colors"
+                            className="w-full p-3 text-start flex items-center justify-between gap-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer select-none"
                           >
-                            <span className="font-black text-xs text-slate-900 leading-snug">
-                              {item.q[siteLang]}
+                            <span className="font-black text-xs text-slate-900 leading-snug flex-1">
+                              {item.q[siteLang] || item.q.ar}
                             </span>
-                            <span className="shrink-0 text-slate-600">
-                              {isExp ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
-                            </span>
-                          </button>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {canOwner && (
+                                <div className="flex items-center gap-1 mr-1" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditFaq(item)}
+                                    className="p-1 border border-slate-400 bg-white hover:bg-slate-100 text-slate-800 shadow-[1px_1px_0px_#000]"
+                                    title={siteLang === "en" ? "Edit Question" : "تعديل السؤال"}
+                                  >
+                                    <IconPen size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteFaq(item.id)}
+                                    className="p-1 border border-rose-400 bg-white hover:bg-rose-50 text-rose-700 shadow-[1px_1px_0px_#000]"
+                                    title={siteLang === "en" ? "Delete Question" : "حذف السؤال"}
+                                  >
+                                    <IconTrash size={12} />
+                                  </button>
+                                </div>
+                              )}
+                              <span className="text-slate-600">
+                                {isExp ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
+                              </span>
+                            </div>
+                          </div>
 
                           {isExp && (
-                            <div className="p-3 bg-white border-t-2 border-slate-900 text-xs text-slate-700 font-medium leading-relaxed">
-                              {item.a[siteLang]}
+                            <div className="p-3 bg-white border-t-2 border-slate-900 text-xs text-slate-700 font-medium leading-relaxed whitespace-pre-wrap">
+                              {item.a[siteLang] || item.a.ar}
                             </div>
                           )}
                         </div>
@@ -9009,6 +9913,109 @@ export default function Home() {
                 className="px-4 py-1.5 bg-slate-900 text-white font-black text-xs border-2 border-slate-900 hover:bg-slate-800 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
               >
                 {t("close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ OWNER FAQ ADD / EDIT MODAL ═══════ */}
+      {canOwner && faqModalOpen && (
+        <div className="fixed inset-0 z-[80] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white border-2 border-slate-900 shadow-[8px_8px_0px_#000] w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="p-4 border-b-2 border-slate-900 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 bg-slate-900 text-white flex items-center justify-center border border-slate-900 shadow-[1px_1px_0px_#000]">
+                  <IconHelpCircle size={15} />
+                </div>
+                <h3 className="font-black text-sm text-slate-900">
+                  {editingFaqId
+                    ? (siteLang === "en" ? "Edit FAQ Question" : "تعديل السؤال الشائع")
+                    : (siteLang === "en" ? "Add FAQ Question" : "إضافة سؤال شائع جديد")}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFaqModalOpen(false)}
+                className="w-7 h-7 border-2 border-slate-900 bg-white hover:bg-slate-100 flex items-center justify-center font-black text-slate-900 shadow-[1px_1px_0px_#000]"
+                title={siteLang === "en" ? "Close" : "إغلاق"}
+              >
+                <IconX size={14} />
+              </button>
+            </div>
+
+            {/* Form Fields */}
+            <div className="p-4 overflow-y-auto space-y-3.5 flex-1 text-xs">
+              <div>
+                <label className="block font-black mb-1 text-slate-900">
+                  {siteLang === "en" ? "Question in Arabic (Required):" : "السؤال بالعربية (مطلوب):"}
+                </label>
+                <input
+                  type="text"
+                  value={faqDraftQAr}
+                  onChange={e => setFaqDraftQAr(e.target.value)}
+                  placeholder="مثال: كيف أقيّم أستاذ جديد في المنصة؟"
+                  className="w-full p-2.5 border-2 border-slate-900 font-bold focus:outline-none focus:bg-amber-50/20"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-slate-800">
+                  {siteLang === "en" ? "Question in English (Optional):" : "السؤال بالإنجليزية (اختياري):"}
+                </label>
+                <input
+                  type="text"
+                  value={faqDraftQEn}
+                  onChange={e => setFaqDraftQEn(e.target.value)}
+                  placeholder="e.g. How do I rate a new teacher?"
+                  className="w-full p-2.5 border-2 border-slate-900 font-medium focus:outline-none focus:bg-amber-50/20"
+                />
+              </div>
+
+              <div>
+                <label className="block font-black mb-1 text-slate-900">
+                  {siteLang === "en" ? "Answer in Arabic (Required):" : "الجواب بالعربية (مطلوب):"}
+                </label>
+                <textarea
+                  rows={4}
+                  value={faqDraftAAr}
+                  onChange={e => setFaqDraftAAr(e.target.value)}
+                  placeholder="اكتب الإجابة التوضيحية الكاملة للطلبة هنا..."
+                  className="w-full p-2.5 border-2 border-slate-900 font-medium leading-relaxed focus:outline-none focus:bg-amber-50/20"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-slate-800">
+                  {siteLang === "en" ? "Answer in English (Optional):" : "الجواب بالإنجليزية (اختياري):"}
+                </label>
+                <textarea
+                  rows={4}
+                  value={faqDraftAEn}
+                  onChange={e => setFaqDraftAEn(e.target.value)}
+                  placeholder="Write the full clear explanation for students here..."
+                  className="w-full p-2.5 border-2 border-slate-900 font-medium leading-relaxed focus:outline-none focus:bg-amber-50/20"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t-2 border-slate-900 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFaqModalOpen(false)}
+                className="px-3.5 py-1.5 bg-white text-slate-900 font-bold text-xs border-2 border-slate-900 hover:bg-slate-100 shadow-[1px_1px_0px_#000]"
+              >
+                {siteLang === "en" ? "Cancel" : "إلغاء"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveFaq}
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 active:translate-x-px active:translate-y-px"
+              >
+                <IconCheck size={14} />
+                <span>{siteLang === "en" ? "Save Question" : "حفظ السؤال"}</span>
               </button>
             </div>
           </div>
