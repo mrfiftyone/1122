@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, memo, useCallback } from "react";
-import { IconShield, IconCheck, IconRotateCcw, IconAlertTriangle } from "@/utils/icons";
+import { IconCheck, IconRotateCcw, IconAlertTriangle } from "@/utils/icons";
 
 interface TurnstileProps {
   siteKey?: string;
@@ -22,8 +22,11 @@ declare global {
           callback?: (token: string) => void;
           "error-callback"?: (errorCode?: string) => void;
           "expired-callback"?: () => void;
+          "timeout-callback"?: () => void;
           theme?: "light" | "dark" | "auto";
           size?: "normal" | "compact" | "flexible";
+          "refresh-expired"?: "auto" | "manual" | "never";
+          retry?: "auto" | "never";
         }
       ) => string;
       reset: (widgetId?: string) => void;
@@ -47,10 +50,10 @@ function Turnstile({
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const isCancelledRef = useRef(false);
+  const prevResetKeyRef = useRef(resetKey);
 
   // Status tracking
   const [status, setStatus] = useState<"loading" | "ready" | "verified" | "error" | "fallback">("loading");
-  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [showSlowFallback, setShowSlowFallback] = useState(false);
 
   const isEn = siteLang === "en";
@@ -63,7 +66,7 @@ function Turnstile({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  // Determine sitekey (always use universal test key on localhost to prevent domain mismatch loops)
+  // Determine sitekey (use universal test key on localhost to prevent domain mismatch loops)
   const isLocalhost = typeof window !== "undefined" && (
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1" ||
@@ -75,15 +78,7 @@ function Turnstile({
     return siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || DEFAULT_SITE_KEY;
   });
 
-  // Fallback trigger
-  const handleManualFallback = useCallback(() => {
-    setStatus("fallback");
-    setShowSlowFallback(false);
-    const token = `cf_fallback_pass_${Date.now()}`;
-    onVerifyRef.current(token);
-  }, []);
-
-  // Safe cleanup
+  // Safe cleanup of Turnstile DOM & internal widget
   const cleanupWidget = useCallback(() => {
     if (widgetIdRef.current && window.turnstile) {
       try {
@@ -98,7 +93,16 @@ function Turnstile({
     }
   }, []);
 
-  // Render widget logic
+  // Fallback trigger (manual verification)
+  const handleManualFallback = useCallback(() => {
+    cleanupWidget();
+    setStatus("fallback");
+    setShowSlowFallback(false);
+    const token = `cf_fallback_pass_${Date.now()}`;
+    onVerifyRef.current(token);
+  }, [cleanupWidget]);
+
+  // Render widget logic - maintains strictly static dimensions
   const renderTurnstileWidget = useCallback(() => {
     if (isCancelledRef.current || !containerRef.current || !window.turnstile) return;
     if (widgetIdRef.current) return;
@@ -109,10 +113,10 @@ function Turnstile({
         sitekey: activeKey,
         theme: "light",
         size: "normal",
+        "refresh-expired": "manual",
         callback: (token: string) => {
           if (!isCancelledRef.current) {
             setStatus("verified");
-            setErrorCode(null);
             setShowSlowFallback(false);
             onVerifyRef.current(token);
           }
@@ -133,7 +137,6 @@ function Turnstile({
               return;
             }
             setStatus("error");
-            setErrorCode(code || "unknown");
             onErrorRef.current?.(code);
           }
         },
@@ -145,7 +148,6 @@ function Turnstile({
       console.warn("Turnstile render exception:", e);
       if (!isCancelledRef.current) {
         setStatus("error");
-        setErrorCode("render_exception");
       }
     }
   }, [activeKey, cleanupWidget]);
@@ -154,27 +156,28 @@ function Turnstile({
   const handleManualRetry = useCallback(() => {
     cleanupWidget();
     setStatus("loading");
-    setErrorCode(null);
     setShowSlowFallback(false);
     setTimeout(() => {
       renderTurnstileWidget();
     }, 50);
   }, [cleanupWidget, renderTurnstileWidget]);
 
-  // Handle resetKey from parent
+  // Handle resetKey from parent safely (only when resetKey actually changes value)
   useEffect(() => {
-    if (resetKey !== undefined && resetKey !== 0) {
-      if (widgetIdRef.current && window.turnstile) {
-        try {
-          window.turnstile.reset(widgetIdRef.current);
-          setStatus("ready");
-          setErrorCode(null);
-          setShowSlowFallback(false);
-        } catch {
+    if (prevResetKeyRef.current !== resetKey) {
+      prevResetKeyRef.current = resetKey;
+      if (resetKey !== undefined && resetKey !== 0) {
+        if (widgetIdRef.current && window.turnstile) {
+          try {
+            window.turnstile.reset(widgetIdRef.current);
+            setStatus("ready");
+            setShowSlowFallback(false);
+          } catch {
+            handleManualRetry();
+          }
+        } else {
           handleManualRetry();
         }
-      } else {
-        handleManualRetry();
       }
     }
   }, [resetKey, handleManualRetry]);
@@ -185,7 +188,7 @@ function Turnstile({
     let pollInterval: NodeJS.Timeout | null = null;
     let slowTimer: NodeJS.Timeout | null = null;
 
-    // Timer to offer manual fallback if Cloudflare takes > 3.5s or gets stuck in reload loops
+    // Timer to offer manual fallback if Cloudflare takes > 3.5s or gets stuck
     slowTimer = setTimeout(() => {
       if (!isCancelledRef.current) {
         setShowSlowFallback(true);
@@ -209,7 +212,6 @@ function Turnstile({
         script.onerror = () => {
           if (!isCancelledRef.current) {
             setStatus("error");
-            setErrorCode("script_load_failed");
           }
         };
         document.head.appendChild(script);
@@ -226,7 +228,6 @@ function Turnstile({
           if (pollInterval) clearInterval(pollInterval);
           if (!isCancelledRef.current) {
             setStatus("error");
-            setErrorCode("timeout");
           }
         }
       }, 100);
@@ -244,22 +245,17 @@ function Turnstile({
 
   return (
     <div className="w-full flex flex-col items-center justify-center min-h-[75px] bg-slate-50 border-2 border-slate-900 p-2 shadow-[2px_2px_0px_#000] relative">
-      {/* Cloudflare Render Target with strictly fixed dimensions */}
+      {/* 1. Cloudflare Widget Target - Stably mounted at 300x65, NEVER collapsed or hidden while active */}
       <div
-        style={{
-          width: "300px",
-          minHeight: "65px",
-          height: status === "verified" || status === "fallback" ? "0px" : "65px",
-          overflow: "hidden",
-        }}
-        className={`flex items-center justify-center ${
-          status === "verified" || status === "fallback" ? "opacity-0 pointer-events-none absolute" : "opacity-100"
+        style={{ width: "300px", height: "65px", minHeight: "65px" }}
+        className={`w-[300px] h-[65px] flex items-center justify-center mx-auto ${
+          status === "fallback" ? "hidden" : "block"
         }`}
       >
-        <div ref={containerRef} className="w-[300px] h-[65px] flex items-center justify-center" />
+        <div ref={containerRef} className="w-[300px] h-[65px]" />
       </div>
 
-      {/* Loading state before widget appears */}
+      {/* 2. Loading state before widget appears */}
       {status === "loading" && (
         <div className="flex items-center justify-center gap-2 py-2 text-slate-700">
           <span className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
@@ -269,26 +265,9 @@ function Turnstile({
         </div>
       )}
 
-      {/* Verified State */}
-      {status === "verified" && (
-        <div className="flex items-center justify-between w-full max-w-[300px] px-2 py-2 bg-emerald-50 border border-emerald-300">
-          <div className="flex items-center gap-1.5 text-emerald-800 text-xs font-black">
-            <IconCheck size={16} className="text-emerald-700" />
-            <span>{isEn ? "Security Check Passed" : "تم التحقق الأمني بنجاح"}</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleManualRetry}
-            className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold"
-          >
-            {isEn ? "Reset" : "إعادة"}
-          </button>
-        </div>
-      )}
-
-      {/* Manual Fallback State */}
+      {/* 3. Manual Fallback Confirmed State */}
       {status === "fallback" && (
-        <div className="flex items-center justify-between w-full max-w-[300px] px-2 py-2 bg-emerald-50 border border-emerald-300">
+        <div className="flex items-center justify-between w-full max-w-[300px] px-2.5 py-2.5 bg-emerald-50 border border-emerald-300">
           <div className="flex items-center gap-1.5 text-emerald-800 text-xs font-black">
             <IconCheck size={16} className="text-emerald-700" />
             <span>{isEn ? "Verified as Human Student" : "تم التحقق كطالب حقيقي"}</span>
@@ -296,16 +275,16 @@ function Turnstile({
           <button
             type="button"
             onClick={handleManualRetry}
-            className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold"
+            className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold cursor-pointer"
           >
             {isEn ? "Reset" : "إعادة"}
           </button>
         </div>
       )}
 
-      {/* Error UI */}
+      {/* 4. Error State */}
       {status === "error" && (
-        <div className="w-full text-center space-y-2 py-1">
+        <div className="w-full text-center space-y-2 py-1 mt-1 border-t border-slate-200">
           <div className="flex items-center justify-center gap-1.5 text-amber-700 text-xs font-black">
             <IconAlertTriangle size={14} />
             <span>
@@ -318,7 +297,7 @@ function Turnstile({
             <button
               type="button"
               onClick={handleManualRetry}
-              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1"
+              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 cursor-pointer"
             >
               <IconRotateCcw size={12} />
               <span>{isEn ? "Retry" : "إعادة المحاولة"}</span>
@@ -335,7 +314,7 @@ function Turnstile({
         </div>
       )}
 
-      {/* Slow network / looping challenge fallback offer */}
+      {/* 5. Slow network or looping fallback option */}
       {showSlowFallback && status === "ready" && (
         <div className="pt-2 w-full flex justify-center border-t border-slate-200 mt-1">
           <button
