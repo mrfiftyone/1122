@@ -1042,6 +1042,7 @@ export default function Home() {
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
 
   const resetTurnstile = useCallback(() => {
     setTurnstileToken(null);
@@ -1049,31 +1050,21 @@ export default function Home() {
     setTurnstileResetKey(prev => prev + 1);
   }, []);
 
-  const handleTurnstileVerify = useCallback(async (token: string) => {
+  const handleTurnstileVerify = useCallback((token: string) => {
     setTurnstileToken(token);
-    try {
-      const res = await fetch("/api/verify-turnstile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const data = await res.json();
-      if (data.success === true) {
-        setTurnstileServerVerified(true);
-        setAuthError("");
-      } else {
-        console.warn("Turnstile server verification failed:", data);
-        setTurnstileServerVerified(false);
-        setAuthError(siteLang === "en" ? "Security verification failed. Please try again." : "فشل التحقق الأمني. يرجى إعادة المحاولة.");
-        resetTurnstile();
-      }
-    } catch (e) {
-      console.warn("Turnstile verify error:", e);
-      setTurnstileServerVerified(false);
-      setAuthError(siteLang === "en" ? "Unable to reach security service. Check connection." : "تعذر الاتصال بخدمة الأمان. يرجى التحقق من اتصالك.");
-      resetTurnstile();
-    }
-  }, [siteLang, resetTurnstile]);
+    setAuthError("");
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken(null);
+    setTurnstileServerVerified(false);
+  }, []);
+
+  const handleTurnstileError = useCallback((errCode?: string | number) => {
+    setTurnstileToken(null);
+    setTurnstileServerVerified(false);
+    console.warn("[Turnstile] Widget error reported:", errCode);
+  }, []);
 
   // Action Cooldown Guard (protects from rapid spamming across posts, reviews, comments)
   const checkActionCooldown = useCallback((actionType: "post" | "comment" | "review" | "report" | "teacher", cooldownMs: number): { allowed: boolean; remainingSec: number } => {
@@ -1138,13 +1129,6 @@ export default function Home() {
     };
   }, [showToast]);
 
-  const handleTurnstileExpire = useCallback(() => {
-    resetTurnstile();
-  }, [resetTurnstile]);
-
-  const handleTurnstileError = useCallback(() => {
-    resetTurnstile();
-  }, [resetTurnstile]);
 
   const canOwner = !!(session && (session.role === "owner" || (session.username || "").trim().toLowerCase() === "hh"));
   const canAdmin = !!(session && (session.role === "owner" || session.role === "mod" || (session.username || "").trim().toLowerCase() === "hh"));
@@ -1632,6 +1616,8 @@ export default function Home() {
 
   // ─── Auth ─────────────────────────────────────────────────────────
   async function handleAuth() {
+    if (authSubmitting) return;
+
     setAuthError("");
 
     if (!isRegister && lockoutRemaining > 0) {
@@ -1648,139 +1634,187 @@ export default function Home() {
       return;
     }
 
-    // Phase 1: Require server-side verified Turnstile token
-    if (!turnstileToken || !turnstileServerVerified) {
+    // Require Turnstile verification token before submission
+    if (!turnstileToken) {
       setAuthError(siteLang === "en" ? "Complete security verification first." : "كمّل التحقق الأمني أولاً.");
       return;
     }
 
-    // Phase 5: Sanitize username input
+    // Sanitize username input
     const cleanUsername = sanitizeUsername(authUser.trim());
     if (!cleanUsername) {
       setAuthError(siteLang === "en" ? "Invalid username." : "اسم المستخدم غير صالح.");
       return;
     }
 
-    // Generate a pseudo-email for Supabase Auth since we only collect usernames
-    const pseudoEmail = `${cleanUsername.toLowerCase()}@iq-academy.local`;
+    setAuthSubmitting(true);
 
-    if (isRegister) {
-      if (!platformSettings.allowRegistration) {
-        setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "إنشاء الحسابات معطل حالياً من إدارة المنصة.");
-        return;
-      }
-      if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
+    // Canonical Server-Side Turnstile Verification
+    try {
+      const verifyRes = await fetch("/api/verify-turnstile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: turnstileToken,
+          action: "auth",
+        }),
+      });
+
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        resetTurnstile();
+        setAuthSubmitting(false);
         setAuthError(
           siteLang === "en"
-            ? "Password must be at least 8 characters with a number and uppercase letter."
-            : "الرمز قصير أو ما بي رقم وحرف كبير."
+            ? "Cloudflare security verification failed. Please try again."
+            : "فشل التحقق الأمني من Cloudflare. يرجى إعادة المحاولة."
         );
         return;
       }
+      setTurnstileServerVerified(true);
+    } catch (err) {
+      resetTurnstile();
+      setAuthSubmitting(false);
+      console.error("[Turnstile] Server verification request failed:", err);
+      setAuthError(
+        siteLang === "en"
+          ? "Unable to reach security service. Please try again."
+          : "تعذر الاتصال بخدمة التحقق الأمني. يرجى إعادة المحاولة."
+      );
+      return;
+    }
 
-      // 1. Sign up with Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email: pseudoEmail,
-        password: authPass,
-        options: {
-          data: {
-            username: cleanUsername,
-            role: "student"
-          }
-        }
-      });
+    try {
+      // Generate a pseudo-email for Supabase Auth since we only collect usernames
+      const pseudoEmail = `${cleanUsername.toLowerCase()}@iq-academy.local`;
 
-      if (error) {
-        setAuthError(error.message);
-        return;
-      }
-
-      // Legacy fallback for UI state
-      const p = getProfiles();
-      if (!p[cleanUsername]) {
-        p[cleanUsername] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
-        setProfiles(p);
-        setProfilesMap(p);
-      }
-
-      const sessionUser: User = { username: cleanUsername, pass: "", role: "student" };
-      localStorage.setItem("currentUser", JSON.stringify(sessionUser));
-      
-      const currentUsers = getUsers();
-      if (!currentUsers.some(u => u.username === cleanUsername)) {
-        currentUsers.push(sessionUser);
-        localStorage.setItem("users", JSON.stringify(currentUsers));
-      }
-
-      setSession(sessionUser);
-      setAuthModal(false);
-      setAuthUser(""); setAuthPass(""); resetTurnstile();
-      setSelectedGrades([]);
-      setGradeModal(true);
-    } else {
-      // Login: Use Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: pseudoEmail,
-        password: authPass,
-      });
-
-      if (error) {
-        const nextFails = failedAttempts + 1;
-        setFailedAttempts(nextFails);
-        if (nextFails >= 5) {
-          const lockUntil = Date.now() + 60 * 1000;
-          localStorage.setItem("login_lockout_until", lockUntil.toString());
-          setLockoutRemaining(60);
-          setFailedAttempts(0);
+      if (isRegister) {
+        if (!platformSettings.allowRegistration) {
+          setAuthError(siteLang === "en" ? "Account registration is temporarily paused by platform administration." : "إنشاء الحسابات معطل حالياً من إدارة المنصة.");
           resetTurnstile();
-          setAuthError(
-            siteLang === "en"
-              ? "Login locked for 1 minute after 5 failed attempts."
-              : "انقفل تسجيل الدخول لمدة دقيقة بعد 5 محاولات غلط."
-          );
-        } else {
-          setAuthError(
-            siteLang === "en"
-              ? (error.message === "Invalid login credentials"
-                  ? `Incorrect username or password. Attempt ${nextFails} of 5 before lock.`
-                  : `${error.message}. Attempt ${nextFails} of 5.`)
-              : (error.message === "Invalid login credentials"
-                  ? `اسم المستخدم أو الرمز غلط. محاولة ${nextFails} من 5 قبل القفل.`
-                  : `${error.message}. محاولة ${nextFails} من 5.`)
-          );
+          setAuthSubmitting(false);
+          return;
         }
-        return;
-      }
+        if (authPass.length < 8 || !/[0-9]/.test(authPass) || !/[A-Z]/.test(authPass)) {
+          setAuthError(
+            siteLang === "en"
+              ? "Password must be at least 8 characters with a number and uppercase letter."
+              : "الرمز قصير أو ما بي رقم وحرف كبير."
+          );
+          resetTurnstile();
+          setAuthSubmitting(false);
+          return;
+        }
 
-      setFailedAttempts(0);
-      localStorage.removeItem("login_lockout_until");
-      
-      // Extract role from profiles table (source of truth), fallback to metadata
-      let role = data.user?.user_metadata?.role || "student";
-      try {
-        const { data: profData } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
-        if (profData?.role) role = profData.role;
-      } catch (err) {
-        console.error("Error fetching profile role:", err);
-      }
+        // 1. Sign up with Supabase Auth
+        const { data, error } = await supabase.auth.signUp({
+          email: pseudoEmail,
+          password: authPass,
+          options: {
+            data: {
+              username: cleanUsername,
+              role: "student"
+            }
+          }
+        });
 
-      const sessionUser: User = { username: cleanUsername, pass: "", role };
-      
-      // Sync local users cache
-      const currentUsers = getUsers();
-      const existingIdx = currentUsers.findIndex(u => u.username === cleanUsername);
-      if (existingIdx >= 0) {
-        currentUsers[existingIdx].role = role;
+        if (error) {
+          setAuthError(error.message);
+          resetTurnstile();
+          setAuthSubmitting(false);
+          return;
+        }
+
+        // Legacy fallback for UI state
+        const p = getProfiles();
+        if (!p[cleanUsername]) {
+          p[cleanUsername] = { avatarColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)], bio: "", avatarUrl: "" };
+          setProfiles(p);
+          setProfilesMap(p);
+        }
+
+        const sessionUser: User = { username: cleanUsername, pass: "", role: "student" };
+        localStorage.setItem("currentUser", JSON.stringify(sessionUser));
+        
+        const currentUsers = getUsers();
+        if (!currentUsers.some(u => u.username === cleanUsername)) {
+          currentUsers.push(sessionUser);
+          localStorage.setItem("users", JSON.stringify(currentUsers));
+        }
+
+        setSession(sessionUser);
+        setAuthModal(false);
+        setAuthUser(""); setAuthPass(""); resetTurnstile();
+        setSelectedGrades([]);
+        setGradeModal(true);
       } else {
-        currentUsers.push(sessionUser);
-      }
-      localStorage.setItem("users", JSON.stringify(currentUsers));
+        // Login: Use Supabase Auth
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: pseudoEmail,
+          password: authPass,
+        });
 
-      // Store UI session
-      localStorage.setItem("currentUser", JSON.stringify(sessionUser));
-      setSession(sessionUser);
-      fetchVotesFromSupabase(cleanUsername);
-      setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
+        if (error) {
+          resetTurnstile();
+          setAuthSubmitting(false);
+          const nextFails = failedAttempts + 1;
+          setFailedAttempts(nextFails);
+          if (nextFails >= 5) {
+            const lockUntil = Date.now() + 60 * 1000;
+            localStorage.setItem("login_lockout_until", lockUntil.toString());
+            setLockoutRemaining(60);
+            setFailedAttempts(0);
+            setAuthError(
+              siteLang === "en"
+                ? "Login locked for 1 minute after 5 failed attempts."
+                : "انقفل تسجيل الدخول لمدة دقيقة بعد 5 محاولات غلط."
+            );
+          } else {
+            setAuthError(
+              siteLang === "en"
+                ? (error.message === "Invalid login credentials"
+                    ? `Incorrect username or password. Attempt ${nextFails} of 5 before lock.`
+                    : `${error.message}. Attempt ${nextFails} of 5.`)
+                : (error.message === "Invalid login credentials"
+                    ? `اسم المستخدم أو الرمز غلط. محاولة ${nextFails} من 5 قبل القفل.`
+                    : `${error.message}. محاولة ${nextFails} من 5.`)
+            );
+          }
+          return;
+        }
+
+        setFailedAttempts(0);
+        localStorage.removeItem("login_lockout_until");
+        
+        // Extract role from profiles table (source of truth), fallback to metadata
+        let role = data.user?.user_metadata?.role || "student";
+        try {
+          const { data: profData } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
+          if (profData?.role) role = profData.role;
+        } catch (err) {
+          console.error("Error fetching profile role:", err);
+        }
+
+        const sessionUser: User = { username: cleanUsername, pass: "", role };
+        
+        // Sync local users cache
+        const currentUsers = getUsers();
+        const existingIdx = currentUsers.findIndex(u => u.username === cleanUsername);
+        if (existingIdx >= 0) {
+          currentUsers[existingIdx].role = role;
+        } else {
+          currentUsers.push(sessionUser);
+        }
+        localStorage.setItem("users", JSON.stringify(currentUsers));
+
+        // Store UI session
+        localStorage.setItem("currentUser", JSON.stringify(sessionUser));
+        setSession(sessionUser);
+        fetchVotesFromSupabase(cleanUsername);
+        setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
+      }
+    } finally {
+      setAuthSubmitting(false);
     }
     rerender();
   }
@@ -8166,15 +8200,25 @@ export default function Home() {
                       </button>
                     </div>
                   ) : turnstileToken ? (
-                    <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
-                      <IconCheck size={12} className="text-emerald-700" /> {siteLang === "en" ? "Verified" : "تم التحقق"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
+                        <IconCheck size={12} className="text-emerald-700" /> {siteLang === "en" ? "Ready" : "جاهز"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={resetTurnstile}
+                        className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold"
+                        title={siteLang === "en" ? "Reset verification" : "إعادة تعيين التحقق"}
+                      >
+                        {siteLang === "en" ? "Retry" : "إعادة التحقق"}
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "Required" : "مطلوب"}</span>
                   )}
                 </div>
                 <Turnstile
-                  key={`turnstile_${turnstileResetKey}`}
+                  action="auth"
                   resetKey={turnstileResetKey}
                   onVerify={handleTurnstileVerify}
                   onExpire={handleTurnstileExpire}
@@ -8184,10 +8228,15 @@ export default function Home() {
 
               <button
                 onClick={handleAuth}
-                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken}
+                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken || authSubmitting}
                 className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed"
               >
-                {!isRegister && lockoutRemaining > 0 ? (
+                {authSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                    <span>{siteLang === "en" ? "Verifying..." : "جاري التحقق والربط..."}</span>
+                  </span>
+                ) : !isRegister && lockoutRemaining > 0 ? (
                   <span>{siteLang === "en" ? `Locked - ${lockoutRemaining}s remaining` : `مقفل مؤقتاً - باقي ${lockoutRemaining} ثانية`}</span>
                 ) : (
                   <span className="flex items-center justify-center gap-1.5">
@@ -8202,9 +8251,6 @@ export default function Home() {
                 onClick={() => {
                   setIsRegister(!isRegister);
                   setAuthError("");
-                  if (!turnstileServerVerified) {
-                    resetTurnstile();
-                  }
                 }}
                 className="text-xs text-emerald-700 hover:text-emerald-900 font-bold underline"
               >
