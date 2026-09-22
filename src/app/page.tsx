@@ -1662,12 +1662,14 @@ export default function Home() {
 
       const verifyData = await verifyRes.json();
       if (!verifyRes.ok || !verifyData.success) {
+        console.error("[Turnstile] Server verification rejected:", verifyRes.status, verifyData);
         resetTurnstile();
         setAuthSubmitting(false);
+        const errDetail = verifyData.error ? ` (${verifyData.error})` : "";
         setAuthError(
           siteLang === "en"
-            ? "Cloudflare security verification failed. Please try again."
-            : "فشل التحقق الأمني من Cloudflare. يرجى إعادة المحاولة."
+            ? `Cloudflare security verification failed${errDetail}. Please try again.`
+            : `فشل التحقق الأمني من Cloudflare${errDetail}. يرجى إعادة المحاولة.`
         );
         return;
       }
