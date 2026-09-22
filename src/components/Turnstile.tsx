@@ -41,8 +41,8 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
   const widgetIdRef = useRef<string | null>(null);
   const isCancelledRef = useRef(false);
 
-  const [status, setStatus] = useState<"loading" | "ready" | "verified" | "fallback" | "error">("loading");
-  const [showSlowFallback, setShowSlowFallback] = useState(false);
+  const [status, setStatus] = useState<"loading" | "ready" | "verified" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Keep latest callbacks in refs so changing prop references do not trigger widget recreation
   const onVerifyRef = useRef(onVerify);
@@ -64,14 +64,6 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
     }
   }, []);
 
-  // Manual fallback for filtered networks / adblock / client challenge errors
-  const handleManualFallback = useCallback(() => {
-    const fallbackToken = `cf_fallback_pass_${Date.now()}`;
-    setStatus("fallback");
-    setShowSlowFallback(false);
-    onVerifyRef.current(fallbackToken);
-  }, []);
-
   // Safe widget rendering
   const renderTurnstileWidget = useCallback(() => {
     if (isCancelledRef.current || !containerRef.current || !window.turnstile) return;
@@ -87,7 +79,7 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
         callback: (token: string) => {
           if (!isCancelledRef.current) {
             setStatus("verified");
-            setShowSlowFallback(false);
+            setErrorMessage(null);
             onVerifyRef.current(token);
           }
         },
@@ -101,6 +93,7 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
           console.warn("[Turnstile] Widget error code:", errCode);
           if (!isCancelledRef.current) {
             setStatus("error");
+            setErrorMessage(errCode ? String(errCode) : null);
             onErrorRef.current?.(errCode);
           }
         },
@@ -110,6 +103,7 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
 
       widgetIdRef.current = id;
       setStatus("ready");
+      setErrorMessage(null);
     } catch (e) {
       console.warn("[Turnstile] Render error:", e);
       if (!isCancelledRef.current) {
@@ -122,7 +116,7 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
   const handleRetry = useCallback(() => {
     cleanupWidget();
     setStatus("loading");
-    setShowSlowFallback(false);
+    setErrorMessage(null);
     setTimeout(() => {
       renderTurnstileWidget();
     }, 50);
@@ -135,7 +129,7 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
         try {
           window.turnstile.reset(widgetIdRef.current);
           setStatus("ready");
-          setShowSlowFallback(false);
+          setErrorMessage(null);
         } catch {
           handleRetry();
         }
@@ -149,14 +143,6 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
   useEffect(() => {
     isCancelledRef.current = false;
     let pollInterval: NodeJS.Timeout | null = null;
-    let slowTimer: NodeJS.Timeout | null = null;
-
-    // Offer manual fallback if Turnstile takes > 4s or encounters client challenge timeouts
-    slowTimer = setTimeout(() => {
-      if (!isCancelledRef.current) {
-        setShowSlowFallback(true);
-      }
-    }, 4000);
 
     const init = () => {
       if (window.turnstile) {
@@ -185,7 +171,7 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
         if (window.turnstile) {
           if (pollInterval) clearInterval(pollInterval);
           renderTurnstileWidget();
-        } else if (elapsed > 7000) {
+        } else if (elapsed > 8000) {
           if (pollInterval) clearInterval(pollInterval);
           if (!isCancelledRef.current) {
             setStatus("error");
@@ -199,7 +185,6 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
     return () => {
       isCancelledRef.current = true;
       if (pollInterval) clearInterval(pollInterval);
-      if (slowTimer) clearTimeout(slowTimer);
       cleanupWidget();
     };
   }, [effectiveKey, action, cleanupWidget, renderTurnstileWidget]);
@@ -211,11 +196,11 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
         style={{
           width: "300px",
           minHeight: "65px",
-          height: status === "verified" || status === "fallback" ? "0px" : "65px",
+          height: status === "verified" ? "0px" : "65px",
           overflow: "hidden",
         }}
         className={`flex items-center justify-center ${
-          status === "verified" || status === "fallback" ? "opacity-0 pointer-events-none absolute" : "opacity-100"
+          status === "verified" ? "opacity-0 pointer-events-none absolute" : "opacity-100"
         }`}
       >
         <div ref={containerRef} className="w-[300px] h-[65px] flex items-center justify-center" />
@@ -248,62 +233,25 @@ function Turnstile({ siteKey, action, onVerify, onExpire, onError, resetKey }: T
         </div>
       )}
 
-      {/* Fallback State */}
-      {status === "fallback" && (
-        <div className="flex items-center justify-between w-full max-w-[300px] px-2 py-2 bg-emerald-50 border border-emerald-300">
-          <div className="flex items-center gap-1.5 text-emerald-800 text-xs font-black">
-            <IconCheck size={16} className="text-emerald-700" />
-            <span>تم التحقق كطالب حقيقي</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="text-[10px] text-slate-500 hover:text-slate-900 underline font-bold cursor-pointer"
-          >
-            إعادة
-          </button>
-        </div>
-      )}
-
       {/* Error State */}
       {status === "error" && (
         <div className="w-full text-center space-y-2 py-1">
           <div className="flex items-center justify-center gap-1.5 text-amber-700 text-xs font-black">
             <IconAlertTriangle size={14} />
-            <span>تعذر التحقق التلقائي (بسبب الشبكة أو قيود المتصفح)</span>
+            <span>
+              تعذر التحقق التلقائي {errorMessage ? `(${errorMessage})` : ""}
+            </span>
           </div>
-          <div className="flex items-center justify-center gap-2 flex-wrap">
+          <div className="flex items-center justify-center gap-2">
             <button
               type="button"
               onClick={handleRetry}
-              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 cursor-pointer"
             >
               <IconRotateCcw size={12} />
               <span>إعادة المحاولة</span>
             </button>
-            <button
-              type="button"
-              onClick={handleManualFallback}
-              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1 cursor-pointer"
-            >
-              <IconCheck size={13} />
-              <span>تحقق يدوي كطالب حقيقي</span>
-            </button>
           </div>
-        </div>
-      )}
-
-      {/* Slow network / looping challenge fallback */}
-      {showSlowFallback && status === "ready" && (
-        <div className="pt-2 w-full flex justify-center border-t border-slate-200 mt-1">
-          <button
-            type="button"
-            onClick={handleManualFallback}
-            className="text-[11px] font-black text-emerald-800 hover:text-emerald-950 underline flex items-center gap-1 cursor-pointer"
-          >
-            <IconCheck size={12} className="text-emerald-700" />
-            <span>إذا تأخر الفحص، اضغط هنا للتحقق الفوري</span>
-          </button>
         </div>
       )}
     </div>
