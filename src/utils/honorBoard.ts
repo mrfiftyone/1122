@@ -177,22 +177,16 @@ export function computeStudentHonorBoard(
 
   const rankedStudents = calculateStudentStats(allUsernames, currentCyclePosts, profiles);
 
-  const badgeMap: Record<string, HonorBadgeInfo> = {};
-
-  // 2. Assign ranks and Top 10 badges for current active cycle
+  // 2. Assign ranks for current active cycle leaderboard
   rankedStudents.forEach((student, index) => {
     const rank = index + 1;
     student.rank = rank;
     student.isTop10 = rank <= 10;
-
-    badgeMap[student.username] = {
-      isTop10: student.isTop10,
-      isOwnerGranted: student.isOwnerGranted,
-      rank,
-    };
   });
 
-  // 3. Honor previous month Top 10 winners so they keep their badge when board resets
+  const badgeMap: Record<string, HonorBadgeInfo> = {};
+
+  // 3. Honor previous completed month Top 10 winners (they earned the monthly badge)
   const prevMonthPosts = posts.filter(p => {
     const postTime = new Date(p.created_at).getTime();
     return postTime >= prevMonthStartMs && postTime < monthStartMs;
@@ -201,17 +195,15 @@ export function computeStudentHonorBoard(
   if (prevMonthPosts.length > 0) {
     const prevMonthRanked = calculateStudentStats(allUsernames, prevMonthPosts, profiles);
     prevMonthRanked.slice(0, 10).forEach((student, index) => {
-      if (!badgeMap[student.username]) {
-        badgeMap[student.username] = {
-          isTop10: true,
-          isOwnerGranted: Boolean(profiles[student.username]?.has_honor_badge),
-          rank: index + 1,
-        };
-      }
+      badgeMap[student.username] = {
+        isTop10: true,
+        isOwnerGranted: Boolean(profiles[student.username]?.has_honor_badge),
+        rank: index + 1,
+      };
     });
   }
 
-  // 4. Merge any users with owner-granted badges from database
+  // 4. Merge users who were explicitly granted the Honor badge by the owner
   Object.keys(profiles).forEach(uname => {
     if (profiles[uname]?.has_honor_badge) {
       if (badgeMap[uname]) {

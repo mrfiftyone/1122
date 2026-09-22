@@ -4103,28 +4103,22 @@ export default function Home() {
     const badge = honorBadgesMap[username];
     if (!badge || (!badge.isTop10 && !badge.isOwnerGranted)) return null;
 
-    const isTop10 = badge.isTop10;
     const isOwner = badge.isOwnerGranted;
-    const rank = badge.rank;
 
-    const badgeLabel = isTop10
-      ? (siteLang === "en" ? `Top ${rank}` : `لوحة الشرف #${rank}`)
-      : (siteLang === "en" ? "Honorary Student" : "وسام شرف");
+    const badgeLabel = isOwner
+      ? (siteLang === "en" ? "Honor Badge" : "وسام شرف")
+      : (siteLang === "en" ? "Top 10 Winner" : "فائز الشهر");
 
-    const tooltip = isOwner && !isTop10
-      ? (siteLang === "en" ? "Honor Badge: Granted by Platform Owner" : "وسام الشرف: ممنوح بتقدير خاص من مالك المنصة")
-      : (siteLang === "en" ? `Student Honor Board: Rank #${rank}` : `لوحة شرف الطلاب: المرتبة #${rank}`);
+    const tooltip = isOwner
+      ? (siteLang === "en" ? "Honor Badge: Granted by Platform Administration" : "وسام الشرف: مُنح بتقدير من إدارة المنصة")
+      : (siteLang === "en" ? "Honor Badge: Top 10 Student Winner" : "وسام الشرف: من الفائزين بالعشرة الأوائل");
 
     return (
       <span
         title={tooltip}
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-black border border-slate-900 shadow-[1px_1px_0px_#000] cursor-help shrink-0 ${
-          isTop10
-            ? "bg-amber-300 text-slate-950"
-            : "bg-teal-100 text-teal-950 border-teal-800"
-        }`}
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-black border border-slate-900 shadow-[1px_1px_0px_#000] cursor-help shrink-0 bg-amber-300 text-slate-950"
       >
-        <IconAward size={10} className={isTop10 ? "text-amber-950" : "text-teal-900"} />
+        <IconAward size={10} className="text-amber-950" />
         {showText ? (
           <span>{badgeLabel}</span>
         ) : (
@@ -6159,7 +6153,7 @@ export default function Home() {
                       )}
 
                       {/* Owner Honor Badge Management Button */}
-                      {session?.role === "owner" && targetProfileUser && (
+                      {session?.role === "owner" && targetProfileUser && targetProfileUser !== session.username && (
                         <button
                           onClick={() => handleToggleHonorBadge(targetProfileUser)}
                           className={`px-4 py-2 font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all ${
@@ -6171,8 +6165,8 @@ export default function Home() {
                           <IconAward size={14} className={profiles[targetProfileUser]?.has_honor_badge ? "text-amber-700" : "text-emerald-700"} />
                           <span>
                             {profiles[targetProfileUser]?.has_honor_badge
-                              ? (siteLang === "en" ? "Revoke Honor Badge (Owner)" : "سحب وسام الشرف (المالك)")
-                              : (siteLang === "en" ? "Grant Honor Badge (Owner)" : "منح وسام الشرف (المالك)")}
+                              ? (siteLang === "en" ? "Revoke Honor Badge" : "سحب وسام الشرف")
+                              : (siteLang === "en" ? "Grant Honor Badge" : "منح وسام الشرف")}
                           </span>
                         </button>
                       )}
