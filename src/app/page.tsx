@@ -597,6 +597,134 @@ function renderPillarIcon(iconName: string, size = 18) {
   }
 }
 
+// ─── Loading Skeletons & Empty State Components ───────────────────
+function SkeletonPostCard() {
+  return (
+    <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-5 space-y-4 animate-pulse">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-slate-200 border border-slate-300 shrink-0" />
+          <div className="space-y-1.5">
+            <div className="w-24 h-3.5 bg-slate-200" />
+            <div className="w-16 h-2.5 bg-slate-100" />
+          </div>
+        </div>
+        <div className="w-20 h-5 bg-slate-100 border border-slate-200" />
+      </div>
+
+      <div className="space-y-2">
+        <div className="w-3/4 h-4 bg-slate-200" />
+        <div className="w-full h-3 bg-slate-100" />
+        <div className="w-5/6 h-3 bg-slate-100" />
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+        <div className="flex items-center gap-2">
+          <div className="w-14 h-7 bg-slate-100 border border-slate-200" />
+          <div className="w-14 h-7 bg-slate-100 border border-slate-200" />
+        </div>
+        <div className="w-16 h-7 bg-slate-100 border border-slate-200" />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonTeacherCard() {
+  return (
+    <div className="bg-white border-2 border-border-subtle shadow-[2px_2px_0px_#d1dcd6] p-4 flex flex-col justify-between gap-3 animate-pulse">
+      <div className="flex items-start gap-3">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-200 border-2 border-slate-300 shrink-0 shadow-[2px_2px_0px_#cbd5e1]" />
+        <div className="space-y-2 flex-1">
+          <div className="w-32 h-4 bg-slate-200" />
+          <div className="flex items-center gap-2">
+            <div className="w-14 h-4 bg-slate-100" />
+            <div className="w-16 h-4 bg-slate-100" />
+            <div className="w-20 h-4 bg-slate-100" />
+          </div>
+          <div className="w-24 h-3 bg-slate-100" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+        <div className="w-28 h-6 bg-slate-100" />
+        <div className="w-20 h-6 bg-slate-200 border border-slate-300" />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonTrendingTeacher() {
+  return (
+    <div className="p-2.5 border-2 border-slate-200 bg-slate-50 flex flex-col items-center text-center space-y-2 animate-pulse">
+      <div className="w-12 h-12 bg-slate-200 border border-slate-300 shrink-0" />
+      <div className="w-16 h-3 bg-slate-200" />
+      <div className="w-12 h-2.5 bg-slate-100" />
+      <div className="w-full h-4 bg-slate-100" />
+    </div>
+  );
+}
+
+interface EmptyStateCardProps {
+  icon?: React.ReactNode;
+  title: string;
+  description?: string;
+  actionText?: string;
+  onAction?: () => void;
+  secondaryActionText?: string;
+  onSecondaryAction?: () => void;
+  compact?: boolean;
+}
+
+function EmptyStateCard({
+  icon,
+  title,
+  description,
+  actionText,
+  onAction,
+  secondaryActionText,
+  onSecondaryAction,
+  compact = false,
+}: EmptyStateCardProps) {
+  return (
+    <div className={`bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#000] text-center space-y-3 mx-auto w-full ${compact ? "p-5 max-w-sm" : "p-6 sm:p-8 max-w-lg"}`}>
+      {icon && (
+        <div className="w-12 h-12 mx-auto bg-slate-100 border-2 border-slate-900 text-slate-900 flex items-center justify-center shadow-[2px_2px_0px_#000]">
+          {icon}
+        </div>
+      )}
+      <div className="space-y-1">
+        <h4 className="font-black text-sm sm:text-base text-slate-900">{title}</h4>
+        {description && (
+          <p className="text-xs text-slate-600 font-medium leading-relaxed max-w-md mx-auto">
+            {description}
+          </p>
+        )}
+      </div>
+      {(actionText || secondaryActionText) && (
+        <div className="flex items-center justify-center gap-2 pt-2 flex-wrap">
+          {actionText && onAction && (
+            <button
+              type="button"
+              onClick={onAction}
+              className="px-4 py-2 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+            >
+              {actionText}
+            </button>
+          )}
+          {secondaryActionText && onSecondaryAction && (
+            <button
+              type="button"
+              onClick={onSecondaryAction}
+              className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+            >
+              {secondaryActionText}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function getSession(): User | null {
   if (typeof window === "undefined") return null;
   try { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -690,6 +818,7 @@ export default function Home() {
   const [teachers, setTeachersList] = useState<Teacher[]>([]);
   const [profiles, setProfilesMap] = useState<Record<string, Profile>>({});
   const [allNotifications, setAllNotifications] = useState<NotificationItem[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   // Helper to merge Supabase profiles with local legacy users so all users (old & new) are always available
   const getAllPlatformUsers = useCallback(() => {
@@ -1204,6 +1333,8 @@ export default function Home() {
       } catch {}
     } catch (err) {
       console.error("Supabase load error:", err);
+    } finally {
+      setIsInitialLoading(false);
     }
   }, []);
 
@@ -4158,7 +4289,24 @@ export default function Home() {
         {tab === "feed" && (
           <section className="space-y-6">
             {/* 1. Trending Teachers This Week */}
-            {trendingTeachers.length > 0 && (
+            {isInitialLoading ? (
+              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-4 space-y-3">
+                <div className="flex items-center justify-between border-b-2 border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-slate-200 border border-slate-300 animate-pulse" />
+                    <div className="space-y-1">
+                      <div className="w-36 h-3 bg-slate-200 animate-pulse" />
+                      <div className="w-24 h-2 bg-slate-100 animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <SkeletonTrendingTeacher key={i} />
+                  ))}
+                </div>
+              </div>
+            ) : trendingTeachers.length > 0 ? (
               <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-4 space-y-3">
                 <div className="flex items-center justify-between border-b-2 border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
@@ -4215,7 +4363,7 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
 
             {/* 2. Student Honor Board (لوحة شرف الطلاب) */}
             <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-4 space-y-3">
@@ -4413,11 +4561,35 @@ export default function Home() {
                 return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
               });
 
+              if (isInitialLoading) {
+                return (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map(i => (
+                      <SkeletonPostCard key={i} />
+                    ))}
+                  </div>
+                );
+              }
+
               if (sortedFeedPosts.length === 0) {
                 return (
-                  <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                    {selectedFeedTag === "all" ? t("noPosts") : (siteLang === "ar" ? "لا توجد منشورات مطابقة لهذا التصنيف حتى الآن." : "No posts found for this category yet.")}
-                  </div>
+                  <EmptyStateCard
+                    icon={<IconInbox size={24} />}
+                    title={selectedFeedTag === "all"
+                      ? (siteLang === "en" ? "No posts published yet" : "لا توجد منشورات منشورة حتى الآن")
+                      : (siteLang === "en" ? "No posts in this category" : "لا توجد منشورات في هذا التصنيف")}
+                    description={selectedFeedTag === "all"
+                      ? (siteLang === "en"
+                          ? "Be the first student to start a discussion, ask a ministerial question, or share study notes with your peers!"
+                          : "كن أول طالب يشارك ملزمة، يطرح سؤالاً وزارياً، أو يبدأ نقاشاً مفيداً لزملائه!")
+                      : (siteLang === "en"
+                          ? "Try switching back to 'All' or exploring other discussion tags."
+                          : "جرّب التبديل إلى تصنيف (الكل) أو استعراض أقسام أخرى.")}
+                    actionText={selectedFeedTag !== "all"
+                      ? (siteLang === "en" ? "View All Posts" : "عرض كل المنشورات")
+                      : undefined}
+                    onAction={selectedFeedTag !== "all" ? () => setSelectedFeedTag("all") : undefined}
+                  />
                 );
               }
 
@@ -4792,10 +4964,26 @@ export default function Home() {
 
 
             {/* Results Count & Grid */}
-            {filteredTeachers.length === 0 ? (
-              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                {siteLang === "en" ? "No teachers found matching your search criteria." : "لا توجد نتائج مطابقة للبحث في قسم المدرسين."}
+            {isInitialLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map(i => (
+                  <SkeletonTeacherCard key={i} />
+                ))}
               </div>
+            ) : filteredTeachers.length === 0 ? (
+              <EmptyStateCard
+                icon={<IconSearch size={24} />}
+                title={siteLang === "en" ? "No teachers match your search or filters" : "لا يوجد مدرسون مطابقون لبحثك أو الفلاتر"}
+                description={siteLang === "en"
+                  ? "Try adjusting your search terms, changing the subject or governorate, or suggest a new teacher to add to the platform."
+                  : "جرّب تغيير كلمات البحث، اختيار مادة أو محافظة أخرى، أو اقترح إضافة مدرس جديد إلى المنصة."}
+                actionText={(dirSearch || filterGov !== "all" || filterSubject !== "all" || filterGrade !== "all" || filterTeachingMode !== "all" || sortTeacherBy !== "likes")
+                  ? (siteLang === "en" ? "Reset All Filters" : "إعادة ضبط الفلاتر")
+                  : undefined}
+                onAction={() => { setDirSearch(""); setFilterGov("all"); setFilterSubject("all"); setFilterGrade("all"); setFilterTeachingMode("all"); setSortTeacherBy("likes"); }}
+                secondaryActionText={siteLang === "en" ? "Propose a Teacher" : "اقتراح مدرس جديد"}
+                onSecondaryAction={() => { if (!session) { setAuthModal(true); } else { setTeacherModal(true); } }}
+              />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredTeachers.map(t => {
@@ -5166,9 +5354,18 @@ export default function Home() {
                   </div>
 
                   {posts.filter(p => p.teacher_id === selectedTeacher.id || p.teacherId === selectedTeacher.id).length === 0 ? (
-                    <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                      {siteLang === "en" ? "No posts or reviews about this teacher yet. Be the first to write one!" : "لا توجد منشورات أو تقييمات عن هذا المدرس حتى الآن. كن أول من يكتب عنه!"}
-                    </div>
+                    <EmptyStateCard
+                      icon={<IconPen size={24} />}
+                      title={siteLang === "en" ? `No reviews for ${selectedTeacher.name} yet` : `لا توجد مراجعات أو تقييمات للأستاذ ${selectedTeacher.name} حتى الآن`}
+                      description={siteLang === "en"
+                        ? "Did you study with this teacher? Be the first to share your honest review to help fellow students."
+                        : "هل درست مع هذا الأستاذ؟ كن أول من يكتب مراجعته وتجربته الصادقة لإفادة زملائك الطلبة."}
+                      actionText={siteLang === "en" ? "Write a Review" : "اكتب تقييماً الآن"}
+                      onAction={() => {
+                        if (!session) { setAuthModal(true); return; }
+                        setShowReviewForm(true);
+                      }}
+                    />
                   ) : (
                     <div className="space-y-4">
                       {posts
@@ -5387,19 +5584,44 @@ export default function Home() {
               )}
             </div>
 
-            {myNotifications.length === 0 ? (
-              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center text-xs font-bold text-slate-500">
-                {siteLang === "en" ? "No new notifications right now." : "لا توجد إشعارات جديدة حالياً."}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myNotifications
-                  .filter(n => {
-                    if (notifFilter === "unread") return !n.read;
-                    if (notifFilter === "reports") return n.type === "report_alert";
-                    return true;
-                  })
-                  .map(n => (
+            {(() => {
+              const filteredNotifs = myNotifications.filter(n => {
+                if (notifFilter === "unread") return !n.read;
+                if (notifFilter === "reports") return n.type === "report_alert";
+                return true;
+              });
+
+              if (myNotifications.length === 0) {
+                return (
+                  <EmptyStateCard
+                    icon={<IconBell size={24} />}
+                    title={siteLang === "en" ? "No notifications yet" : "لا توجد إشعارات حتى الآن"}
+                    description={siteLang === "en"
+                      ? "You'll see updates here when students reply to your discussions, upvote your reviews, or when staff answers your inquiries."
+                      : "ستصلك التنبيهات هنا عندما يعلّق زملاؤك على منشوراتك، أو يُعجبون بمراجعاتك، أو عند رد الإدارة على استفساراتك."}
+                    actionText={siteLang === "en" ? "Explore Discussions" : "تصفح ساحة النقاشات"}
+                    onAction={() => setTab("feed")}
+                  />
+                );
+              }
+
+              if (filteredNotifs.length === 0) {
+                return (
+                  <EmptyStateCard
+                    icon={<IconCheck size={24} />}
+                    title={siteLang === "en" ? "All caught up!" : "أنت على اطلاع بكل جديد!"}
+                    description={siteLang === "en"
+                      ? "No notifications found matching this filter."
+                      : "لا توجد إشعارات تطابق هذا الفلتر حالياً."}
+                    actionText={siteLang === "en" ? "View All Notifications" : "عرض كل الإشعارات"}
+                    onAction={() => setNotifFilter("all")}
+                  />
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filteredNotifs.map(n => (
                     <div
                       key={n.id}
                       onClick={() => {
@@ -5451,8 +5673,8 @@ export default function Home() {
                               <IconThumbUp size={14} />
                             </div>
                           ) : n.type === "admin_warning" ? (
-                            <div className="w-7 h-7 bg-amber-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
-                              <IconShield size={14} />
+                            <div className="w-7 h-7 bg-amber-500 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
+                              <IconAlertTriangle size={14} />
                             </div>
                           ) : n.type === "promotion" || (n.type as string) === "badge" ? (
                             <div className="w-7 h-7 bg-blue-600 border border-slate-900 flex items-center justify-center text-white text-xs shrink-0">
@@ -5495,8 +5717,9 @@ export default function Home() {
                       )}
                     </div>
                   ))}
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </section>
         )}
 
@@ -5788,9 +6011,15 @@ export default function Home() {
                   </h3>
 
                   {combinedActivities.length === 0 ? (
-                    <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-6 text-center text-xs font-bold text-slate-400">
-                      {siteLang === "en" ? "No posts, reviews, or comments published yet." : "ماكو أي منشورات أو تقييمات أو تعليقات منشورة لحد الآن."}
-                    </div>
+                    <EmptyStateCard
+                      icon={<IconPen size={24} />}
+                      title={siteLang === "en" ? "No activities published yet" : "لا توجد نشاطات منشورة بعد"}
+                      description={isOwnProfile
+                        ? (siteLang === "en" ? "You haven't written any posts, reviews, or comments yet. Join the conversation!" : "لم تنشر أي تقييم أو منشور أو رد بعد. شارك في النقاشات الآن!")
+                        : (siteLang === "en" ? "This student has not shared any reviews, questions, or comments yet." : "لم يقم هذا الطالب بنشر أي مراجعات أو أسئلة أو تعليقات حتى الآن.")}
+                      actionText={isOwnProfile ? (siteLang === "en" ? "Write a Post" : "اكتب منشوراً جديداً") : undefined}
+                      onAction={isOwnProfile ? () => { setTab("feed"); window.scrollTo({ top: 350, behavior: "smooth" }); } : undefined}
+                    />
                   ) : (
                     combinedActivities.map(item => {
                       const teacher = item.teacherId ? teachers.find(t => t.id === item.teacherId) : null;
@@ -6193,9 +6422,14 @@ export default function Home() {
                     </div>
 
                     {pendingTeachers.length === 0 ? (
-                      <div className="text-xs text-slate-400 py-6 text-center font-semibold border-2 border-dashed border-slate-200">
-                        {siteLang === "en" ? "No pending teacher requests currently in the queue." : "لا توجد طلبات معلقة حالياً في قائمة الانتظار."}
-                      </div>
+                      <EmptyStateCard
+                        icon={<IconBook size={24} />}
+                        title={siteLang === "en" ? "No pending teacher requests" : "لا توجد طلبات معلقة"}
+                        description={siteLang === "en"
+                          ? "All submitted teacher suggestions have been reviewed and resolved."
+                          : "تمت مراجعة جميع طلبات اقتراح المدرسين واتخاذ الإجراء اللازم بشأنها."}
+                        compact
+                      />
                     ) : (
                       <div className="space-y-3">
                         {pendingTeachers.map(t => (
@@ -6317,9 +6551,14 @@ export default function Home() {
 
                       if (aggregatedList.length === 0) {
                         return (
-                          <div className="text-xs text-slate-400 py-10 text-center font-semibold border-2 border-dashed border-slate-200">
-                            {siteLang === "en" ? "No reported content currently." : "لا يوجد أي محتوى تم الإبلاغ عنه حالياً."}
-                          </div>
+                          <EmptyStateCard
+                            icon={<IconShield size={24} />}
+                            title={siteLang === "en" ? "Reports queue is clear" : "لا توجد بلاغات معلقة"}
+                            description={siteLang === "en"
+                              ? "There is no reported content pending staff review at the moment."
+                              : "تمت مراجعة جميع البلاغات ولا يوجد محتوى مخالف معلق حالياً."}
+                            compact
+                          />
                         );
                       }
 
