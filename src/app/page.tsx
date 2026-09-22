@@ -467,6 +467,7 @@ export default function Home() {
   const [session, setSession] = useState<User | null>(null);
   const [_, setTick] = useState(0);
   const rerender = useCallback(() => setTick(t => t + 1), []);
+  const isPopStateRef = useRef(false);
 
   // Live Database States
   const [posts, setPostsList] = useState<Post[]>([]);
@@ -705,6 +706,77 @@ export default function Home() {
     return !!perms[perm];
   }
 
+  // ─── URL Route Parser (Direct Route Synchronization) ──────────────
+  const parseUrlRoute = useCallback((currentTeachers?: Teacher[]) => {
+    if (typeof window === "undefined") return;
+    try {
+      const pathname = window.location.pathname.toLowerCase();
+      const searchParams = new URLSearchParams(window.location.search);
+
+      // 1. Profile route: /profile or /profile/:username or query ?profile=... / ?user=...
+      if (pathname.startsWith("/profile")) {
+        const parts = window.location.pathname.split("/").filter(Boolean);
+        if (parts.length > 1) {
+          const userFromPath = decodeURIComponent(parts[1]);
+          setViewedUser(userFromPath);
+        } else {
+          const u = searchParams.get("profile") || searchParams.get("user");
+          if (u) setViewedUser(u);
+        }
+        setTab("profile");
+        return;
+      }
+
+      const queryProfile = searchParams.get("profile") || searchParams.get("user");
+      if (queryProfile) {
+        setViewedUser(queryProfile);
+        setTab("profile");
+        return;
+      }
+
+      // 2. Teachers / Directory route: /teachers or /directory or /teachers/:id
+      if (pathname === "/teachers" || pathname === "/directory" || pathname.startsWith("/teachers/")) {
+        const teacherId = searchParams.get("id") || searchParams.get("teacher");
+        const parts = window.location.pathname.split("/").filter(Boolean);
+        const idFromPath = parts.length > 1 && parts[0].toLowerCase() === "teachers" ? decodeURIComponent(parts[1]) : null;
+        const targetId = idFromPath || teacherId;
+
+        if (targetId) {
+          const teacherList = currentTeachers || getTeachers();
+          const found = teacherList.find(t => t.id === targetId || t.name === targetId);
+          if (found) {
+            setSelectedTeacher(found);
+            setTab("teacher");
+            return;
+          }
+        }
+        setSelectedTeacher(null);
+        setTab("directory");
+        return;
+      }
+
+      // 3. Notifications route: /notifications
+      if (pathname === "/notifications") {
+        setTab("notifications");
+        return;
+      }
+
+      // 4. Admin route: /admin
+      if (pathname === "/admin") {
+        setTab("admin");
+        return;
+      }
+
+      // 5. Main / Feed route: /main or /feed or /
+      if (pathname === "/main" || pathname === "/feed" || pathname === "/") {
+        setTab("feed");
+        return;
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // ─── Fetch from Supabase (Central Shared Database) ─────────────────
   const fetchSupabaseData = useCallback(async () => {
     try {
@@ -787,6 +859,9 @@ export default function Home() {
         }));
         setTeachersList(formattedTeachers);
         setTeachers(formattedTeachers);
+        if (typeof window !== "undefined" && window.location.pathname.startsWith("/teachers")) {
+          parseUrlRoute(formattedTeachers);
+        }
       }
 
       if (prRes.data && prRes.data.length > 0) {
@@ -967,19 +1042,15 @@ export default function Home() {
       }
     }, 30000);
 
-    // Read profile or user query parameter if present
-    try {
-      if (typeof window !== "undefined") {
-        const urlParams = new URLSearchParams(window.location.search);
-        const targetProfile = urlParams.get("profile") || urlParams.get("user");
-        if (targetProfile) {
-          setViewedUser(targetProfile);
-          setTab("profile");
-        }
-      }
-    } catch {
-      // ignore
-    }
+    // Synchronize initial active tab from browser URL
+    parseUrlRoute();
+
+    // Listen to browser Back / Forward buttons
+    const handlePopState = () => {
+      isPopStateRef.current = true;
+      parseUrlRoute();
+    };
+    window.addEventListener("popstate", handlePopState);
 
     // Listen to Supabase Realtime updates with smart debouncing (prevents flooding queries)
     let debounceTimer: any = null;
@@ -1019,8 +1090,44 @@ export default function Home() {
       clearInterval(livePollInterval);
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
+      window.removeEventListener("popstate", handlePopState);
     };
-  }, [fetchSupabaseData, fetchVotesFromSupabase]);
+  }, [fetchSupabaseData, fetchVotesFromSupabase, parseUrlRoute]);
+
+  // Synchronize browser URL with active tab
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+
+    if (isPopStateRef.current) {
+      isPopStateRef.current = false;
+      return;
+    }
+
+    let targetPath = "/main";
+    if (tab === "feed") {
+      targetPath = "/main";
+    } else if (tab === "directory") {
+      targetPath = "/teachers";
+    } else if (tab === "teacher") {
+      targetPath = selectedTeacher ? `/teachers?id=${encodeURIComponent(selectedTeacher.id)}` : "/teachers";
+    } else if (tab === "notifications") {
+      targetPath = "/notifications";
+    } else if (tab === "profile") {
+      const targetUser = viewedUser || session?.username;
+      targetPath = targetUser ? `/profile/${encodeURIComponent(targetUser)}` : "/profile";
+    } else if (tab === "admin") {
+      targetPath = "/admin";
+    }
+
+    const currentFull = window.location.pathname + window.location.search;
+    if (currentFull !== targetPath) {
+      if (window.location.pathname === "/" && targetPath === "/main") {
+        window.history.replaceState({ tab, viewedUser, teacherId: selectedTeacher?.id }, "", targetPath);
+      } else {
+        window.history.pushState({ tab, viewedUser, teacherId: selectedTeacher?.id }, "", targetPath);
+      }
+    }
+  }, [tab, viewedUser, selectedTeacher, mounted, session?.username]);
 
   // Lockout countdown timer
   useEffect(() => {
