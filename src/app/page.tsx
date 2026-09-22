@@ -5536,7 +5536,24 @@ export default function Home() {
 
 
         {/* ──── TAB 5: ADMIN & OWNER CONTROLS (لوحة الإدارة والتحكم) ──── */}
-        {tab === "admin" && canAdmin && (
+        {tab === "admin" && (
+          !canAdmin ? (
+            <section className="bg-white border-2 border-red-600 shadow-[4px_4px_0px_#dc2626] p-8 text-center space-y-3">
+              <div className="w-12 h-12 bg-red-100 border-2 border-red-600 text-red-700 flex items-center justify-center mx-auto shadow-[2px_2px_0px_#dc2626]">
+                <IconShield size={24} />
+              </div>
+              <h3 className="text-base font-black text-slate-900">{siteLang === "en" ? "Access Restricted" : "الوصول محظور"}</h3>
+              <p className="text-xs text-slate-600 font-semibold max-w-sm mx-auto">
+                {siteLang === "en" ? "This control center is restricted to platform staff and administrators." : "لوحة التحكم مخصصة فقط للمشرفين وإدارة المنصة."}
+              </p>
+              <button
+                onClick={() => setTab("feed")}
+                className="px-5 py-2 bg-slate-900 text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-slate-800"
+              >
+                {siteLang === "en" ? "Return to Discussions" : "الرجوع لساحة النقاشات"}
+              </button>
+            </section>
+          ) : (
           <section className="space-y-6">
             {/* Header with Role & Authority Info */}
             <div className={`border-2 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
@@ -6931,6 +6948,7 @@ export default function Home() {
               );
             })()}
           </section>
+          )
         )}
         </>
         )}
