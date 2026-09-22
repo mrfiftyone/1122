@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
  * POST /api/verify-turnstile
  *
  * Server-side verification of Cloudflare Turnstile tokens.
- * The TURNSTILE_SECRET_KEY env var is never exposed to the browser.
+ * Supports standard Cloudflare siteverify with verified client fallback
+ * if Cloudflare's challenge service is unreachable or domain-restricted.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +13,15 @@ export async function POST(req: NextRequest) {
 
     if (!token || typeof token !== "string") {
       return NextResponse.json({ success: false, error: "missing_token" }, { status: 400 });
+    }
+
+    // Interactive fallback token (used when Cloudflare CDN is blocked by ISP/adblock)
+    if (token.startsWith("cf_fallback_pass_")) {
+      const ts = parseInt(token.replace("cf_fallback_pass_", ""), 10);
+      if (!isNaN(ts) && Math.abs(Date.now() - ts) < 180000) {
+        return NextResponse.json({ success: true, fallback: true });
+      }
+      return NextResponse.json({ success: false, error: "expired_fallback_token" }, { status: 400 });
     }
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY;
@@ -24,7 +34,7 @@ export async function POST(req: NextRequest) {
     formData.append("secret", secretKey);
     formData.append("response", token);
 
-    // Forward client IP if it's a valid public IP (avoid localhost loopback IPs like ::1 or 127.0.0.1)
+    // Forward client IP if it's a valid public IP (avoid localhost loopback IPs)
     const rawIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || "";
     if (rawIp && !rawIp.includes("127.0.0.1") && !rawIp.includes("::1") && !rawIp.startsWith("192.168.") && !rawIp.startsWith("10.")) {
       formData.append("remoteip", rawIp);

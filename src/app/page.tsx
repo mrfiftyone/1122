@@ -1044,6 +1044,8 @@ export default function Home() {
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileServerVerified, setTurnstileServerVerified] = useState(false);
+  const [isVerifyingTurnstile, setIsVerifyingTurnstile] = useState(false);
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
@@ -1051,11 +1053,14 @@ export default function Home() {
   const resetTurnstile = useCallback(() => {
     setTurnstileToken(null);
     setTurnstileServerVerified(false);
+    setIsVerifyingTurnstile(false);
     setTurnstileResetKey(prev => prev + 1);
   }, []);
 
   const handleTurnstileVerify = useCallback(async (token: string) => {
     setTurnstileToken(token);
+    setIsVerifyingTurnstile(true);
+    setAuthError("");
     try {
       const res = await fetch("/api/verify-turnstile", {
         method: "POST",
@@ -1069,16 +1074,16 @@ export default function Home() {
       } else {
         console.warn("Turnstile server verification failed:", data);
         setTurnstileServerVerified(false);
-        setAuthError(siteLang === "en" ? "Security verification failed. Please try again." : "فشل التحقق الأمني. يرجى إعادة المحاولة.");
-        resetTurnstile();
+        setAuthError(siteLang === "en" ? "Security verification failed. Please retry." : "فشل التحقق الأمني. يرجى إعادة المحاولة.");
       }
     } catch (e) {
       console.warn("Turnstile verify error:", e);
       setTurnstileServerVerified(false);
       setAuthError(siteLang === "en" ? "Unable to reach security service. Check connection." : "تعذر الاتصال بخدمة الأمان. يرجى التحقق من اتصالك.");
-      resetTurnstile();
+    } finally {
+      setIsVerifyingTurnstile(false);
     }
-  }, [siteLang, resetTurnstile]);
+  }, [siteLang]);
 
   // Action Cooldown Guard (protects from rapid spamming across posts, reviews, comments)
   const checkActionCooldown = useCallback((actionType: "post" | "comment" | "review" | "report" | "teacher", cooldownMs: number): { allowed: boolean; remainingSec: number } => {
@@ -1144,12 +1149,16 @@ export default function Home() {
   }, [showToast]);
 
   const handleTurnstileExpire = useCallback(() => {
-    resetTurnstile();
-  }, [resetTurnstile]);
+    setTurnstileToken(null);
+    setTurnstileServerVerified(false);
+    setIsVerifyingTurnstile(false);
+  }, []);
 
   const handleTurnstileError = useCallback(() => {
-    resetTurnstile();
-  }, [resetTurnstile]);
+    setTurnstileToken(null);
+    setTurnstileServerVerified(false);
+    setIsVerifyingTurnstile(false);
+  }, []);
 
   const canOwner = !!(session && (session.role === "owner" || (session.username || "").trim().toLowerCase() === "hh"));
   const canAdmin = !!(session && (session.role === "owner" || session.role === "mod" || (session.username || "").trim().toLowerCase() === "hh"));
@@ -1638,8 +1647,10 @@ export default function Home() {
   // ─── Auth ─────────────────────────────────────────────────────────
   async function handleAuth() {
     setAuthError("");
+    setIsSubmittingAuth(true);
 
-    if (!isRegister && lockoutRemaining > 0) {
+    try {
+      if (!isRegister && lockoutRemaining > 0) {
       setAuthError(
         siteLang === "en"
           ? `Login temporarily locked. Please wait ${lockoutRemaining}s.`
@@ -1788,6 +1799,9 @@ export default function Home() {
       setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
     }
     rerender();
+    } finally {
+      setIsSubmittingAuth(false);
+    }
   }
 
   function logout() {
@@ -8241,6 +8255,7 @@ export default function Home() {
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-slate-800 flex items-center gap-1">
+                    <IconShield size={13} className="text-emerald-700" />
                     <span>{siteLang === "en" ? "Security Verification:" : "التحقق الأمني:"}</span>
                   </label>
                   {turnstileServerVerified ? (
@@ -8257,16 +8272,22 @@ export default function Home() {
                         {siteLang === "en" ? "Retry" : "إعادة التحقق"}
                       </button>
                     </div>
+                  ) : isVerifyingTurnstile ? (
+                    <span className="text-[10px] text-amber-700 font-bold flex items-center gap-1.5 animate-pulse">
+                      <span className="w-2.5 h-2.5 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" />
+                      <span>{siteLang === "en" ? "Verifying..." : "جاري الفحص..."}</span>
+                    </span>
                   ) : turnstileToken ? (
-                    <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
-                      <IconCheck size={12} className="text-emerald-700" /> {siteLang === "en" ? "Verified" : "تم التحقق"}
+                    <span className="text-[10px] text-amber-700 font-bold flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 border-2 border-amber-700 border-t-transparent rounded-full animate-spin" />
+                      <span>{siteLang === "en" ? "Verifying..." : "جاري الفحص..."}</span>
                     </span>
                   ) : (
                     <span className="text-[10px] text-slate-500 font-semibold">{siteLang === "en" ? "Required" : "مطلوب"}</span>
                   )}
                 </div>
                 <Turnstile
-                  key={`turnstile_${turnstileResetKey}`}
+                  siteLang={siteLang}
                   resetKey={turnstileResetKey}
                   onVerify={handleTurnstileVerify}
                   onExpire={handleTurnstileExpire}
@@ -8276,10 +8297,20 @@ export default function Home() {
 
               <button
                 onClick={handleAuth}
-                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileToken}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed"
+                disabled={(!isRegister && lockoutRemaining > 0) || !turnstileServerVerified || isSubmittingAuth || isVerifyingTurnstile}
+                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-400 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {!isRegister && lockoutRemaining > 0 ? (
+                {isSubmittingAuth ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{isRegister ? (siteLang === "en" ? "Creating Account..." : "جاري إنشاء الحساب...") : (siteLang === "en" ? "Logging In..." : "جاري تسجيل الدخول...")}</span>
+                  </span>
+                ) : isVerifyingTurnstile ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{siteLang === "en" ? "Verifying Security..." : "جاري فحص الأمان..."}</span>
+                  </span>
+                ) : !isRegister && lockoutRemaining > 0 ? (
                   <span>{siteLang === "en" ? `Locked - ${lockoutRemaining}s remaining` : `مقفل مؤقتاً - باقي ${lockoutRemaining} ثانية`}</span>
                 ) : (
                   <span className="flex items-center justify-center gap-1.5">
