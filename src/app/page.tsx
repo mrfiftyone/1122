@@ -4210,48 +4210,16 @@ export default function Home() {
             )}
           </nav>
 
-          {/* User Auth & Settings / Language Widget */}
+          {/* Header Action: Settings */}
           <div className="flex items-center gap-2">
-            {/* Language Quick Toggle */}
-            <button
-              onClick={() => {
-                const nextLang = siteLang === "ar" ? "en" : "ar";
-                setSiteLang(nextLang);
-                localStorage.setItem("iq_site_lang", nextLang);
-              }}
-              className="px-2.5 py-1.5 text-xs font-black border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000] flex items-center gap-1 active:translate-x-px active:translate-y-px transition-all"
-              title={siteLang === "ar" ? "Switch to English" : "التبديل إلى العربية"}
-            >
-              <IconGlobe size={13} />
-              <span>{siteLang === "ar" ? "EN" : "عربي"}</span>
-            </button>
-
-            {/* Settings Button */}
             <button
               onClick={() => setSettingsModal(true)}
-              className="p-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000] flex items-center justify-center text-slate-900 active:translate-x-px active:translate-y-px transition-all"
+              className="px-2.5 py-1.5 text-xs font-black border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 text-slate-900 active:translate-x-px active:translate-y-px transition-all"
               title={t("navSettings")}
             >
-              <IconSettings size={16} />
+              <IconSettings size={15} />
+              <span className="font-black">{t("navSettings")}</span>
             </button>
-
-            {!session ? (
-              <>
-                <button onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
-                  className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000]">{t("login")}</button>
-                <button onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
-                  className="px-3 py-1.5 text-xs font-bold border-2 border-slate-900 bg-emerald-primary text-white shadow-[2px_2px_0px_#000]">{t("register")}</button>
-              </>
-            ) : (
-              <div className="flex items-center gap-2 bg-white border-2 border-slate-900 px-2.5 py-1 shadow-[2px_2px_0px_#000]">
-                <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="hover:opacity-70"><Avatar username={session.username} /></button>
-                <div className="text-right">
-                  <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="text-xs font-black hover:underline block">{session.username}</button>
-                  <div className="text-[9px]"><RoleIcon role={session.role} /></div>
-                </div>
-                <button onClick={logout} title={t("logout")} className="text-red-600 mr-1 p-1 hover:bg-red-50 rounded"><IconX size={14} /></button>
-              </div>
-            )}
           </div>
 
         </div>
@@ -5788,12 +5756,17 @@ export default function Home() {
         {tab === "profile" && (
           <section className="space-y-6">
             {!targetProfileUser ? (
-              <div className="bg-white border-2 border-border-subtle shadow-[4px_4px_0px_#d1dcd6] p-8 text-center space-y-4">
-                <h3 className="text-base font-black">{siteLang === "en" ? "You must be logged in to view and edit your profile" : "يجب تسجيل الدخول لمشاهدة وتعديل ملفك الشخصي"}</h3>
-                <button onClick={() => { setIsRegister(false); setAuthModal(true); }} className="px-6 py-2.5 bg-emerald-primary text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000]">
-                  {siteLang === "en" ? "Sign In Now" : "تسجيل الدخول الآن"}
-                </button>
-              </div>
+              <EmptyStateCard
+                icon={<IconUser size={24} />}
+                title={siteLang === "en" ? "Student Account Menu" : "قائمة الحساب الطلابي"}
+                description={siteLang === "en"
+                  ? "Log in or create a student account to customize your profile, track your reviews, and participate in discussions."
+                  : "سجّل الدخول أو أنشئ حساباً جديداً للوصول إلى ملفك وتخصيصه، وتقييم الأساتذة والمشاركة بالنقاشات."}
+                actionText={siteLang === "en" ? "Sign In" : "تسجيل الدخول"}
+                onAction={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
+                secondaryActionText={siteLang === "en" ? "Create Account" : "إنشاء حساب جديد"}
+                onSecondaryAction={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
+              />
             ) : (
               <>
                 {/* Profile Header & Top Logout Bar */}
@@ -5816,7 +5789,14 @@ export default function Home() {
                       >
                         {siteLang === "ar" ? "← العودة إلى ملفي الشخصي" : "← Back to My Profile"}
                       </button>
-                    ) : null}
+                    ) : (
+                      <button
+                        onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
+                        className="px-3.5 py-1.5 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all"
+                      >
+                        <IconUser size={13} /> {t("login")}
+                      </button>
+                    )}
                   </div>
 
                   {/* Profile Banner */}
@@ -7717,7 +7697,7 @@ export default function Home() {
             </span>
           )}
         </button>
-        <button onClick={() => { if (!session) { setAuthModal(true); return; } setViewedUser(session.username); setTab("profile"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "profile" && targetProfileUser === session?.username ? "text-emerald-primary" : "text-slate-400"}`}>
+        <button onClick={() => { setViewedUser(session?.username || null); setTab("profile"); }} className={`flex flex-col items-center text-[10px] font-bold py-1 px-2 ${tab === "profile" ? "text-emerald-primary" : "text-slate-400"}`}>
           <IconUser size={20} />{t("navProfile")}
         </button>
         <button onClick={() => setSettingsModal(true)} className="flex flex-col items-center text-[10px] font-bold py-1 px-2 text-slate-400 hover:text-emerald-primary">
