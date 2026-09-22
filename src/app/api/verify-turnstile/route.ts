@@ -61,18 +61,6 @@ export async function POST(req: NextRequest) {
 
     try {
       result = await callSiteverify(secretKey);
-
-      // If failed with the primary secret, attempt with Cloudflare universal test secret key for test suites
-      if (!result.success && secretKey !== "1x0000000000000000000000000000000AA") {
-        try {
-          const testRes = await callSiteverify("1x0000000000000000000000000000000AA");
-          if (testRes.success) {
-            result = testRes;
-          }
-        } catch {
-          // Keep original result
-        }
-      }
     } catch (fetchErr) {
       console.error("[Turnstile] Siteverify network error:", fetchErr);
       return NextResponse.json({ success: false, error: "upstream_timeout_or_network_error" }, { status: 504 });
@@ -100,8 +88,7 @@ export async function POST(req: NextRequest) {
         resultHost === reqHost ||
         resultHost.endsWith(".vercel.app") ||
         resultHost === "localhost" ||
-        resultHost === "127.0.0.1" ||
-        resultHost === "example.com";
+        resultHost === "127.0.0.1";
 
       if (!isAllowed) {
         console.warn(`[Turnstile] Hostname rejected: "${result.hostname}". Allowed:`, Array.from(expectedHostnames));
