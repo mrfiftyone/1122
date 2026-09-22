@@ -507,8 +507,9 @@ html:has([data-theme="purple"]) body,
   box-shadow: none !important;
 }
 
-@layer base {
-  body {
-    @apply bg-page-bg text-slate-900 min-h-screen font-sans;
-  }
+body {
+  background-color: var(--color-page-bg);
+  color: #0f172a;
+  min-height: 100vh;
+  font-family: var(--font-sans);
 }
