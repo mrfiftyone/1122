@@ -1,9 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- IQ ACADEMY: SUPABASE SECURITY HARDENING & RLS POLICY AUDIT
+-- IQ ACADEMY: SUPABASE SECURITY HARDENING & RLS POLICY AUDIT (IDEMPOTENT)
 -- Run this script in your Supabase Dashboard → SQL Editor → Run
 -- 
 -- This script fixes critical vulnerabilities:
--- 1. Revokes open DELETE and UPDATE policies (stopping anon data wiping)
+-- 1. Drops legacy open policies and recreates clean, hardened policies safely
 -- 2. Restricts DELETE/UPDATE to authors and verified staff (owner / mod)
 -- 3. Locks down profiles table against unauthorized role escalation
 -- 4. Restricts reports table visibility strictly to staff
@@ -49,6 +49,7 @@ DROP POLICY IF EXISTS "teachers_insert_auth" ON public.teachers;
 -- ─── 3. POSTS TABLE POLICIES ───────────────────────────────────────────────
 
 -- Public read access: Active posts are visible to all. Hidden posts visible to staff.
+DROP POLICY IF EXISTS "posts_select_policy" ON public.posts;
 CREATE POLICY "posts_select_policy" ON public.posts
   FOR SELECT USING (
     status = 'active'
@@ -60,15 +61,18 @@ CREATE POLICY "posts_select_policy" ON public.posts
   );
 
 -- Insert: Must be logged in
+DROP POLICY IF EXISTS "posts_insert_policy" ON public.posts;
 CREATE POLICY "posts_insert_policy" ON public.posts
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Update: Authors can edit content; Authenticated users can vote/report; Staff can moderate
+DROP POLICY IF EXISTS "posts_update_policy" ON public.posts;
 CREATE POLICY "posts_update_policy" ON public.posts
   FOR UPDATE USING (auth.uid() IS NOT NULL)
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Delete: ONLY the author OR an owner/mod can delete
+DROP POLICY IF EXISTS "posts_delete_policy" ON public.posts;
 CREATE POLICY "posts_delete_policy" ON public.posts
   FOR DELETE USING (
     auth.uid() IS NOT NULL AND (
@@ -83,19 +87,23 @@ CREATE POLICY "posts_delete_policy" ON public.posts
 -- ─── 4. COMMENTS TABLE POLICIES ────────────────────────────────────────────
 
 -- Public read access
+DROP POLICY IF EXISTS "comments_select_policy" ON public.comments;
 CREATE POLICY "comments_select_policy" ON public.comments
   FOR SELECT USING (true);
 
 -- Insert: Must be logged in
+DROP POLICY IF EXISTS "comments_insert_policy" ON public.comments;
 CREATE POLICY "comments_insert_policy" ON public.comments
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Update: Authenticated users can vote/report
+DROP POLICY IF EXISTS "comments_update_policy" ON public.comments;
 CREATE POLICY "comments_update_policy" ON public.comments
   FOR UPDATE USING (auth.uid() IS NOT NULL)
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Delete: ONLY the comment author OR an owner/mod can delete
+DROP POLICY IF EXISTS "comments_delete_policy" ON public.comments;
 CREATE POLICY "comments_delete_policy" ON public.comments
   FOR DELETE USING (
     auth.uid() IS NOT NULL AND (
@@ -110,19 +118,23 @@ CREATE POLICY "comments_delete_policy" ON public.comments
 -- ─── 5. TEACHERS TABLE POLICIES ────────────────────────────────────────────
 
 -- Public read access
+DROP POLICY IF EXISTS "teachers_select_policy" ON public.teachers;
 CREATE POLICY "teachers_select_policy" ON public.teachers
   FOR SELECT USING (true);
 
 -- Insert: Authenticated users can propose teachers
+DROP POLICY IF EXISTS "teachers_insert_policy" ON public.teachers;
 CREATE POLICY "teachers_insert_policy" ON public.teachers
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Update: Authenticated users can vote; Staff can edit details and approve
+DROP POLICY IF EXISTS "teachers_update_policy" ON public.teachers;
 CREATE POLICY "teachers_update_policy" ON public.teachers
   FOR UPDATE USING (auth.uid() IS NOT NULL)
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Delete: ONLY owner or mod can delete teacher records
+DROP POLICY IF EXISTS "teachers_delete_policy" ON public.teachers;
 CREATE POLICY "teachers_delete_policy" ON public.teachers
   FOR DELETE USING (
     auth.uid() IS NOT NULL AND EXISTS (
@@ -133,6 +145,7 @@ CREATE POLICY "teachers_delete_policy" ON public.teachers
 -- ─── 6. REPORTS TABLE POLICIES ─────────────────────────────────────────────
 
 -- Select: ONLY staff (owner / mod) can view moderation reports
+DROP POLICY IF EXISTS "reports_select_staff" ON public.reports;
 CREATE POLICY "reports_select_staff" ON public.reports
   FOR SELECT USING (
     auth.uid() IS NOT NULL AND EXISTS (
@@ -141,10 +154,12 @@ CREATE POLICY "reports_select_staff" ON public.reports
   );
 
 -- Insert: Any logged-in user can submit a report
+DROP POLICY IF EXISTS "reports_insert_auth" ON public.reports;
 CREATE POLICY "reports_insert_auth" ON public.reports
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Update: ONLY staff can dismiss or resolve reports
+DROP POLICY IF EXISTS "reports_update_staff" ON public.reports;
 CREATE POLICY "reports_update_staff" ON public.reports
   FOR UPDATE USING (
     auth.uid() IS NOT NULL AND EXISTS (
@@ -153,6 +168,7 @@ CREATE POLICY "reports_update_staff" ON public.reports
   );
 
 -- Delete: ONLY staff can delete report records
+DROP POLICY IF EXISTS "reports_delete_staff" ON public.reports;
 CREATE POLICY "reports_delete_staff" ON public.reports
   FOR DELETE USING (
     auth.uid() IS NOT NULL AND EXISTS (
@@ -163,14 +179,17 @@ CREATE POLICY "reports_delete_staff" ON public.reports
 -- ─── 7. PROFILES TABLE POLICIES (Prevent Privilege Escalation) ─────────────
 
 -- Public read access
+DROP POLICY IF EXISTS "profiles_select_policy" ON public.profiles;
 CREATE POLICY "profiles_select_policy" ON public.profiles
   FOR SELECT USING (true);
 
 -- Insert: Automatic trigger or user profile creation
+DROP POLICY IF EXISTS "profiles_insert_policy" ON public.profiles;
 CREATE POLICY "profiles_insert_policy" ON public.profiles
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Update: Users can edit their own profile info, but CANNOT elevate their role unless caller is owner
+DROP POLICY IF EXISTS "profiles_update_policy" ON public.profiles;
 CREATE POLICY "profiles_update_policy" ON public.profiles
   FOR UPDATE USING (
     id = auth.uid() OR EXISTS (
@@ -187,6 +206,7 @@ CREATE POLICY "profiles_update_policy" ON public.profiles
 -- ─── 8. NOTIFICATIONS TABLE POLICIES ───────────────────────────────────────
 
 -- Select: Users can read notifications addressed to them, or staff
+DROP POLICY IF EXISTS "notifications_select_policy" ON public.notifications;
 CREATE POLICY "notifications_select_policy" ON public.notifications
   FOR SELECT USING (
     auth.uid() IS NOT NULL AND (
@@ -197,10 +217,12 @@ CREATE POLICY "notifications_select_policy" ON public.notifications
   );
 
 -- Insert: Any authenticated user can trigger a notification (e.g. on reply or like)
+DROP POLICY IF EXISTS "notifications_insert_policy" ON public.notifications;
 CREATE POLICY "notifications_insert_policy" ON public.notifications
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Update: Users can mark their notifications as read
+DROP POLICY IF EXISTS "notifications_update_policy" ON public.notifications;
 CREATE POLICY "notifications_update_policy" ON public.notifications
   FOR UPDATE USING (
     auth.uid() IS NOT NULL AND (
@@ -211,6 +233,7 @@ CREATE POLICY "notifications_update_policy" ON public.notifications
   );
 
 -- Delete: Users can delete their notifications or staff
+DROP POLICY IF EXISTS "notifications_delete_policy" ON public.notifications;
 CREATE POLICY "notifications_delete_policy" ON public.notifications
   FOR DELETE USING (
     auth.uid() IS NOT NULL AND (
@@ -225,6 +248,9 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'support_tickets') THEN
     DROP POLICY IF EXISTS "support_tickets_all" ON public.support_tickets;
+    DROP POLICY IF EXISTS "support_tickets_select" ON public.support_tickets;
+    DROP POLICY IF EXISTS "support_tickets_insert" ON public.support_tickets;
+    DROP POLICY IF EXISTS "support_tickets_update" ON public.support_tickets;
     
     CREATE POLICY "support_tickets_select" ON public.support_tickets
       FOR SELECT USING (
