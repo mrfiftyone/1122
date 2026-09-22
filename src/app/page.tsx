@@ -170,6 +170,22 @@ interface ReportRecord {
 // Vote map: "username_itemId" -> "like" | "dislike"
 type VoteMap = Record<string, "like" | "dislike">;
 
+export interface ToastNotification {
+  id: string;
+  message: string;
+  type: "success" | "error" | "info" | "warning";
+}
+
+export interface ConfirmDialogState {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  isDestructive?: boolean;
+  onConfirm: () => void;
+}
+
 export interface AuditLogItem {
   id: string;
   actor: string;
@@ -1064,6 +1080,54 @@ export default function Home() {
     localStorage.setItem(key, String(now));
     return { allowed: true, remainingSec: 0 };
   }, []);
+
+  // ─── In-App Toast & Confirmation System (replaces native browser popups) ───
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" | "warning" = "info") => {
+    const id = "toast_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+    setToasts(prev => [...prev.slice(-3), { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const requestConfirm = useCallback((params: {
+    message: string;
+    onConfirm: () => void;
+    title?: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDestructive?: boolean;
+  }) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: params.title || (siteLang === "en" ? "Confirm Action" : "تأكيد الإجراء"),
+      message: params.message,
+      confirmText: params.confirmText || (siteLang === "en" ? "Confirm" : "تأكيد"),
+      cancelText: params.cancelText || (siteLang === "en" ? "Cancel" : "إلغاء"),
+      isDestructive: params.isDestructive !== false,
+      onConfirm: () => {
+        setConfirmDialog(null);
+        params.onConfirm();
+      },
+    });
+  }, [siteLang]);
+
+  // Intercept window.alert so all alert() calls route to in-app toasts automatically
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.alert = (msg: string) => {
+      const isError = /خطأ|فشل|محظور|مكتوم|ممنوع|error|failed|banned|prohibited|wait|انتظار/i.test(msg);
+      const isSuccess = /بنجاح|تم |success|added|removed|updated|نزل|سحب/i.test(msg);
+      showToast(msg, isError ? "error" : isSuccess ? "success" : "info");
+    };
+  }, [showToast]);
 
   const handleTurnstileExpire = useCallback(() => {
     resetTurnstile();
@@ -2070,83 +2134,104 @@ export default function Home() {
   }
 
   async function deleteReportRecordOnly(targetId: string, targetType: "post" | "comment") {
-    if (!confirm(siteLang === "en" ? "Delete report records and reset counter?" : "متأكد تريد تمسح سجل البلاغات وتصفّر العداد؟")) return;
+    requestConfirm({
+      title: siteLang === "en" ? "Clear Reports" : "تصفير البلاغات",
+      message: siteLang === "en" ? "Delete report records and reset counter?" : "متأكد تريد تمسح سجل البلاغات وتصفّر العداد؟",
+      confirmText: siteLang === "en" ? "Clear" : "تصفير",
+      isDestructive: true,
+      onConfirm: async () => {
+        // Remove from report records
+        const list = getReportRecords().filter(r => r.targetId !== targetId);
+        localStorage.setItem("report_records_v1", JSON.stringify(list));
+        setReportRecordsList(list);
 
-    // Remove from report records
-    const list = getReportRecords().filter(r => r.targetId !== targetId);
-    localStorage.setItem("report_records_v1", JSON.stringify(list));
-    setReportRecordsList(list);
+        setDismissedReportIds(prev => {
+          const next = new Set(prev).add(targetId);
+          try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
+          return next;
+        });
 
-    setDismissedReportIds(prev => {
-      const next = new Set(prev).add(targetId);
-      try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
-      return next;
+        try {
+          await supabase.from('reports').delete().eq('target_id', targetId);
+          await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
+        } catch (e) {}
+
+        if (targetType === "post") {
+          setPostsList(prev => prev.map(p => p.id === targetId ? { ...p, reports: 0, status: "active" } : p));
+          try {
+            await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
+          } catch (e) {
+            console.error("Error resetting post reports in Supabase:", e);
+          }
+        } else {
+          setPostsList(prev => prev.map(p => ({
+            ...p,
+            comments: (p.comments || []).map(c => c.id === targetId ? { ...c, reports: 0 } : c)
+          })));
+          try {
+            await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
+          } catch (e) {
+            console.error("Error resetting comment reports in Supabase:", e);
+          }
+        }
+        rerender();
+        showToast(siteLang === "en" ? "Report removed and counter reset." : "انمسح البلاغ وتصفّر العداد بنجاح.", "success");
+      },
     });
-
-    try {
-      await supabase.from('reports').delete().eq('target_id', targetId);
-      await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
-    } catch (e) {}
-
-    if (targetType === "post") {
-      setPostsList(prev => prev.map(p => p.id === targetId ? { ...p, reports: 0, status: "active" } : p));
-      try {
-        await supabase.from('posts').update({ reports: 0, status: "active" }).eq('id', targetId);
-      } catch (e) {
-        console.error("Error resetting post reports in Supabase:", e);
-      }
-    } else {
-      setPostsList(prev => prev.map(p => ({
-        ...p,
-        comments: (p.comments || []).map(c => c.id === targetId ? { ...c, reports: 0 } : c)
-      })));
-      try {
-        await supabase.from('comments').update({ reports: 0 }).eq('id', targetId);
-      } catch (e) {
-        console.error("Error resetting comment reports in Supabase:", e);
-      }
-    }
-    rerender();
-    alert(siteLang === "en" ? "Report removed and counter reset." : "انمسح البلاغ وتصفّر العداد بنجاح.");
   }
 
   async function adminDeleteReportedItem(targetId: string, targetType: "post" | "comment", reportId?: string) {
-    if (!confirm(siteLang === "en" ? "Permanently delete this content from the platform?" : "متأكد تريد تحذف هذا المحتوى نهائياً من المنصة؟")) return;
-
-    if (targetType === "post") {
-      setPostsList(prev => prev.filter(item => item.id !== targetId));
-      try {
-        await supabase.from('posts').delete().eq('id', targetId);
-      } catch (e) {
-        console.error("Error deleting post from Supabase:", e);
-      }
-    } else {
-      const parentPost = posts.find(p => p.comments?.some(c => c.id === targetId));
-      if (parentPost) {
-        setPostsList(prev => prev.map(p => {
-          if (p.id === parentPost.id) {
-            return {
-              ...p,
-              comments: p.comments.filter(c => c.id !== targetId),
-            };
+    requestConfirm({
+      title: siteLang === "en" ? "Delete Content" : "حذف المحتوى",
+      message: siteLang === "en" ? "Permanently delete this content from the platform?" : "متأكد تريد تحذف هذا المحتوى نهائياً من المنصة؟",
+      confirmText: siteLang === "en" ? "Delete" : "حذف",
+      isDestructive: true,
+      onConfirm: async () => {
+        if (targetType === "post") {
+          setPostsList(prev => prev.filter(item => item.id !== targetId));
+          try {
+            await supabase.from('posts').delete().eq('id', targetId);
+          } catch (e) {
+            console.error("Error deleting post from Supabase:", e);
           }
-          return p;
-        }));
-        try {
-          await supabase.from('comments').delete().eq('id', targetId);
-        } catch (e) {
-          console.error("Error deleting comment from Supabase:", e);
+        } else {
+          const parentPost = posts.find(p => p.comments?.some(c => c.id === targetId));
+          if (parentPost) {
+            setPostsList(prev => prev.map(p => {
+              if (p.id === parentPost.id) {
+                return {
+                  ...p,
+                  comments: p.comments.filter(c => c.id !== targetId),
+                };
+              }
+              return p;
+            }));
+            try {
+              await supabase.from('comments').delete().eq('id', targetId);
+            } catch (e) {
+              console.error("Error deleting comment from Supabase:", e);
+            }
+          }
         }
-      }
-    }
+        // Remove from reports
+        const list = getReportRecords().filter(r => r.targetId !== targetId);
+        localStorage.setItem("report_records_v1", JSON.stringify(list));
+        setReportRecordsList(list);
+        setDismissedReportIds(prev => {
+          const next = new Set(prev).add(targetId);
+          try { localStorage.setItem("dismissed_reports_v1", JSON.stringify(Array.from(next))); } catch {}
+          return next;
+        });
 
-    if (reportId) {
-      const list = getReportRecords().filter(r => r.id !== reportId);
-      localStorage.setItem("report_records_v1", JSON.stringify(list));
-      setReportRecordsList(list);
-    }
-    rerender();
-    alert(siteLang === "en" ? "Item deleted permanently." : "تم حذف المحتوى نهائياً.");
+        try {
+          await supabase.from('reports').delete().eq('target_id', targetId);
+          await supabase.from('notifications').delete().eq('post_id', targetId).eq('type', 'report_alert');
+        } catch (e) {}
+
+        rerender();
+        showToast(siteLang === "en" ? "Reported content deleted." : "انحذف المحتوى المخالف بنجاح.", "success");
+      },
+    });
   }
 
   function warnAuthor(authorUsername: string, targetTitle: string) {
@@ -2449,42 +2534,57 @@ export default function Home() {
     const isAuthor = session.username === p.author;
     const isPrivileged = session.role === "owner" || session.role === "mod";
     if (!isAuthor && !isPrivileged) return;
-    if (!confirm(siteLang === "en" ? "Are you sure you want to delete this post or review?" : "متأكد تريد تحذف هذا المنشور أو التقييم؟")) return;
 
-    setPostsList(prev => prev.filter(item => item.id !== postId));
-    try {
-      await supabase.from('posts').delete().eq('id', postId);
-      fetchSupabaseData();
-    } catch (e) {
-      console.error("Error deleting post from Supabase:", e);
-    }
-    rerender();
+    requestConfirm({
+      title: siteLang === "en" ? "Delete Post" : "حذف المنشور",
+      message: siteLang === "en" ? "Are you sure you want to delete this post or review?" : "متأكد تريد تحذف هذا المنشور أو التقييم؟",
+      confirmText: siteLang === "en" ? "Delete" : "حذف",
+      isDestructive: true,
+      onConfirm: async () => {
+        setPostsList(prev => prev.filter(item => item.id !== postId));
+        try {
+          await supabase.from('posts').delete().eq('id', postId);
+          fetchSupabaseData();
+        } catch (e) {
+          console.error("Error deleting post from Supabase:", e);
+        }
+        rerender();
+        showToast(siteLang === "en" ? "Post deleted successfully." : "تم حذف المنشور بنجاح.", "success");
+      },
+    });
   }
 
   // Delete Teacher (Owner / Mod only)
   async function deleteTeacher(teacherId: string) {
     if (!session || (session.role !== "owner" && session.role !== "mod")) {
-      alert(siteLang === "en" ? "This action is restricted to staff." : "هالصلاحية بس للمالك والمشرفين.");
+      showToast(siteLang === "en" ? "This action is restricted to staff." : "هالصلاحية بس للمالك والمشرفين.", "error");
       return;
     }
     const target = teachers.find(t => t.id === teacherId);
     if (!target) return;
-    if (!confirm(siteLang === "en" ? `Permanently delete teacher ${target.name}?` : `متأكد تريد تحذف الأستاذ "${target.name}" نهائياً؟`)) return;
 
-    setTeachersList(prev => prev.filter(t => t.id !== teacherId));
-    if (selectedTeacher?.id === teacherId) {
-      setSelectedTeacher(null);
-      setTab("directory");
-    }
+    requestConfirm({
+      title: siteLang === "en" ? "Delete Teacher" : "حذف الأستاذ",
+      message: siteLang === "en" ? `Permanently delete teacher ${target.name}?` : `متأكد تريد تحذف الأستاذ "${target.name}" نهائياً؟`,
+      confirmText: siteLang === "en" ? "Delete" : "حذف",
+      isDestructive: true,
+      onConfirm: async () => {
+        setTeachersList(prev => prev.filter(t => t.id !== teacherId));
+        if (selectedTeacher?.id === teacherId) {
+          setSelectedTeacher(null);
+          setTab("directory");
+        }
 
-    try {
-      await supabase.from('teachers').delete().eq('id', teacherId);
-      fetchSupabaseData();
-    } catch (e) {
-      console.error("Error deleting teacher from Supabase:", e);
-    }
-    rerender();
-    alert(siteLang === "en" ? "Teacher deleted successfully." : "انحذف الأستاذ بنجاح.");
+        try {
+          await supabase.from('teachers').delete().eq('id', teacherId);
+          fetchSupabaseData();
+        } catch (e) {
+          console.error("Error deleting teacher from Supabase:", e);
+        }
+        rerender();
+        showToast(siteLang === "en" ? "Teacher profile removed." : "تم حذف الأستاذ بنجاح.", "success");
+      },
+    });
   }
 
   // ─── Image Compression Helper ────────────────────────────────────
@@ -2783,34 +2883,43 @@ export default function Home() {
   async function rejectTeacher(id: string) {
     const target = teachers.find(t => t.id === id);
     if (!target) return;
-    if (!confirm(siteLang === "en" ? `Reject and remove suggestion for ${target.name}?` : `متأكد تريد ترفض وتحذف طلب الأستاذ "${target.name}"؟`)) return;
-    setTeachersList(prev => prev.filter(t => t.id !== id));
-    try {
-      await supabase.from('teachers').delete().eq('id', id);
-      fetchSupabaseData();
-    } catch (e) {}
 
-    const submitter = target.createdBy || target.created_by;
-    if (submitter) {
-      const notifs = getNotifications();
-      notifs.unshift({
-        id: "notif_" + Date.now(),
-        recipient: submitter,
-        actor: session?.username || "الإدارة",
-        type: "teacher_rejected",
-        postId: "",
-        targetTitle: target.name,
-        commentText: siteLang === "en"
-          ? `Your suggestion for teacher "${target.name}" was reviewed and declined.`
-          : `نعتذر، ما تمت الموافقة على طلب إضافة الأستاذ "${target.name}".`,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-      setNotifications(notifs);
-      setAllNotifications(notifs);
-    }
-    addAuditLog("رفض مدرس", target.name, "رفض وحذف طلب إضافة المدرس من قائمة الانتظار");
-    rerender();
+    requestConfirm({
+      title: siteLang === "en" ? "Reject Teacher" : "رفض الأستاذ",
+      message: siteLang === "en" ? `Reject and remove suggestion for ${target.name}?` : `متأكد تريد ترفض وتحذف طلب الأستاذ "${target.name}"؟`,
+      confirmText: siteLang === "en" ? "Reject" : "رفض وحذف",
+      isDestructive: true,
+      onConfirm: async () => {
+        setTeachersList(prev => prev.filter(t => t.id !== id));
+        try {
+          await supabase.from('teachers').delete().eq('id', id);
+          fetchSupabaseData();
+        } catch (e) {}
+
+        const submitter = target.createdBy || target.created_by;
+        if (submitter) {
+          const notifs = getNotifications();
+          notifs.unshift({
+            id: "notif_" + Date.now(),
+            recipient: submitter,
+            actor: session?.username || "الإدارة",
+            type: "teacher_rejected",
+            postId: "",
+            targetTitle: target.name,
+            commentText: siteLang === "en"
+              ? `Your suggestion for teacher "${target.name}" was reviewed and declined.`
+              : `نعتذر، ما تمت الموافقة على طلب إضافة الأستاذ "${target.name}".`,
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+          setNotifications(notifs);
+          setAllNotifications(notifs);
+        }
+        addAuditLog("رفض مدرس", target.name, "رفض وحذف طلب إضافة المدرس من قائمة الانتظار");
+        rerender();
+        showToast(siteLang === "en" ? "Teacher suggestion declined." : "تم رفض وحذف اقتراح الأستاذ.", "info");
+      },
+    });
   }
 
 
@@ -3028,15 +3137,23 @@ export default function Home() {
   }
 
   async function deleteSupportTicket(id: string) {
-    if (!confirm(siteLang === "en" ? "Delete this support ticket?" : "هل أنت متأكد من حذف تذكرة الدعم هذه؟")) return;
-    setSupportTickets(prev => prev.filter(t => t.id !== id));
-    addAuditLog("حذف تذكرة دعم", `تذكرة #${id}`, "حذف تذكرة الدعم الفني");
-    rerender();
-    try {
-      await supabase.from('support_tickets').delete().eq('id', id);
-    } catch (e) {
-      console.error("Error deleting support ticket:", e);
-    }
+    requestConfirm({
+      title: siteLang === "en" ? "Delete Ticket" : "حذف التذكرة",
+      message: siteLang === "en" ? "Delete this support ticket?" : "هل أنت متأكد من حذف تذكرة الدعم هذه؟",
+      confirmText: siteLang === "en" ? "Delete" : "حذف",
+      isDestructive: true,
+      onConfirm: async () => {
+        setSupportTickets(prev => prev.filter(t => t.id !== id));
+        addAuditLog("حذف تذكرة دعم", `تذكرة #${id}`, "حذف تذكرة الدعم الفني");
+        rerender();
+        try {
+          await supabase.from('support_tickets').delete().eq('id', id);
+        } catch (e) {
+          console.error("Error deleting support ticket:", e);
+        }
+        showToast(siteLang === "en" ? "Support ticket deleted." : "تم حذف تذكرة الدعم بنجاح.", "info");
+      },
+    });
   }
 
   // ─── Platform Administration & Moderation Actions ─────────────────
@@ -3324,43 +3441,50 @@ export default function Home() {
 
   function handleDemoteToStudent(username: string) {
     if (!session || (!canOwner && !hasPermission("canManageStaff"))) {
-      alert(siteLang === "en" ? "Role editing is restricted to owner or authorized staff." : "تعديل الرتب مقتصر على المالك أو الإداري المفوض!");
+      showToast(siteLang === "en" ? "Role editing is restricted to owner or authorized staff." : "تعديل الرتب مقتصر على المالك أو الإداري المفوض!", "error");
       return;
     }
     const target = profiles[username];
     if (!target) return;
     if (target.role === "owner") {
-      alert(siteLang === "en" ? "Owner cannot be demoted." : "ما تكدر تخفض رتبة مالك المنصة!");
+      showToast(siteLang === "en" ? "Owner cannot be demoted." : "ما تكدر تخفض رتبة مالك المنصة!", "error");
       return;
     }
-    if (!confirm(siteLang === "en" ? `Demote ${username} from moderator to regular student?` : `متأكد تريد تسحب الإشراف من ${username} وترجعه طالب عادي؟`)) return;
 
-    // Update local React state optimistically
-    setProfilesMap(prev => ({
-      ...prev,
-      [username]: { ...(prev[username] || { avatarColor: "#0d9488", bio: "", avatarUrl: "" }), role: "student" }
-    }));
+    requestConfirm({
+      title: siteLang === "en" ? "Demote Moderator" : "سحب صلاحيات المشرف",
+      message: siteLang === "en" ? `Demote ${username} from moderator to regular student?` : `متأكد تريد تسحب الإشراف من ${username} وترجعه طالب عادي؟`,
+      confirmText: siteLang === "en" ? "Demote" : "سحب الصلاحية",
+      isDestructive: true,
+      onConfirm: () => {
+        // Update local React state optimistically
+        setProfilesMap(prev => ({
+          ...prev,
+          [username]: { ...(prev[username] || { avatarColor: "#0d9488", bio: "", avatarUrl: "" }), role: "student" }
+        }));
 
-    // Persist role update to Supabase
-    try {
-      supabase.from('profiles').update({ role: "student" }).eq('username', username).then(() => {});
-    } catch (e) {
-      console.error("Error demoting profile role in Supabase:", e);
-    }
+        // Persist role update to Supabase
+        try {
+          supabase.from('profiles').update({ role: "student" }).eq('username', username).then(() => {});
+        } catch (e) {
+          console.error("Error demoting profile role in Supabase:", e);
+        }
 
-    const updatedPermsMap = { ...getModPermissions() };
-    delete updatedPermsMap[username];
-    setModPermissionsStorage(updatedPermsMap);
-    setModPermissionsMap(updatedPermsMap);
+        const updatedPermsMap = { ...getModPermissions() };
+        delete updatedPermsMap[username];
+        setModPermissionsStorage(updatedPermsMap);
+        setModPermissionsMap(updatedPermsMap);
 
-    addAuditLog("تخفيض لرتبة طالب", username, "تم سحب صلاحيات الإشراف بالكامل");
-    sendNotificationToUser(username, {
-      type: "admin_warning",
-      title: siteLang === "en" ? "Role Updated" : "تعديل رتبة الحساب",
-      message: siteLang === "en" ? "Your account was set to regular student." : "تم تعديل رتبة حسابك إلى طالب عادي وإلغاء صلاحيات الإشراف.",
+        addAuditLog("تخفيض لرتبة طالب", username, "تم سحب صلاحيات الإشراف بالكامل");
+        sendNotificationToUser(username, {
+          type: "admin_warning",
+          title: siteLang === "en" ? "Role Updated" : "تعديل رتبة الحساب",
+          message: siteLang === "en" ? "Your account was set to regular student." : "تم تعديل رتبة حسابك إلى طالب عادي وإلغاء صلاحيات الإشراف.",
+        });
+        rerender();
+        showToast(siteLang === "en" ? `Moderation privileges removed from ${username}.` : `تم سحب صلاحيات الإشراف من ${username}.`, "success");
+      },
     });
-    rerender();
-    alert(siteLang === "en" ? `Moderation privileges removed from ${username}.` : `تم سحب صلاحيات الإشراف من ${username}.`);
   }
 
   function handleSavePlatformSettings(updates: Partial<PlatformSettings>) {
@@ -3420,25 +3544,32 @@ export default function Home() {
 
   function handleDeleteAnnouncement() {
     if (!session || (!canOwner && !hasPermission("canManageAnnouncements"))) {
-      alert(siteLang === "en" ? "Only owner or authorized staff can delete announcements." : "حذف الإعلان للمالك والمشرفين المفوضين بس.");
+      showToast(siteLang === "en" ? "Only owner or authorized staff can delete announcements." : "حذف الإعلان للمالك والمشرفين المفوضين بس.", "error");
       return;
     }
-    if (!confirm(siteLang === "en" ? "Permanently delete this announcement?" : "متأكد تريد تحذف الإعلان العام نهائياً؟")) return;
 
-    const emptyAnn: SiteAnnouncement = {
-      active: false,
-      text: "",
-      type: "ministerial",
-      expiresAt: null,
-    };
-    setSiteAnnouncement(emptyAnn);
-    setSiteAnnouncementState(emptyAnn);
-    setAnnouncementText("");
-    setAnnouncementActive(false);
-    setAnnouncementDuration("never");
-    addAuditLog("حذف شريط التنبيهات", "إعلان الموقع", "تم حذف التنبيه العام نهائياً");
-    rerender();
-    alert(siteLang === "en" ? "Announcement deleted." : "انحذف الإعلان نهائياً.");
+    requestConfirm({
+      title: siteLang === "en" ? "Delete Announcement" : "حذف الإعلان",
+      message: siteLang === "en" ? "Permanently delete this announcement?" : "متأكد تريد تحذف الإعلان العام نهائياً؟",
+      confirmText: siteLang === "en" ? "Delete" : "حذف",
+      isDestructive: true,
+      onConfirm: () => {
+        const emptyAnn: SiteAnnouncement = {
+          active: false,
+          text: "",
+          type: "ministerial",
+          expiresAt: null,
+        };
+        setSiteAnnouncement(emptyAnn);
+        setSiteAnnouncementState(emptyAnn);
+        setAnnouncementText("");
+        setAnnouncementActive(false);
+        setAnnouncementDuration("never");
+        addAuditLog("حذف شريط التنبيهات", "إعلان الموقع", "تم حذف التنبيه العام نهائياً");
+        rerender();
+        showToast(siteLang === "en" ? "Announcement deleted." : "انحذف الإعلان نهائياً.", "info");
+      },
+    });
   }
 
   function handleAddBannedWord(word: string) {
@@ -3595,13 +3726,19 @@ export default function Home() {
 
   function handleDeleteFaq(faqId: string) {
     if (!canOwner) return;
-    const confirmMsg = siteLang === "en" ? "Are you sure you want to delete this FAQ question?" : "هل أنت متأكد من رغبتك في حذف هذا السؤال؟";
-    if (!window.confirm(confirmMsg)) return;
-
-    const updated = faqList.filter(item => item.id !== faqId);
-    setFaqList(updated);
-    setStoredFaqs(updated);
-    syncSystemConfig(undefined, updated);
+    requestConfirm({
+      title: siteLang === "en" ? "Delete FAQ" : "حذف سؤال",
+      message: siteLang === "en" ? "Are you sure you want to delete this FAQ question?" : "هل أنت متأكد من رغبتك في حذف هذا السؤال؟",
+      confirmText: siteLang === "en" ? "Delete" : "حذف",
+      isDestructive: true,
+      onConfirm: () => {
+        const updated = faqList.filter(item => item.id !== faqId);
+        setFaqList(updated);
+        setStoredFaqs(updated);
+        syncSystemConfig(undefined, updated);
+        showToast(siteLang === "en" ? "FAQ question deleted." : "تم حذف السؤال بنجاح.", "info");
+      },
+    });
   }
 
   // About Us Handlers (Owner only)
@@ -3625,10 +3762,16 @@ export default function Home() {
 
   function handleResetAboutDefault() {
     if (!canOwner) return;
-    const confirmMsg = siteLang === "en" ? "Reset About Us content to platform default?" : "استعادة المحتوى الافتراضي لصفحة عن المنصة؟";
-    if (window.confirm(confirmMsg)) {
-      setEditAboutDraft(DEFAULT_ABOUT_US);
-    }
+    requestConfirm({
+      title: siteLang === "en" ? "Reset About Us" : "استعادة الافتراضي",
+      message: siteLang === "en" ? "Reset About Us content to platform default?" : "استعادة المحتوى الافتراضي لصفحة عن المنصة؟",
+      confirmText: siteLang === "en" ? "Reset" : "استعادة",
+      isDestructive: true,
+      onConfirm: () => {
+        setEditAboutDraft(DEFAULT_ABOUT_US);
+        showToast(siteLang === "en" ? "About Us reset to default." : "تمت استعادة المحتوى الافتراضي لصفحة عن المنصة.", "success");
+      },
+    });
   }
 
   function handleAddPillar() {
@@ -7710,6 +7853,75 @@ export default function Home() {
         )}
 
       </nav>
+
+      {/* ═══════ IN-APP TOAST NOTIFICATIONS (NO BROWSER POPUPS) ═══════ */}
+      <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[110] w-full max-w-md px-4 pointer-events-none flex flex-col gap-2.5">
+        {toasts.map(toast => {
+          const isErr = toast.type === "error";
+          const isSucc = toast.type === "success";
+          const isWarn = toast.type === "warning";
+          return (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto bg-white border-2 border-slate-900 shadow-[4px_4px_0px_#000] p-3.5 flex items-start gap-3 transition-all animate-in slide-in-from-top-3 duration-200 ${
+                isSucc ? "border-l-8 border-l-emerald-600" : isErr ? "border-l-8 border-l-red-600" : isWarn ? "border-l-8 border-l-amber-500" : "border-l-8 border-l-blue-600"
+              }`}
+            >
+              <div className={`w-6 h-6 border border-slate-900 flex items-center justify-center shrink-0 text-white ${
+                isSucc ? "bg-emerald-600" : isErr ? "bg-red-600" : isWarn ? "bg-amber-500 text-slate-950" : "bg-blue-600"
+              }`}>
+                {isSucc ? <IconCheck size={14} /> : isErr ? <IconAlertTriangle size={14} /> : isWarn ? <IconAlertTriangle size={14} /> : <IconInfo size={14} />}
+              </div>
+              <p className="text-xs font-black text-slate-900 flex-1 leading-relaxed pt-0.5">
+                {toast.message}
+              </p>
+              <button
+                type="button"
+                onClick={() => dismissToast(toast.id)}
+                className="p-1 text-slate-400 hover:text-slate-900 transition-colors"
+                title={siteLang === "en" ? "Dismiss" : "إغلاق"}
+              >
+                <IconX size={14} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ═══════ IN-APP CONFIRMATION MODAL ═══════ */}
+      {confirmDialog && confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[105] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] w-full max-w-sm p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2.5 border-b-2 border-slate-100 pb-2.5">
+              <div className={`w-8 h-8 border-2 border-slate-900 flex items-center justify-center shrink-0 ${
+                confirmDialog.isDestructive ? "bg-red-600 text-white shadow-[2px_2px_0px_#000]" : "bg-emerald-primary text-white shadow-[2px_2px_0px_#000]"
+              }`}>
+                <IconAlertTriangle size={16} />
+              </div>
+              <h3 className="font-black text-sm text-slate-900">{confirmDialog.title}</h3>
+            </div>
+            <p className="text-xs font-bold text-slate-700 leading-relaxed">
+              {confirmDialog.message}
+            </p>
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+              >
+                {confirmDialog.cancelText}
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className={`px-4 py-2 ${confirmDialog.isDestructive ? "bg-red-600 hover:bg-red-700 text-white" : "bg-emerald-primary hover:bg-emerald-dark text-white"} text-xs font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all`}
+              >
+                {confirmDialog.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════ AUTH MODAL ═══════ */}
       {authModal && (
