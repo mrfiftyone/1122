@@ -1821,6 +1821,7 @@ export default function Home() {
 
   function logout() {
     localStorage.removeItem("currentUser");
+    supabase.auth.signOut().catch(() => {});
     setSession(null);
     if (tab === "admin" || tab === "profile" || tab === "notifications") setTab("feed");
     rerender();
@@ -4125,11 +4126,60 @@ export default function Home() {
         : "bg-white text-slate-700 hover:bg-slate-50"
     }`;
 
-  // Helper: role icon
-  const RoleIcon = ({ role }: { role: string }) => {
-    if (role === "owner") return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-200 text-amber-900 border border-amber-600 text-[9px] font-black"><IconCrown size={10} /> {siteLang === "en" ? "Owner" : "مالك"}</span>;
-    if (role === "mod") return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-900 border border-blue-600 text-[9px] font-black"><IconShield size={10} /> {siteLang === "en" ? "Moderator" : "مشرف"}</span>;
-    return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black"><IconGrad size={10} /> {siteLang === "en" ? "Student" : "طالب"}</span>;
+  // Helper: Get user role (consistently resolved across Supabase, sessions, and local cache)
+  const getUserRole = useCallback((username?: string | null): "student" | "mod" | "owner" => {
+    if (!username) return "student";
+    const uTrim = username.trim();
+    const uLower = uTrim.toLowerCase();
+    if (uLower === "hh") return "owner";
+
+    // 1. Live Supabase profiles dictionary (available globally to all visitors)
+    const prof = profiles[uTrim] || Object.entries(profiles).find(([k]) => k.toLowerCase() === uLower)?.[1];
+    if (prof?.role === "owner" || prof?.role === "mod") return prof.role;
+
+    // 2. Active browser session
+    if (session && session.username && session.username.toLowerCase() === uLower && session.role) {
+      return session.role;
+    }
+
+    // 3. Local users storage fallback
+    const localUser = getUsers().find(u => u.username && u.username.toLowerCase() === uLower);
+    if (localUser?.role === "owner" || localUser?.role === "mod") return localUser.role;
+
+    return "student";
+  }, [profiles, session]);
+
+  // Helper: role icon (Owner crown, Moderator shield)
+  const RoleIcon = ({ role, username, showStudent = false }: { role?: string; username?: string; showStudent?: boolean }) => {
+    const effectiveRole = role || (username ? getUserRole(username) : "student");
+    if (effectiveRole === "owner") {
+      return (
+        <span
+          title={siteLang === "en" ? "Platform Owner" : "مالك المنصة"}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-200 text-amber-900 border border-amber-600 text-[9px] font-black shadow-[1px_1px_0px_#000]"
+        >
+          <IconCrown size={10} /> {siteLang === "en" ? "Owner" : "مالك"}
+        </span>
+      );
+    }
+    if (effectiveRole === "mod") {
+      return (
+        <span
+          title={siteLang === "en" ? "Platform Moderator" : "مشرف المنصة"}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-900 border border-blue-600 text-[9px] font-black shadow-[1px_1px_0px_#000]"
+        >
+          <IconShield size={10} /> {siteLang === "en" ? "Moderator" : "مشرف"}
+        </span>
+      );
+    }
+    if (showStudent) {
+      return (
+        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-400 text-[9px] font-black">
+          <IconGrad size={10} /> {siteLang === "en" ? "Student" : "طالب"}
+        </span>
+      );
+    }
+    return null;
   };
 
   // Helper: Student Honor Badge
@@ -4193,6 +4243,7 @@ export default function Home() {
             >
               <Avatar username={c.author} size="w-5 h-5 text-[10px]" />
               <span className="font-bold text-teal-800">{c.author}</span>
+              <RoleIcon username={c.author} />
               <HonorBadge username={c.author} />
               {parentComment && (
                 <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-0.5">
@@ -4479,7 +4530,7 @@ export default function Home() {
             )}
           </nav>
 
-          {/* Header Action: Settings */}
+          {/* Header Action: Settings & User Auth */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSettingsModal(true)}
@@ -4487,8 +4538,46 @@ export default function Home() {
               title={t("navSettings")}
             >
               <IconSettings size={15} />
-              <span className="font-black">{t("navSettings")}</span>
+              <span className="font-black hidden sm:inline">{t("navSettings")}</span>
             </button>
+
+            {!session ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { setIsRegister(false); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
+                  className="px-3 py-1.5 text-xs font-black border-2 border-slate-900 bg-white hover:bg-slate-100 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+                >
+                  {t("login")}
+                </button>
+                <button
+                  onClick={() => { setIsRegister(true); setAuthModal(true); setAuthError(""); resetTurnstile(); }}
+                  className="px-3 py-1.5 text-xs font-black border-2 border-slate-900 bg-emerald-primary hover:bg-emerald-dark text-white shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all"
+                >
+                  {t("register")}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-white border-2 border-slate-900 px-2.5 py-1 shadow-[2px_2px_0px_#000]">
+                <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="hover:opacity-70">
+                  <Avatar username={session.username} size="w-6 h-6 text-[10px]" />
+                </button>
+                <div className="text-right">
+                  <button onClick={() => { setViewedUser(session.username); setTab("profile"); }} className="text-xs font-black hover:underline block leading-tight">
+                    {session.username}
+                  </button>
+                  <div className="text-[9px]">
+                    <RoleIcon username={session.username} />
+                  </div>
+                </div>
+                <button
+                  onClick={logout}
+                  title={t("logout")}
+                  className="text-red-600 mr-1 p-1 hover:bg-red-50 rounded"
+                >
+                  <IconX size={14} />
+                </button>
+              </div>
+            )}
           </div>
 
         </div>
@@ -4736,6 +4825,7 @@ export default function Home() {
                             <div className="flex items-center justify-between gap-1">
                               <div className="flex items-center gap-1 min-w-0">
                                 <span className="font-black text-xs text-slate-900 truncate">{s.username}</span>
+                                <RoleIcon username={s.username} />
                                 {s.isTop10 && (
                                   <span title={siteLang === "en" ? "Top 10 Honor Student" : "وسام الشرف - من العشرة الأوائل"} className="shrink-0 text-amber-600">
                                     <IconAward size={11} />
@@ -4969,6 +5059,7 @@ export default function Home() {
                             <button onClick={() => { setViewedUser(p.author); setTab("profile"); }} className="flex items-center gap-2 hover:opacity-80">
                               <Avatar username={p.author} />
                               <span className="text-xs font-black text-slate-700">{p.author}</span>
+                              <RoleIcon username={p.author} />
                               <HonorBadge username={p.author} />
                             </button>
 
@@ -5709,6 +5800,7 @@ export default function Home() {
                                 >
                                   <Avatar username={postItem.author} />
                                   <span className="text-xs font-black text-slate-800">{postItem.author}</span>
+                                  <RoleIcon username={postItem.author} />
                                   <HonorBadge username={postItem.author} />
                                   {isReview ? (
                                     isDislikeReview ? (
@@ -6154,9 +6246,7 @@ export default function Home() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-xl font-black text-slate-900">{targetProfileUser}</h3>
-                          {getUsers().find(u => u.username === targetProfileUser) && (
-                            <RoleIcon role={getUsers().find(u => u.username === targetProfileUser)?.role || "student"} />
-                          )}
+                          <RoleIcon username={targetProfileUser} showStudent={true} />
                           <HonorBadge username={targetProfileUser} showText={true} />
                         </div>
                         <p className="text-xs text-slate-600 font-medium mt-1 max-w-md">
