@@ -1037,14 +1037,32 @@ export default function Home() {
         setTurnstileServerVerified(true);
         setAuthError("");
       } else {
-        console.warn("Turnstile server verification response:", data);
-        // Fallback: client token is confirmed valid by Cloudflare widget
-        setTurnstileServerVerified(true);
+        console.warn("Turnstile server verification failed:", data);
+        setTurnstileServerVerified(false);
+        setAuthError(siteLang === "en" ? "Security verification failed. Please try again." : "فشل التحقق الأمني. يرجى إعادة المحاولة.");
+        resetTurnstile();
       }
     } catch (e) {
-      console.warn("Turnstile verify network fallback:", e);
-      setTurnstileServerVerified(true);
+      console.warn("Turnstile verify error:", e);
+      setTurnstileServerVerified(false);
+      setAuthError(siteLang === "en" ? "Unable to reach security service. Check connection." : "تعذر الاتصال بخدمة الأمان. يرجى التحقق من اتصالك.");
+      resetTurnstile();
     }
+  }, [siteLang, resetTurnstile]);
+
+  // Action Cooldown Guard (protects from rapid spamming across posts, reviews, comments)
+  const checkActionCooldown = useCallback((actionType: "post" | "comment" | "review" | "report" | "teacher", cooldownMs: number): { allowed: boolean; remainingSec: number } => {
+    if (typeof window === "undefined") return { allowed: true, remainingSec: 0 };
+    const key = `iq_cooldown_${actionType}`;
+    const lastTime = parseInt(localStorage.getItem(key) || "0", 10);
+    const now = Date.now();
+    const elapsed = now - lastTime;
+    if (elapsed < cooldownMs) {
+      const remainingSec = Math.ceil((cooldownMs - elapsed) / 1000);
+      return { allowed: false, remainingSec };
+    }
+    localStorage.setItem(key, String(now));
+    return { allowed: true, remainingSec: 0 };
   }, []);
 
   const handleTurnstileExpire = useCallback(() => {
@@ -1800,6 +1818,15 @@ export default function Home() {
   // ─── Post Handlers (Persisted to Supabase) ─────────────────────────
   async function submitPost() {
     if (!session || !postTitle.trim() || !postBody.trim()) return;
+
+    const cooldown = checkActionCooldown("post", 30000);
+    if (!cooldown.allowed) {
+      alert(siteLang === "en"
+        ? `Please wait ${cooldown.remainingSec}s before publishing another post.`
+        : `يرجى الانتظار ${cooldown.remainingSec} ثانية قبل نشر منشور جديد.`);
+      return;
+    }
+
     if (profiles[session.username]?.isBanned) {
       alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً، ما تكدر تنشر بالمنصة.");
       return;
@@ -2168,6 +2195,15 @@ export default function Home() {
 
   async function submitReport() {
     if (!session) { setAuthModal(true); return; }
+
+    const cooldown = checkActionCooldown("report", 15000);
+    if (!cooldown.allowed) {
+      alert(siteLang === "en"
+        ? `Please wait ${cooldown.remainingSec}s before submitting another report.`
+        : `يرجى الانتظار ${cooldown.remainingSec} ثانية قبل إرسال بلاغ آخر.`);
+      return;
+    }
+
     if (profiles[session.username]?.isBanned) {
       alert(siteLang === "en" ? "Your account is banned." : "حسابك محظور نهائياً.");
       return;
@@ -2296,6 +2332,14 @@ export default function Home() {
     const input = (document.getElementById(`comment-${postId}`) || document.getElementById(`profile-comment-${postId}`)) as HTMLInputElement;
     const rawText = textOverride || input?.value || "";
     if (!rawText.trim()) return;
+
+    const cooldown = checkActionCooldown("comment", 10000);
+    if (!cooldown.allowed) {
+      alert(siteLang === "en"
+        ? `Please wait ${cooldown.remainingSec}s before adding another comment.`
+        : `يرجى الانتظار ${cooldown.remainingSec} ثانية قبل إضافة تعليق آخر.`);
+      return;
+    }
 
     // Phase 5: Sanitize comment text
     const commentText = sanitizeText(rawText.trim(), 1000);
@@ -2494,6 +2538,14 @@ export default function Home() {
   async function submitTeacher() {
     if (!session) { setAuthModal(true); return; }
 
+    const cooldown = checkActionCooldown("teacher", 45000);
+    if (!cooldown.allowed) {
+      alert(siteLang === "en"
+        ? `Please wait ${cooldown.remainingSec}s before submitting another teacher suggestion.`
+        : `يرجى الانتظار ${cooldown.remainingSec} ثانية قبل اقتراح أستاذ آخر.`);
+      return;
+    }
+
     if (!platformSettings.allowTeacherSubmissions && session.role === "student") {
       alert(siteLang === "en" ? "New teacher suggestions are temporarily paused by platform administration." : "اقتراح الأساتذة معطل حالياً من إدارة المنصة.");
       return;
@@ -2599,6 +2651,14 @@ export default function Home() {
   async function submitTeacherReview() {
     if (!session) { setAuthModal(true); return; }
     if (!selectedTeacher) return;
+
+    const cooldown = checkActionCooldown("review", 20000);
+    if (!cooldown.allowed) {
+      alert(siteLang === "en"
+        ? `Please wait ${cooldown.remainingSec}s before submitting another review.`
+        : `يرجى الانتظار ${cooldown.remainingSec} ثانية قبل كتابة تقييم جديد.`);
+      return;
+    }
 
     const muteCheck = isUserCurrentlyMuted(session.username);
     if (muteCheck.muted) {
