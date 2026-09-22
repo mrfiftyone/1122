@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { normalizeTeacherName } from "@/utils/normalization";
+import {
+  calculateWilsonScore,
+  calculateHotScore,
+  calculateWeeklyTrendingVelocity,
+  calculateStudentReputation,
+  matchesArabicFuzzy,
+} from "@/utils/algorithms";
 import { containsProfanity, getBlockedWordsList } from "@/utils/moderation";
 import { getRelativeTime, isWithinEditWindow } from "@/utils/time";
 import {
@@ -522,6 +529,7 @@ export default function Home() {
   const [postTelegram, setPostTelegram] = useState("");
   const [postTag, setPostTag] = useState<PostTag>("discussion");
   const [selectedFeedTag, setSelectedFeedTag] = useState<"all" | PostTag>("all");
+  const [feedSortMode, setFeedSortMode] = useState<"hot" | "new" | "top">("hot");
   const [pinnedPostIds, setPinnedPostIds] = useState<string[]>([]);
 
   // Comment Threading & Reply States (Reddit-style)
@@ -3137,12 +3145,15 @@ export default function Home() {
   const activePosts = posts.filter(p => p.status === "active");
   const activeTeachers = teachers.filter(t => t.status === "active");
   const filteredTeachers = activeTeachers.filter(t => {
-    const q = dirSearch.trim().toLowerCase();
-    const matchesSearch = !q ||
-      t.name.toLowerCase().includes(q) ||
-      t.subject.toLowerCase().includes(q) ||
-      t.gov.toLowerCase().includes(q) ||
-      (t.grades && t.grades.toLowerCase().includes(q));
+    const matchesSearch = !dirSearch.trim() || matchesArabicFuzzy(
+      dirSearch,
+      t.name,
+      t.normalizedName,
+      t.normalized_name,
+      t.subject,
+      t.gov,
+      t.grades
+    );
     const matchesGov = filterGov === "all" || t.gov === filterGov;
     const matchesSubject = filterSubject === "all" || t.subject === filterSubject;
     const matchesGrade = filterGrade === "all" || (t.grades && t.grades.includes(filterGrade));
@@ -3159,11 +3170,12 @@ export default function Home() {
       return (b.likes - b.dislikes) - (a.likes - a.dislikes);
     }
     if (sortTeacherBy === "rating") {
-      const aTotal = a.likes + a.dislikes;
-      const bTotal = b.likes + b.dislikes;
-      const aPct = aTotal > 0 ? a.likes / aTotal : 0;
-      const bPct = bTotal > 0 ? b.likes / bTotal : 0;
-      return bPct - aPct;
+      const aScore = calculateWilsonScore(a.likes, a.dislikes);
+      const bScore = calculateWilsonScore(b.likes, b.dislikes);
+      if (Math.abs(bScore - aScore) > 0.0001) {
+        return bScore - aScore;
+      }
+      return (b.likes - b.dislikes) - (a.likes - a.dislikes);
     }
     if (sortTeacherBy === "reviews") {
       const aReviews = posts.filter(p => p.teacher_id === a.id || p.teacherId === a.id).length;
@@ -3173,17 +3185,17 @@ export default function Home() {
     return 0; // newest / default order
   });
 
-  // Top trending teachers this week based on interactions (likes + dislikes + reviews)
+  // Top trending teachers this week based on 7-day velocity
   const trendingTeachers = [...activeTeachers]
     .map(t => {
       const reviewCount = posts.filter(p => p.teacher_id === t.id || p.teacherId === t.id).length;
-      const score = t.likes * 2 + t.dislikes + reviewCount * 3;
-      return { ...t, trendScore: score, reviewCount };
+      const trendScore = calculateWeeklyTrendingVelocity(t.id, t.likes, t.dislikes, posts);
+      return { ...t, trendScore, reviewCount };
     })
     .sort((a, b) => b.trendScore - a.trendScore)
     .slice(0, 5);
 
-  // Top students ranked by total likes and rating received on posts, reviews, and comments (No limit)
+  // Top students ranked by multi-factor reputation (posts, reviews, comments, and approval)
   const allStudentUsernames = Array.from(
     new Set([
       ...Object.keys(profiles),
@@ -3196,10 +3208,26 @@ export default function Home() {
     const userLikes = userPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
     const userDislikes = userPosts.reduce((sum, p) => sum + (p.dislikes || 0), 0);
     const userReviews = userPosts.filter(p => p.grade_level?.includes("تقييم أستاذ") || p.teacher_id || p.teacherId).length;
-    const totalVotes = userLikes + userDislikes;
-    const approvalRate = totalVotes > 0 
-      ? Math.round((userLikes / totalVotes) * 100) 
-      : (userLikes > 0 ? 100 : (userPosts.length > 0 ? 95 : 0));
+    
+    let userCommentLikes = 0;
+    for (const post of posts) {
+      if (Array.isArray(post.comments)) {
+        for (const c of post.comments) {
+          if (c.author === username) {
+            userCommentLikes += (c.likes || 0);
+          }
+        }
+      }
+    }
+
+    const { reputationScore, approvalRate } = calculateStudentReputation({
+      likes: userLikes,
+      dislikes: userDislikes,
+      postsCount: userPosts.length,
+      reviewsCount: userReviews,
+      commentsLikes: userCommentLikes,
+    });
+
     return {
       username,
       profile: profiles[username] || { avatarColor: "#0d9488", bio: "" },
@@ -3208,10 +3236,11 @@ export default function Home() {
       reviewsCount: userReviews,
       postsCount: userPosts.length,
       approvalRate,
+      reputationScore,
     };
   })
-  .filter(s => s.postsCount > 0 || s.totalLikes > 0)
-  .sort((a, b) => b.totalLikes - a.totalLikes || b.approvalRate - a.approvalRate || b.postsCount - a.postsCount);
+  .filter(s => s.postsCount > 0 || s.totalLikes > 0 || s.reputationScore > 0)
+  .sort((a, b) => b.reputationScore - a.reputationScore || b.totalLikes - a.totalLikes);
 
   // Teacher Badges & Milestones Helper
   function getTeacherBadges(t: Teacher): { label: string; cls: string; type: "favorite" | "top_subject" | "active" }[] {
@@ -3238,7 +3267,10 @@ export default function Home() {
 
     const sameSubjectTeachers = activeTeachers.filter(other => other.subject === t.subject && (other.likes + other.dislikes) >= 3);
     if (sameSubjectTeachers.length > 1) {
-      const topTeacher = sameSubjectTeachers.reduce((max, curr) => (curr.likes - curr.dislikes) > (max.likes - max.dislikes) ? curr : max, sameSubjectTeachers[0]);
+      const topTeacher = sameSubjectTeachers.reduce(
+        (max, curr) => calculateWilsonScore(curr.likes, curr.dislikes) > calculateWilsonScore(max.likes, max.dislikes) ? curr : max,
+        sameSubjectTeachers[0]
+      );
       if (topTeacher.id === t.id && (t.likes - t.dislikes) > 0) {
         badges.push({
           label: siteLang === "en" ? `Top Rated in ${t.subject}` : `الأعلى تقييماً في ${t.subject}`,
@@ -3882,6 +3914,8 @@ export default function Home() {
                               <span className="text-emerald-700 flex items-center gap-0.5"><IconThumbUp size={9} /> {s.totalLikes}</span>
                               <span>•</span>
                               <span>{s.postsCount} {siteLang === "en" ? "posts" : "مشاركة"}</span>
+                              <span>•</span>
+                              <span className="text-slate-900 font-black">{s.reputationScore} {siteLang === "en" ? "pts" : "نقطة"}</span>
                             </div>
                           </div>
                         </div>
@@ -3907,8 +3941,8 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Feed Tag Filter Bar */}
-            <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-3 space-y-2">
+            {/* Feed Tag Filter Bar & Ranking Controls */}
+            <div className="bg-white border-2 border-border-subtle shadow-[3px_3px_0px_#d1dcd6] p-3 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                   <IconTag size={13} className="text-emerald-primary" /> {t("filterByTag")}
@@ -3949,6 +3983,46 @@ export default function Home() {
                   );
                 })}
               </div>
+
+              {/* Feed Ranking Order: Hot, New, Top */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-500 text-[11px] ml-1">{siteLang === "en" ? "Feed Order:" : "ترتيب المنشورات:"}</span>
+                  <button
+                    onClick={() => setFeedSortMode("hot")}
+                    className={`px-2.5 py-1 text-[11px] font-black border flex items-center gap-1.5 transition-all ${
+                      feedSortMode === "hot"
+                        ? "border-slate-900 bg-amber-400 text-slate-950 shadow-[1px_1px_0px_#000]"
+                        : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"
+                    }`}
+                  >
+                    <IconFlame size={12} className={feedSortMode === "hot" ? "text-slate-950" : "text-amber-600"} />
+                    <span>{siteLang === "en" ? "Hot" : "الأنشط"}</span>
+                  </button>
+                  <button
+                    onClick={() => setFeedSortMode("new")}
+                    className={`px-2.5 py-1 text-[11px] font-black border flex items-center gap-1.5 transition-all ${
+                      feedSortMode === "new"
+                        ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]"
+                        : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"
+                    }`}
+                  >
+                    <IconClock size={12} />
+                    <span>{siteLang === "en" ? "Newest" : "الأحدث"}</span>
+                  </button>
+                  <button
+                    onClick={() => setFeedSortMode("top")}
+                    className={`px-2.5 py-1 text-[11px] font-black border flex items-center gap-1.5 transition-all ${
+                      feedSortMode === "top"
+                        ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]"
+                        : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"
+                    }`}
+                  >
+                    <IconStar size={12} fill={feedSortMode === "top" ? "currentColor" : "none"} />
+                    <span>{siteLang === "en" ? "Top Votes" : "الأعلى تصويتاً"}</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {(() => {
@@ -3963,6 +4037,23 @@ export default function Home() {
                 const bPin = pinnedPostIds.includes(b.id) || b.pinned;
                 if (aPin && !bPin) return -1;
                 if (!aPin && bPin) return 1;
+
+                if (feedSortMode === "hot") {
+                  const aComments = Array.isArray(a.comments) ? a.comments.length : 0;
+                  const bComments = Array.isArray(b.comments) ? b.comments.length : 0;
+                  const aHot = calculateHotScore(a.likes, a.dislikes, aComments, a.created_at);
+                  const bHot = calculateHotScore(b.likes, b.dislikes, bComments, b.created_at);
+                  if (Math.abs(bHot - aHot) > 0.001) return bHot - aHot;
+                  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                }
+
+                if (feedSortMode === "top") {
+                  const aNet = (a.likes || 0) - (a.dislikes || 0);
+                  const bNet = (b.likes || 0) - (b.dislikes || 0);
+                  if (bNet !== aNet) return bNet - aNet;
+                  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                }
+
                 return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
               });
 
@@ -4316,7 +4407,7 @@ export default function Home() {
                     onClick={() => setSortTeacherBy("rating")}
                     className={`px-2.5 py-1 text-[11px] font-bold border transition-all ${sortTeacherBy === "rating" ? "border-slate-900 bg-slate-900 text-white shadow-[1px_1px_0px_#000]" : "border-slate-300 bg-white hover:border-slate-900 text-slate-700"}`}
                   >
-                    {siteLang === "en" ? "Highest Rating %" : "الأعلى قبولاً %"}
+                    {siteLang === "en" ? "Top Rated" : "الأعلى تقييماً"}
                   </button>
                   <button
                     onClick={() => setSortTeacherBy("reviews")}
@@ -7207,15 +7298,7 @@ export default function Home() {
                       {siteLang === "en" ? "-- No Teacher --" : "-- بدون أستاذ --"}
                     </option>
                     {activeTeachers
-                      .filter(t => {
-                        if (!postTeacherSearch.trim()) return true;
-                        const q = postTeacherSearch.trim().toLowerCase();
-                        return (
-                          t.name.toLowerCase().includes(q) ||
-                          t.subject.toLowerCase().includes(q) ||
-                          t.gov.toLowerCase().includes(q)
-                        );
-                      })
+                      .filter(t => matchesArabicFuzzy(postTeacherSearch, t.name, t.normalizedName, t.normalized_name, t.subject, t.gov))
                       .map(t => (
                         <option key={t.id} value={t.id}>
                           {t.name} - {t.subject} - {t.gov}
