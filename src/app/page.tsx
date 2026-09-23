@@ -8407,19 +8407,14 @@ export default function Home() {
           <div className="bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
 
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b-2 border-slate-900 px-5 py-3.5 bg-slate-50 shrink-0">
+            <div className="flex items-center justify-between border-b-2 border-slate-900 px-5 py-3 bg-slate-50 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-emerald-primary text-white border-2 border-slate-900 flex items-center justify-center shadow-[1.5px_1.5px_0px_#000]">
-                  <IconPen size={16} />
+                <div className="w-7 h-7 bg-emerald-primary text-white border-2 border-slate-900 flex items-center justify-center shadow-[1.5px_1.5px_0px_#000]">
+                  <IconPen size={14} />
                 </div>
-                <div>
-                  <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight">
-                    {siteLang === "en" ? "Create New Post" : "نشر مشاركة جديدة"}
-                  </h3>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 font-bold">
-                    {siteLang === "en" ? "Share questions, discussions, notes, and study advice" : "شارك أسئلتك، مناقشاتك، ملازمك وتجاربك مع زملائك"}
-                  </p>
-                </div>
+                <h3 className="font-black text-sm sm:text-base text-slate-900">
+                  {siteLang === "en" ? "Create New Post" : "نشر مشاركة جديدة"}
+                </h3>
               </div>
               <button
                 onClick={() => setPostModal(false)}
@@ -8433,16 +8428,10 @@ export default function Home() {
             {/* Modal Body (Scrollable) */}
             <div className="p-5 space-y-4 overflow-y-auto text-xs flex-1">
 
-              {/* 1. Category Selector Cards ("The emoji ones" redesign) */}
+              {/* 1. Category Selector */}
               <div>
-                <label className="block font-black text-slate-800 text-xs mb-2 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <IconTag size={13} className="text-emerald-primary" />
-                    <span>{siteLang === "en" ? "Post Category" : "تصنيف المنشور"}</span>
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    {siteLang === "en" ? "Select one category" : "اختر نوع المشاركة"}
-                  </span>
+                <label className="block font-black text-slate-800 text-xs mb-2">
+                  {siteLang === "en" ? "Post Category" : "تصنيف المنشور"}
                 </label>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -8451,8 +8440,6 @@ export default function Home() {
                       id: "question",
                       labelEn: "Question",
                       labelAr: "سؤال واستفسار",
-                      descEn: "Ask a question",
-                      descAr: "سؤال عن مسألة أو مادة",
                       icon: <IconHelpCircle size={15} />,
                       color: "hover:border-indigo-500 hover:bg-indigo-50/40",
                       active: "border-slate-900 bg-indigo-600 text-white shadow-[2px_2px_0px_#000]",
@@ -8462,9 +8449,7 @@ export default function Home() {
                     {
                       id: "discussion",
                       labelEn: "Discussion",
-                      labelAr: "نقاش وتبادل آراء",
-                      descEn: "General discussion",
-                      descAr: "حوار وتبادل تجارب",
+                      labelAr: "نقاش وحوار",
                       icon: <IconComment size={15} />,
                       color: "hover:border-slate-500 hover:bg-slate-100",
                       active: "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]",
@@ -8475,8 +8460,6 @@ export default function Home() {
                       id: "news",
                       labelEn: "Ministerial News",
                       labelAr: "أخبار وزارية",
-                      descEn: "Official notices",
-                      descAr: "قرارات وزارة التربية",
                       icon: <IconMegaphone size={15} />,
                       color: "hover:border-blue-500 hover:bg-blue-50/40",
                       active: "border-slate-900 bg-blue-900 text-white shadow-[2px_2px_0px_#000]",
@@ -8487,8 +8470,6 @@ export default function Home() {
                       id: "tips",
                       labelEn: "Study Tips",
                       labelAr: "نصائح دراسية",
-                      descEn: "Advice and schedules",
-                      descAr: "جداول وطرق مراجعة",
                       icon: <IconLightbulb size={15} />,
                       color: "hover:border-amber-500 hover:bg-amber-50/40",
                       active: "border-slate-900 bg-amber-500 text-slate-950 shadow-[2px_2px_0px_#000]",
@@ -8499,8 +8480,6 @@ export default function Home() {
                       id: "booklet",
                       labelEn: "Booklets & Notes",
                       labelAr: "ملازم وملخصات",
-                      descEn: "Summaries & booklets",
-                      descAr: "ملازم ومرشحات ودفاتر",
                       icon: <IconBookmark size={15} />,
                       color: "hover:border-emerald-500 hover:bg-emerald-50/40",
                       active: "border-slate-900 bg-emerald-600 text-white shadow-[2px_2px_0px_#000]",
@@ -8510,9 +8489,7 @@ export default function Home() {
                     {
                       id: "other",
                       labelEn: "Other",
-                      labelAr: "موضوع آخر",
-                      descEn: "Other topic",
-                      descAr: "مواضيع طلابية عامة",
+                      labelAr: "مواضيع أخرى",
                       icon: <IconTag size={15} />,
                       color: "hover:border-slate-400 hover:bg-slate-50",
                       active: "border-slate-900 bg-slate-800 text-white shadow-[2px_2px_0px_#000]",
@@ -8526,40 +8503,35 @@ export default function Home() {
                         type="button"
                         key={cat.id}
                         onClick={() => setPostTag(cat.id as PostTag)}
-                        className={`p-2.5 border-2 text-start transition-all cursor-pointer flex items-start gap-2 ${
+                        className={`p-2.5 border-2 text-start transition-all cursor-pointer flex items-center gap-2.5 ${
                           isSelected
                             ? `${cat.active}`
                             : `border-slate-200 bg-slate-50/70 text-slate-800 ${cat.color}`
                         }`}
                       >
                         <div
-                          className={`w-6 h-6 rounded-none border border-slate-900 flex items-center justify-center shrink-0 mt-0.5 ${
+                          className={`w-6 h-6 rounded-none border border-slate-900 flex items-center justify-center shrink-0 ${
                             isSelected ? cat.iconBoxActive : cat.iconBoxIdle
                           }`}
                         >
                           {cat.icon}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-black text-xs leading-snug truncate">
-                            {siteLang === "en" ? cat.labelEn : cat.labelAr}
-                          </p>
-                          <p className={`text-[10px] leading-tight truncate ${isSelected ? "opacity-90" : "text-slate-500"}`}>
-                            {siteLang === "en" ? cat.descEn : cat.descAr}
-                          </p>
-                        </div>
+                        <span className="font-black text-xs leading-snug truncate">
+                          {siteLang === "en" ? cat.labelEn : cat.labelAr}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* 2. Related Teacher & Grade Level (2-Column Grid) */}
+              {/* 2. Related Teacher & Grade Level */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 {/* Related Teacher */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block font-bold text-slate-800 text-xs">
-                      {siteLang === "en" ? "Related Teacher (Optional)" : "الأستاذ المعني (اختياري)"}
+                      {siteLang === "en" ? "Related Teacher" : "الأستاذ المعني"}
                     </label>
                     {postTeacher && (
                       <button
@@ -8620,12 +8592,9 @@ export default function Home() {
                     onChange={e => setPostGrade(e.target.value)}
                     className="w-full p-2 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white text-xs cursor-pointer mt-0 sm:mt-[2px]"
                   >
-                    <option value="General">{siteLang === "en" ? "General (All Grades)" : "عام لكل المراحل"}</option>
+                    <option value="General">{siteLang === "en" ? "General" : "عام لكل المراحل"}</option>
                     {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
-                  <p className="text-[10px] text-slate-500 font-semibold pt-0.5">
-                    {siteLang === "en" ? "Helps students find posts relevant to their grade" : "يساعد الطلاب على تصفية المنشورات حسب مرحلتهم"}
-                  </p>
                 </div>
               </div>
 
@@ -8633,7 +8602,7 @@ export default function Home() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="font-bold text-slate-800 text-xs">
-                    {siteLang === "en" ? "Post Title" : "عنوان المشاركة"} <span className="text-red-600">*</span>
+                    {siteLang === "en" ? "Post Title" : "عنوان المشاركة"}
                   </label>
                   <span className="text-[10px] font-bold text-slate-400">{postTitle.length}/100</span>
                 </div>
@@ -8643,7 +8612,7 @@ export default function Home() {
                   onChange={e => setPostTitle(e.target.value)}
                   maxLength={100}
                   className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white text-xs"
-                  placeholder={siteLang === "en" ? "Summarize your question or topic..." : "اكتب عنواناً مختصراً وواضحاً..."}
+                  placeholder={siteLang === "en" ? "Post title..." : "عنوان المنشور..."}
                 />
               </div>
 
@@ -8651,7 +8620,7 @@ export default function Home() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="font-bold text-slate-800 text-xs">
-                    {siteLang === "en" ? "Content Details" : "محتوى المنشور وتفاصيله"} <span className="text-red-600">*</span>
+                    {siteLang === "en" ? "Content" : "محتوى المنشور"}
                   </label>
                   <span className="text-[10px] font-bold text-slate-400">{postBody.length}/1500</span>
                 </div>
@@ -8660,22 +8629,24 @@ export default function Home() {
                   onChange={e => setPostBody(e.target.value)}
                   maxLength={1500}
                   className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[110px] resize-y focus:outline-none focus:bg-white text-xs leading-relaxed"
-                  placeholder={siteLang === "en" ? "Write the details of your question, note, or advice..." : "اكتب التفاصيل والملاحظات بوضوح هنا..."}
+                  placeholder={siteLang === "en" ? "Write something helpful..." : "اكتب هنا..."}
                 />
               </div>
 
-              {/* 5. Media & Attachments (Images + YouTube) */}
+              {/* 5. Media & Attachments */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 {/* Images Upload Box */}
                 <div className="border-2 border-slate-900 p-3 bg-slate-50 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                       <IconImage size={14} className="text-emerald-primary" />
-                      <span>{siteLang === "en" ? "Attach Study Images" : "إرفاق صور الملازم"}</span>
+                      <span>{siteLang === "en" ? "Attach Study Images" : "إرفاق صور"}</span>
                     </span>
-                    <span className="text-[10px] font-bold text-slate-500">
-                      {postImages.length > 0 ? `${postImages.length} ${siteLang === "en" ? "images" : "صور"}` : ""}
-                    </span>
+                    {postImages.length > 0 && (
+                      <span className="text-[10px] font-bold text-slate-500">
+                        {postImages.length}
+                      </span>
+                    )}
                   </div>
 
                   <input
@@ -8696,15 +8667,9 @@ export default function Home() {
                     <span>
                       {isCompressingImages
                         ? (siteLang === "en" ? "Compressing images..." : "جاري ضغط الصور...")
-                        : (siteLang === "en" ? "Select images from device" : "اختيار صور من جهازك")}
+                        : (siteLang === "en" ? "+ Add images" : "+ إضافة صور")}
                     </span>
                   </label>
-
-                  <p className="text-[10px] text-slate-500 leading-tight">
-                    {siteLang === "en"
-                      ? "Images are automatically optimized and compressed for quick loading."
-                      : "يتم ضغط الصور تلقائياً لتسريع التصفح ودعم السحب."}
-                  </p>
 
                   {postImages.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
@@ -8730,7 +8695,7 @@ export default function Home() {
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                       <IconVideo size={14} className="text-red-600" />
-                      <span>{siteLang === "en" ? "YouTube Explanation Link" : "رابط شرح يوتيوب"}</span>
+                      <span>{siteLang === "en" ? "YouTube Link" : "رابط يوتيوب"}</span>
                     </span>
                     {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
                       <span className="text-[10px] text-red-600 font-black">
@@ -8750,43 +8715,29 @@ export default function Home() {
                     }`}
                     placeholder="https://youtube.com/watch?v=..."
                   />
-
-                  <p className="text-[10px] text-slate-500 leading-tight">
-                    {siteLang === "en"
-                      ? "Optional: Attach a video explanation from YouTube."
-                      : "اختياري: يمكنك وضع رابط فيديو لشرح مسألة أو ملخص."}
-                  </p>
                 </div>
               </div>
 
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-4 border-t-2 border-slate-900 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
-              <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">
-                {(!postTitle.trim() || !postBody.trim())
-                  ? (siteLang === "en" ? "Title and content are required to publish" : "يرجى كتابة العنوان والمحتوى للنشر")
-                  : (siteLang === "en" ? "Ready to publish" : "جاهز للنشر")}
-              </span>
-
-              <div className="flex items-center gap-2 ms-auto w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => setPostModal(false)}
-                  className="flex-1 sm:flex-none px-4 py-2 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border-2 border-slate-900 shadow-[1.5px_1.5px_0px_#000] active:translate-x-px active:translate-y-px transition-all cursor-pointer"
-                >
-                  {siteLang === "en" ? "Cancel" : "إلغاء"}
-                </button>
-                <button
-                  type="button"
-                  onClick={submitPost}
-                  disabled={!postTitle.trim() || !postBody.trim() || (!!postYoutube.trim() && !isValidYoutubeUrl(postYoutube))}
-                  className="flex-1 sm:flex-none px-6 py-2 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2.5px_2.5px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <IconPlus size={14} />
-                  <span>{siteLang === "en" ? "Publish Post" : "نشر المشاركة"}</span>
-                </button>
-              </div>
+            <div className="p-4 border-t-2 border-slate-900 bg-slate-50 flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setPostModal(false)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border-2 border-slate-900 shadow-[1.5px_1.5px_0px_#000] active:translate-x-px active:translate-y-px transition-all cursor-pointer"
+              >
+                {siteLang === "en" ? "Cancel" : "إلغاء"}
+              </button>
+              <button
+                type="button"
+                onClick={submitPost}
+                disabled={!postTitle.trim() || !postBody.trim() || (!!postYoutube.trim() && !isValidYoutubeUrl(postYoutube))}
+                className="px-6 py-2 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2.5px_2.5px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <IconPlus size={14} />
+                <span>{siteLang === "en" ? "Publish Post" : "نشر المشاركة"}</span>
+              </button>
             </div>
 
           </div>
