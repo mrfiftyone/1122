@@ -26,7 +26,7 @@ import {
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
   IconKey, IconClock, IconStar, IconReply, IconReplies, IconInfo,
-  IconUsers, IconRotateCcw, IconLightbulb, IconMegaphone,
+  IconUsers, IconRotateCcw, IconLightbulb, IconMegaphone, IconShare,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -76,6 +76,8 @@ interface Post {
   tag?: PostTag;
   pinned?: boolean;
   likes: number; dislikes: number; reports: number;
+  shares_count?: number;
+  bookmarks_count?: number;
   status: "active" | "hidden"; comments: Comment[];
   images?: string[]; // Multiple image DataURLs (screenshots, summaries)
   youtubeUrl?: string; // YouTube video/playlist URL
@@ -89,6 +91,7 @@ interface Teacher {
   teachingMode?: string[]; // e.g. ["حضوري"], ["إلكتروني"], or ["حضوري", "إلكتروني"]
   teaching_mode?: string[];
   likes: number; dislikes: number; status: "active" | "pending" | "pending_custom";
+  bookmarks_count?: number;
 }
 interface BookmarkItem {
   id: string;
@@ -412,6 +415,31 @@ function setBookmarks(u: string, b: BookmarkItem[]) {
   if (typeof window === "undefined" || !u) return;
   try { localStorage.setItem(`bookmarks_${u}`, JSON.stringify(b)); } catch {}
 }
+function getLocalPostShares(id: string): number {
+  if (typeof window === "undefined" || !id) return 0;
+  try { return parseInt(localStorage.getItem(`shares_post_${id}`) || "0", 10) || 0; } catch { return 0; }
+}
+function setLocalPostShares(id: string, count: number) {
+  if (typeof window === "undefined" || !id) return;
+  try { localStorage.setItem(`shares_post_${id}`, String(count)); } catch {}
+}
+function getLocalPostBookmarks(id: string): number {
+  if (typeof window === "undefined" || !id) return 0;
+  try { return parseInt(localStorage.getItem(`bms_post_${id}`) || "0", 10) || 0; } catch { return 0; }
+}
+function setLocalPostBookmarks(id: string, count: number) {
+  if (typeof window === "undefined" || !id) return;
+  try { localStorage.setItem(`bms_post_${id}`, String(count)); } catch {}
+}
+function getLocalTeacherBookmarks(id: string): number {
+  if (typeof window === "undefined" || !id) return 0;
+  try { return parseInt(localStorage.getItem(`bms_teacher_${id}`) || "0", 10) || 0; } catch { return 0; }
+}
+function setLocalTeacherBookmarks(id: string, count: number) {
+  if (typeof window === "undefined" || !id) return;
+  try { localStorage.setItem(`bms_teacher_${id}`, String(count)); } catch {}
+}
+
 
 export interface FaqItem {
   id: string;
@@ -928,6 +956,7 @@ export default function Home() {
   const [viewedUser, setViewedUser] = useState<string | null>(null);
   const [profileSubTab, setProfileSubTab] = useState<"activities" | "saved">("activities");
   const [userBookmarks, setUserBookmarks] = useState<BookmarkItem[]>([]);
+  const [shareToastMessage, setShareToastMessage] = useState("");
 
   // Profile Comments Expansion State
   const [expandedProfileComments, setExpandedProfileComments] = useState<Record<string, boolean>>({});
@@ -1206,6 +1235,19 @@ export default function Home() {
 
       // 5. Main / Feed route: /main or /feed or /
       if (pathname === "/main" || pathname === "/feed" || pathname === "/") {
+        const queryPost = searchParams.get("post") || searchParams.get("p");
+        if (queryPost) {
+          setTab("feed");
+          setTimeout(() => {
+            const el = document.getElementById(`post-${queryPost}`);
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+              el.classList.add("ring-4", "ring-emerald-400");
+              setTimeout(() => el.classList.remove("ring-4", "ring-emerald-400"), 3000);
+            }
+          }, 350);
+          return;
+        }
         setTab("feed");
         return;
       }
@@ -1255,6 +1297,11 @@ export default function Home() {
               cleanBody = cleanBody.replace(/<!--meta:.*?-->/, "").trim();
             } catch {}
           }
+          const localShares = getLocalPostShares(p.id);
+          const localBookmarks = getLocalPostBookmarks(p.id);
+          const dbShares = p.shares_count ?? p.shares ?? meta.shares_count ?? meta.shares;
+          const dbBookmarks = p.bookmarks_count ?? p.bookmarks ?? meta.bookmarks_count ?? meta.bookmarks;
+
           return {
             id: p.id,
             author: p.author,
@@ -1268,6 +1315,8 @@ export default function Home() {
             likes: p.likes || 0,
             dislikes: p.dislikes || 0,
             reports: p.reports || 0,
+            shares_count: dbShares !== undefined && dbShares !== null ? Number(dbShares) : localShares,
+            bookmarks_count: dbBookmarks !== undefined && dbBookmarks !== null ? Number(dbBookmarks) : localBookmarks,
             status: p.status || "active",
             images: meta.images || [],
             youtubeUrl: meta.youtubeUrl || p.youtube_url || "",
@@ -1299,20 +1348,25 @@ export default function Home() {
       }
 
       if (tRes.data) {
-        const formattedTeachers: Teacher[] = tRes.data.map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          normalizedName: t.normalized_name || normalizeTeacherName(t.name),
-          normalized_name: t.normalized_name,
-          gov: t.gov,
-          subject: t.subject,
-          grades: t.grades || "",
-          img: t.img,
-          likes: t.likes || 0,
-          dislikes: t.dislikes || 0,
-          status: t.status || "active",
-          createdBy: t.created_by,
-        }));
+        const formattedTeachers: Teacher[] = tRes.data.map((t: any) => {
+          const localTeacherBookmarks = getLocalTeacherBookmarks(t.id);
+          const dbTeacherBookmarks = t.bookmarks_count ?? t.bookmarks;
+          return {
+            id: t.id,
+            name: t.name,
+            normalizedName: t.normalized_name || normalizeTeacherName(t.name),
+            normalized_name: t.normalized_name,
+            gov: t.gov,
+            subject: t.subject,
+            grades: t.grades || "",
+            img: t.img,
+            likes: t.likes || 0,
+            dislikes: t.dislikes || 0,
+            bookmarks_count: dbTeacherBookmarks !== undefined && dbTeacherBookmarks !== null ? Number(dbTeacherBookmarks) : localTeacherBookmarks,
+            status: t.status || "active",
+            createdBy: t.created_by,
+          };
+        });
         setTeachersList(formattedTeachers);
         setTeachers(formattedTeachers);
         if (typeof window !== "undefined" && window.location.pathname.startsWith("/teachers")) {
@@ -2064,6 +2118,8 @@ export default function Home() {
       likes: 0,
       dislikes: 0,
       reports: 0,
+      shares_count: 0,
+      bookmarks_count: 0,
       status: "active",
       images: postImages,
       youtubeUrl: postYoutube.trim(),
@@ -2823,6 +2879,7 @@ export default function Home() {
       teaching_mode: tTeachingModes,
       likes: 0,
       dislikes: 0,
+      bookmarks_count: 0,
       status: "pending" as any,
     };
     setTeachersList(prev => [tempTeacher, ...prev]);
@@ -4111,12 +4168,99 @@ export default function Home() {
     return badges;
   }
 
+  async function copyToClipboard(text: string): Promise<boolean> {
+    if (typeof window === "undefined") return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {}
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function sharePost(postId: string) {
+    const p = posts.find(item => item.id === postId);
+    if (!p) return;
+
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const shareUrl = `${origin}/?post=${encodeURIComponent(postId)}`;
+    const shareData = {
+      title: p.title,
+      text: p.body ? p.body.replace(/<!--meta:.*?-->/, "").slice(0, 120) : p.title,
+      url: shareUrl,
+    };
+
+    let shared = false;
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share(shareData);
+        shared = true;
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          await copyToClipboard(shareUrl);
+          shared = true;
+        }
+      }
+    } else {
+      await copyToClipboard(shareUrl);
+      shared = true;
+    }
+
+    if (shared) {
+      const currentShares = p.shares_count ?? getLocalPostShares(postId);
+      const nextShares = currentShares + 1;
+      setLocalPostShares(postId, nextShares);
+      setPostsList(prev => prev.map(post => post.id === postId ? { ...post, shares_count: nextShares } : post));
+
+      setShareToastMessage(siteLang === "en" ? "Link copied to clipboard!" : "تم نسخ رابط المنشور بنجاح!");
+      setTimeout(() => setShareToastMessage(""), 2500);
+
+      (async () => {
+        try {
+          const { error } = await supabase.from('posts').update({ shares_count: nextShares }).eq('id', postId);
+          if (error && p) {
+            let cleanBody = p.body || "";
+            let meta: any = {};
+            const metaMatch = cleanBody.match(/<!--meta:(.*?)-->/);
+            if (metaMatch) {
+              try {
+                meta = JSON.parse(metaMatch[1]);
+                cleanBody = cleanBody.replace(/<!--meta:.*?-->/, "").trim();
+              } catch {}
+            }
+            meta.shares_count = nextShares;
+            const newBody = cleanBody + `\n\n<!--meta:${JSON.stringify(meta)}-->`;
+            await supabase.from('posts').update({ body: newBody }).eq('id', postId);
+          }
+        } catch (e) {
+          console.warn("Could not sync share count:", e);
+        }
+      })();
+    }
+  }
+
   // Bookmarks Helper
   function toggleBookmark(targetId: string, type: "post" | "teacher", title: string, subtitle?: string) {
     if (!session) { setAuthModal(true); return; }
     const current = getBookmarks(session.username);
     const exists = current.some(b => b.targetId === targetId);
     let updated: BookmarkItem[];
+    const delta = exists ? -1 : 1;
+
     if (exists) {
       updated = current.filter(b => b.targetId !== targetId);
     } else {
@@ -4131,6 +4275,54 @@ export default function Home() {
     }
     setBookmarks(session.username, updated);
     setUserBookmarks(updated);
+
+    if (type === "post") {
+      const p = posts.find(item => item.id === targetId);
+      const currentCount = p?.bookmarks_count ?? getLocalPostBookmarks(targetId);
+      const nextCount = Math.max(0, currentCount + delta);
+      setLocalPostBookmarks(targetId, nextCount);
+      setPostsList(prev => prev.map(post => post.id === targetId ? { ...post, bookmarks_count: nextCount } : post));
+
+      (async () => {
+        try {
+          const { error } = await supabase.from('posts').update({ bookmarks_count: nextCount }).eq('id', targetId);
+          if (error && p) {
+            let cleanBody = p.body || "";
+            let meta: any = {};
+            const metaMatch = cleanBody.match(/<!--meta:(.*?)-->/);
+            if (metaMatch) {
+              try {
+                meta = JSON.parse(metaMatch[1]);
+                cleanBody = cleanBody.replace(/<!--meta:.*?-->/, "").trim();
+              } catch {}
+            }
+            meta.bookmarks_count = nextCount;
+            const newBody = cleanBody + `\n\n<!--meta:${JSON.stringify(meta)}-->`;
+            await supabase.from('posts').update({ body: newBody }).eq('id', targetId);
+          }
+        } catch (e) {
+          console.warn("Could not sync post bookmark count:", e);
+        }
+      })();
+    } else if (type === "teacher") {
+      const t = teachers.find(item => item.id === targetId);
+      const currentCount = t?.bookmarks_count ?? getLocalTeacherBookmarks(targetId);
+      const nextCount = Math.max(0, currentCount + delta);
+      setLocalTeacherBookmarks(targetId, nextCount);
+      setTeachersList(prev => prev.map(teacher => teacher.id === targetId ? { ...teacher, bookmarks_count: nextCount } : teacher));
+      if (selectedTeacher && selectedTeacher.id === targetId) {
+        setSelectedTeacher(prev => prev ? { ...prev, bookmarks_count: nextCount } : prev);
+      }
+
+      (async () => {
+        try {
+          await supabase.from('teachers').update({ bookmarks_count: nextCount }).eq('id', targetId);
+        } catch (e) {
+          console.warn("Could not sync teacher bookmark count:", e);
+        }
+      })();
+    }
+
     rerender();
   }
 
@@ -5076,6 +5268,7 @@ export default function Home() {
                     return (
                       <div
                         key={p.id}
+                        id={`post-${p.id}`}
                         className={`bg-white border-2 space-y-3 transition-all ${
                           isPinned
                             ? "border-amber-500 shadow-[4px_4px_0px_#d97706] ring-2 ring-amber-400 p-5"
@@ -5218,13 +5411,24 @@ export default function Home() {
                             </button>
                             <button
                               onClick={() => toggleBookmark(p.id, "post", p.title, p.author)}
-                              className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
+                              className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer ${
                                 isBookmarked(p.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
                               }`}
-                              title={isBookmarked(p.id) ? "إزالة من المحفوظات" : "حفظ المنشور في المحفوظات"}
+                              title={isBookmarked(p.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save to bookmarks" : "حفظ المنشور في المحفوظات")}
                             >
                               <IconBookmark size={12} fill={isBookmarked(p.id) ? "currentColor" : "none"} />
-                              <span>{isBookmarked(p.id) ? t("bookmarked") : t("bookmark")}</span>
+                              <span>{isBookmarked(p.id) ? (siteLang === "en" ? "Saved" : t("bookmarked")) : (siteLang === "en" ? "Save" : t("bookmark"))}</span>
+                              <span className="text-[10px] font-black ms-0.5 opacity-80">({p.bookmarks_count || 0})</span>
+                            </button>
+
+                            <button
+                              onClick={() => sharePost(p.id)}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer"
+                              title={siteLang === "en" ? "Share post" : "مشاركة المنشور"}
+                            >
+                              <IconShare size={12} />
+                              <span>{siteLang === "en" ? "Share" : "مشاركة"}</span>
+                              <span className="text-[10px] font-black ms-0.5 text-slate-500">({p.shares_count || 0})</span>
                             </button>
 
                             {/* Admin Pin / Unpin Button */}
@@ -5525,12 +5729,13 @@ export default function Home() {
                           <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => toggleBookmark(t.id, "teacher", t.name, `${t.subject} - ${t.gov}`)}
-                              className={`p-1.5 border border-slate-900 text-xs transition-all ${
-                                isBookmarked(t.id) ? "bg-amber-300 text-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-500 hover:bg-slate-100"
+                              className={`px-2 py-1 border border-slate-900 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                isBookmarked(t.id) ? "bg-amber-300 text-slate-900 shadow-[1px_1px_0px_#000]" : "bg-white text-slate-600 hover:bg-slate-100"
                               }`}
                               title={isBookmarked(t.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save teacher" : "حفظ الأستاذ")}
                             >
-                              <IconBookmark size={13} fill={isBookmarked(t.id) ? "currentColor" : "none"} />
+                              <IconBookmark size={12} fill={isBookmarked(t.id) ? "currentColor" : "none"} />
+                              <span className="text-[11px] font-bold">{t.bookmarks_count || 0}</span>
                             </button>
                             <button onClick={() => voteTeacher(t.id, "like")} className={vbtn(tVote === "like", "like")} title={siteLang === "en" ? "Like" : "إعجاب"}>
                               <IconThumbUp size={12} /> {t.likes}
@@ -5685,13 +5890,14 @@ export default function Home() {
 
                       <button
                         onClick={() => toggleBookmark(selectedTeacher.id, "teacher", selectedTeacher.name, `${selectedTeacher.subject} - ${selectedTeacher.gov}`)}
-                        className={`w-full py-2 px-3 border-2 border-slate-900 text-xs font-black flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all ${
+                        className={`w-full py-2 px-3 border-2 border-slate-900 text-xs font-black flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_#000] active:translate-x-px active:translate-y-px transition-all cursor-pointer ${
                           isBookmarked(selectedTeacher.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-100"
                         }`}
                         title={isBookmarked(selectedTeacher.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save teacher" : "حفظ المدرس في المحفوظات")}
                       >
                         <IconBookmark size={13} fill={isBookmarked(selectedTeacher.id) ? "currentColor" : "none"} />
                         <span>{isBookmarked(selectedTeacher.id) ? (siteLang === "en" ? "Saved in Bookmarks" : "محفوظ في المحفوظات") : (siteLang === "en" ? "Save Teacher" : "حفظ المدرس في المحفوظات")}</span>
+                        <span className="text-[11px] font-bold">({selectedTeacher.bookmarks_count || 0})</span>
                       </button>
                     </div>
                   </div>
@@ -5924,13 +6130,23 @@ export default function Home() {
                                   </button>
                                   <button
                                     onClick={() => toggleBookmark(postItem.id, "post", postItem.title, postItem.author)}
-                                    className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all ${
+                                    className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer ${
                                       isBookmarked(postItem.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
                                     }`}
                                     title={isBookmarked(postItem.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save to bookmarks" : "حفظ في المحفوظات")}
                                   >
                                     <IconBookmark size={12} fill={isBookmarked(postItem.id) ? "currentColor" : "none"} />
                                     <span>{isBookmarked(postItem.id) ? (siteLang === "en" ? "Saved" : "محفوظ") : (siteLang === "en" ? "Save" : "حفظ")}</span>
+                                    <span className="text-[10px] font-black ms-0.5 opacity-80">({postItem.bookmarks_count || 0})</span>
+                                  </button>
+                                  <button
+                                    onClick={() => sharePost(postItem.id)}
+                                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer"
+                                    title={siteLang === "en" ? "Share review" : "مشاركة التقييم"}
+                                  >
+                                    <IconShare size={12} />
+                                    <span>{siteLang === "en" ? "Share" : "مشاركة"}</span>
+                                    <span className="text-[10px] font-black ms-0.5 text-slate-500">({postItem.shares_count || 0})</span>
                                   </button>
                                   <button onClick={() => reportPost(postItem.id)} className="text-[11px] text-slate-500 hover:text-red-600 flex items-center gap-1">
                                     <IconFlag size={12} /> {siteLang === "en" ? "Report" : "بلاغ"} • {postItem.reports || 0}/20
@@ -6593,6 +6809,26 @@ export default function Home() {
                                   >
                                     <IconComment size={12} />
                                     <span>{siteLang === "en" ? "Comments" : "التعليقات"} • {fullPost?.comments?.length || 0}</span>
+                                  </button>
+                                  <button
+                                    onClick={() => toggleBookmark(item.id, "post", item.title)}
+                                    className={`px-2.5 py-1 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer ${
+                                      isBookmarked(item.id) ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 hover:bg-slate-50"
+                                    }`}
+                                    title={isBookmarked(item.id) ? (siteLang === "en" ? "Remove from bookmarks" : "إزالة من المحفوظات") : (siteLang === "en" ? "Save to bookmarks" : "حفظ في المحفوظات")}
+                                  >
+                                    <IconBookmark size={12} fill={isBookmarked(item.id) ? "currentColor" : "none"} />
+                                    <span>{isBookmarked(item.id) ? (siteLang === "en" ? "Saved" : "محفوظ") : (siteLang === "en" ? "Save" : "حفظ")}</span>
+                                    <span className="text-[10px] font-black ms-0.5 opacity-80">({fullPost?.bookmarks_count || 0})</span>
+                                  </button>
+                                  <button
+                                    onClick={() => sharePost(item.id)}
+                                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-900 shadow-[1px_1px_0px_#000] text-xs font-bold flex items-center gap-1 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer"
+                                    title={siteLang === "en" ? "Share post" : "مشاركة المنشور"}
+                                  >
+                                    <IconShare size={12} />
+                                    <span>{siteLang === "en" ? "Share" : "مشاركة"}</span>
+                                    <span className="text-[10px] font-black ms-0.5 text-slate-500">({fullPost?.shares_count || 0})</span>
                                   </button>
                                   <button
                                     onClick={() => openReportModal({ id: item.id, type: "post", title: item.title })}
@@ -10967,6 +11203,14 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification (e.g. Share link copied) */}
+      {shareToastMessage && (
+        <div className="fixed bottom-6 end-6 z-[100] bg-slate-900 text-white px-4 py-2.5 border-2 border-slate-900 shadow-[4px_4px_0px_#000] text-xs font-black flex items-center gap-2">
+          <IconShare size={14} className="text-emerald-400" />
+          <span>{shareToastMessage}</span>
         </div>
       )}
     </div>
