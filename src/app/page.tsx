@@ -1035,6 +1035,8 @@ export default function Home() {
   const [editBannerColor, setEditBannerColor] = useState("#0d9488");
   const [editAccentColor, setEditAccentColor] = useState("#0d9488");
 
+  // Smart auto-hiding header state on scroll
+  const [showHeader, setShowHeader] = useState(true);
 
   // Turnstile & Lockout State
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -1558,6 +1560,44 @@ export default function Home() {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [fetchSupabaseData, fetchVotesFromSupabase, parseUrlRoute]);
+
+  // Smart auto-hiding header on scroll
+  useEffect(() => {
+    let lastScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentScrollY = window.scrollY;
+          const diff = currentScrollY - lastScrollY;
+
+          // Prevent rubber-banding jitter at bottom of document
+          const isAtBottom =
+            currentScrollY + window.innerHeight >=
+            (document.documentElement.scrollHeight || document.body.scrollHeight) - 20;
+
+          if (currentScrollY <= 60) {
+            // Always show when near top
+            setShowHeader(true);
+          } else if (!isAtBottom && diff > 8) {
+            // Scrolling down -> fade and slide out
+            setShowHeader(false);
+          } else if (diff < -6) {
+            // Scrolling up -> fade and slide back in
+            setShowHeader(true);
+          }
+
+          lastScrollY = currentScrollY;
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // Synchronize browser URL with active tab
   useEffect(() => {
@@ -4484,8 +4524,14 @@ export default function Home() {
   return (
     <div data-theme={siteTheme} dir={siteLang === "ar" ? "rtl" : "ltr"} className="min-h-screen bg-page-bg text-slate-900 selection:bg-teal-500 selection:text-white pb-20 md:pb-0">
 
-      {/* ═══════ TOP NAV (DESKTOP) ═══════ */}
-      <header className="sticky top-0 z-50 bg-white border-b-2 border-border-subtle shadow-sm">
+      {/* ═══════ TOP NAV (DESKTOP & MOBILE HEADER) ═══════ */}
+      <header
+        className={`sticky top-0 z-50 bg-white border-b-2 border-border-subtle shadow-sm transition-all duration-300 ease-in-out ${
+          showHeader
+            ? "translate-y-0 opacity-100 pointer-events-auto"
+            : "-translate-y-full opacity-0 pointer-events-none"
+        }`}
+      >
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setTab("feed")}>
             <div className="w-10 h-10 border-2 border-slate-900 bg-emerald-primary flex items-center justify-center text-white shadow-[2px_2px_0px_#115e59]">
