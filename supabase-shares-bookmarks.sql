@@ -74,3 +74,22 @@ $$;
 GRANT EXECUTE ON FUNCTION increment_post_shares(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION increment_post_bookmarks(text, integer) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION increment_teacher_bookmarks(text, integer) TO anon, authenticated;
+
+-- 8. Bookmarks table for syncing user bookmarks across devices
+CREATE TABLE IF NOT EXISTS public.bookmarks (
+  id text PRIMARY KEY,
+  username text NOT NULL,
+  target_id text NOT NULL,
+  type text NOT NULL,
+  title text NOT NULL,
+  subtitle text,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (username, target_id)
+);
+
+ALTER TABLE public.bookmarks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "bookmarks_select_policy" ON public.bookmarks FOR SELECT USING (true);
+CREATE POLICY "bookmarks_insert_policy" ON public.bookmarks FOR INSERT WITH CHECK (true);
+CREATE POLICY "bookmarks_update_policy" ON public.bookmarks FOR UPDATE USING (true);
+CREATE POLICY "bookmarks_delete_policy" ON public.bookmarks FOR DELETE USING (true);

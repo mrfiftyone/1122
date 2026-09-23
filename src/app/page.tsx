@@ -955,7 +955,15 @@ export default function Home() {
   // Profile Viewing state (view self or another student)
   const [viewedUser, setViewedUser] = useState<string | null>(null);
   const [profileSubTab, setProfileSubTab] = useState<"activities" | "saved">("activities");
-  const [userBookmarks, setUserBookmarks] = useState<BookmarkItem[]>([]);
+  const [userBookmarks, setUserBookmarks] = useState<BookmarkItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cur = getSession();
+      return cur?.username ? getBookmarks(cur.username) : [];
+    } catch {
+      return [];
+    }
+  });
   const [shareToastMessage, setShareToastMessage] = useState("");
   const [targetedPostId, setTargetedPostId] = useState<string | null>(null);
   const [scrolledTargetPostId, setScrolledTargetPostId] = useState<string | null>(null);
@@ -1815,6 +1823,50 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [targetedPostId, isInitialLoading, posts, selectedFeedTag, scrolledTargetPostId]);
 
+  // Keep userBookmarks synchronized with current session and Supabase
+  useEffect(() => {
+    if (!session?.username) {
+      setUserBookmarks([]);
+      return;
+    }
+
+    const localBookmarks = getBookmarks(session.username);
+    setUserBookmarks(localBookmarks);
+
+    // Background sync with Supabase bookmarks table if available
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('bookmarks')
+          .select('*')
+          .eq('username', session.username)
+          .order('created_at', { ascending: false });
+
+        if (!error && data && Array.isArray(data)) {
+          const map = new Map<string, BookmarkItem>();
+          data.forEach((b: any) => {
+            map.set(b.target_id, {
+              id: b.id,
+              targetId: b.target_id,
+              type: b.type,
+              title: b.title,
+              subtitle: b.subtitle || "",
+              created_at: b.created_at,
+            });
+          });
+          localBookmarks.forEach(b => {
+            if (!map.has(b.targetId)) map.set(b.targetId, b);
+          });
+          const merged = Array.from(map.values());
+          setBookmarks(session.username, merged);
+          setUserBookmarks(merged);
+        }
+      } catch (e) {
+        // Fallback gracefully to local storage if table is not yet migrated
+      }
+    })();
+  }, [session?.username]);
+
   if (!mounted) return null;
 
   const getProfile = (u: string): Profile => profiles[u] || { avatarColor: "#94a3b8", bio: "", avatarUrl: "" };
@@ -1950,6 +2002,7 @@ export default function Home() {
         }
 
         setSession(sessionUser);
+        setUserBookmarks(getBookmarks(cleanUsername));
         setAuthModal(false);
         setAuthUser(""); setAuthPass(""); resetTurnstile();
         setSelectedGrades([]);
@@ -2017,6 +2070,7 @@ export default function Home() {
         // Store UI session
         localStorage.setItem("currentUser", JSON.stringify(sessionUser));
         setSession(sessionUser);
+        setUserBookmarks(getBookmarks(cleanUsername));
         fetchVotesFromSupabase(cleanUsername);
         setAuthModal(false); setAuthUser(""); setAuthPass(""); resetTurnstile();
       }
@@ -2030,6 +2084,7 @@ export default function Home() {
     localStorage.removeItem("currentUser");
     supabase.auth.signOut().catch(() => {});
     setSession(null);
+    setUserBookmarks([]);
     if (tab === "admin" || tab === "profile" || tab === "notifications") setTab("feed");
     rerender();
   }
@@ -4410,6 +4465,27 @@ export default function Home() {
     }
     setBookmarks(session.username, updated);
     setUserBookmarks(updated);
+
+    // Sync bookmark record to Supabase bookmarks table in background
+    (async () => {
+      try {
+        if (exists) {
+          await supabase.from('bookmarks').delete().eq('username', session.username).eq('target_id', targetId);
+        } else {
+          await supabase.from('bookmarks').upsert({
+            id: "bm_" + Date.now(),
+            username: session.username,
+            target_id: targetId,
+            type,
+            title,
+            subtitle: subtitle || "",
+            created_at: new Date().toISOString(),
+          }, { onConflict: 'username,target_id' });
+        }
+      } catch (err) {
+        // Silently handle if table is not yet migrated
+      }
+    })();
 
     if (type === "post") {
       const p = posts.find(item => item.id === targetId);
@@ -6845,8 +6921,9 @@ export default function Home() {
                                 ) : (
                                   <button
                                     onClick={() => {
+                                      setTargetedPostId(b.targetId);
+                                      setSelectedFeedTag("all");
                                       setTab("feed");
-                                      window.scrollTo({ top: 0, behavior: "smooth" });
                                     }}
                                     className="text-xs font-black text-emerald-800 hover:underline flex items-center gap-1"
                                   >
