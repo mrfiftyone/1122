@@ -26,7 +26,7 @@ import {
   IconChevronDown, IconChevronUp, IconCheck, IconSun, IconMoon, IconPin, IconPalmTree,
   IconVolumeX, IconDownload, IconActivity, IconSliders, IconAlertTriangle, IconSlash,
   IconKey, IconClock, IconStar, IconReply, IconReplies, IconInfo,
-  IconUsers, IconRotateCcw,
+  IconUsers, IconRotateCcw, IconLightbulb, IconMegaphone,
 } from "@/utils/icons";
 import { Language, getT } from "@/utils/i18n";
 
@@ -4930,9 +4930,9 @@ export default function Home() {
                 {[
                   { id: "all", label: t("tagAll"), icon: null, count: activePosts.length },
                   { id: "question", label: t("tagQuestion"), icon: <IconHelpCircle size={12} />, count: activePosts.filter(p => p.tag === "question").length },
-                  { id: "news", label: t("tagNews"), icon: <IconPalmTree size={12} />, count: activePosts.filter(p => p.tag === "news").length },
-                  { id: "discussion", label: t("tagDiscussion"), icon: <IconPen size={12} />, count: activePosts.filter(p => p.tag === "discussion" || !p.tag).length },
-                  { id: "tips", label: t("tagTips"), icon: <IconCheck size={12} />, count: activePosts.filter(p => p.tag === "tips").length },
+                  { id: "news", label: t("tagNews"), icon: <IconMegaphone size={12} />, count: activePosts.filter(p => p.tag === "news").length },
+                  { id: "discussion", label: t("tagDiscussion"), icon: <IconComment size={12} />, count: activePosts.filter(p => p.tag === "discussion" || !p.tag).length },
+                  { id: "tips", label: t("tagTips"), icon: <IconLightbulb size={12} />, count: activePosts.filter(p => p.tag === "tips").length },
                   { id: "booklet", label: t("tagBooklet"), icon: <IconBookmark size={12} />, count: activePosts.filter(p => p.tag === "booklet").length },
                   { id: "other", label: t("tagOther"), icon: <IconTag size={12} />, count: activePosts.filter(p => p.tag === "other").length },
                 ].map(filterBtn => {
@@ -5114,7 +5114,7 @@ export default function Home() {
                             {/* Post Tag Badge */}
                             {postTagVal === "news" && (
                               <span className="px-2 py-0.5 bg-blue-900 text-white font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
-                                <IconPalmTree size={11} /> {t("tagNews")}
+                                <IconMegaphone size={11} /> {t("tagNews")}
                               </span>
                             )}
                             {postTagVal === "question" && (
@@ -5123,18 +5123,18 @@ export default function Home() {
                               </span>
                             )}
                             {postTagVal === "tips" && (
-                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-900 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
-                                <IconCheck size={11} /> {t("tagTips")}
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-950 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconLightbulb size={11} /> {t("tagTips")}
                               </span>
                             )}
                             {postTagVal === "booklet" && (
-                              <span className="px-2 py-0.5 bg-blue-100 text-blue-900 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-900 font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
                                 <IconBookmark size={11} /> {t("tagBooklet")}
                               </span>
                             )}
                             {postTagVal === "discussion" && (
                               <span className="px-2 py-0.5 bg-slate-100 text-slate-800 font-bold text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
-                                <IconPen size={11} /> {t("tagDiscussion")}
+                                <IconComment size={11} /> {t("tagDiscussion")}
                               </span>
                             )}
                             {postTagVal === "other" && (
@@ -8403,124 +8403,281 @@ export default function Home() {
 
       {/* ═══════ CREATE POST MODAL ═══════ */}
       {postModal && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-border-subtle shadow-[6px_6px_0px_#000] w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b-2 border-slate-200 pb-3">
-              <h3 className="font-black text-base">{siteLang === "en" ? "Create New Post" : "نشر مشاركة جديدة"}</h3>
-              <button onClick={() => setPostModal(false)} title={siteLang === "en" ? "Close" : "إغلاق"}><IconX size={16} /></button>
-            </div>
-            <div className="space-y-3 text-xs">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-bold text-slate-800">
-                    {siteLang === "en" ? "Related Teacher" : "الأستاذ المعني"}
-                  </label>
-                  {postTeacher && (
-                    <button
-                      type="button"
-                      onClick={() => setPostTeacher("")}
-                      className="text-[10px] text-red-600 hover:underline font-bold"
-                    >
-                      {siteLang === "en" ? "Clear selection" : "إلغاء التحديد"}
-                    </button>
-                  )}
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white border-2 border-slate-900 shadow-[6px_6px_0px_#000] w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b-2 border-slate-900 px-5 py-3.5 bg-slate-50 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-emerald-primary text-white border-2 border-slate-900 flex items-center justify-center shadow-[1.5px_1.5px_0px_#000]">
+                  <IconPen size={16} />
                 </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight">
+                    {siteLang === "en" ? "Create New Post" : "نشر مشاركة جديدة"}
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 font-bold">
+                    {siteLang === "en" ? "Share questions, discussions, notes, and study advice" : "شارك أسئلتك، مناقشاتك، ملازمك وتجاربك مع زملائك"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPostModal(false)}
+                title={siteLang === "en" ? "Close" : "إغلاق"}
+                className="w-7 h-7 flex items-center justify-center border-2 border-slate-900 bg-white hover:bg-red-50 hover:text-red-600 shadow-[1.5px_1.5px_0px_#000] active:translate-x-px active:translate-y-px transition-all cursor-pointer"
+              >
+                <IconX size={15} />
+              </button>
+            </div>
+
+            {/* Modal Body (Scrollable) */}
+            <div className="p-5 space-y-4 overflow-y-auto text-xs flex-1">
+
+              {/* 1. Category Selector Cards ("The emoji ones" redesign) */}
+              <div>
+                <label className="block font-black text-slate-800 text-xs mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <IconTag size={13} className="text-emerald-primary" />
+                    <span>{siteLang === "en" ? "Post Category" : "تصنيف المنشور"}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {siteLang === "en" ? "Select one category" : "اختر نوع المشاركة"}
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    {
+                      id: "question",
+                      labelEn: "Question",
+                      labelAr: "سؤال واستفسار",
+                      descEn: "Ask a question",
+                      descAr: "سؤال عن مسألة أو مادة",
+                      icon: <IconHelpCircle size={15} />,
+                      color: "hover:border-indigo-500 hover:bg-indigo-50/40",
+                      active: "border-slate-900 bg-indigo-600 text-white shadow-[2px_2px_0px_#000]",
+                      iconBoxActive: "bg-white text-indigo-700",
+                      iconBoxIdle: "bg-indigo-100 text-indigo-700",
+                    },
+                    {
+                      id: "discussion",
+                      labelEn: "Discussion",
+                      labelAr: "نقاش وتبادل آراء",
+                      descEn: "General discussion",
+                      descAr: "حوار وتبادل تجارب",
+                      icon: <IconComment size={15} />,
+                      color: "hover:border-slate-500 hover:bg-slate-100",
+                      active: "border-slate-900 bg-slate-900 text-white shadow-[2px_2px_0px_#000]",
+                      iconBoxActive: "bg-white text-slate-900",
+                      iconBoxIdle: "bg-slate-200 text-slate-800",
+                    },
+                    {
+                      id: "news",
+                      labelEn: "Ministerial News",
+                      labelAr: "أخبار وزارية",
+                      descEn: "Official notices",
+                      descAr: "قرارات وزارة التربية",
+                      icon: <IconMegaphone size={15} />,
+                      color: "hover:border-blue-500 hover:bg-blue-50/40",
+                      active: "border-slate-900 bg-blue-900 text-white shadow-[2px_2px_0px_#000]",
+                      iconBoxActive: "bg-white text-blue-900",
+                      iconBoxIdle: "bg-blue-100 text-blue-900",
+                    },
+                    {
+                      id: "tips",
+                      labelEn: "Study Tips",
+                      labelAr: "نصائح دراسية",
+                      descEn: "Advice and schedules",
+                      descAr: "جداول وطرق مراجعة",
+                      icon: <IconLightbulb size={15} />,
+                      color: "hover:border-amber-500 hover:bg-amber-50/40",
+                      active: "border-slate-900 bg-amber-500 text-slate-950 shadow-[2px_2px_0px_#000]",
+                      iconBoxActive: "bg-slate-950 text-amber-400",
+                      iconBoxIdle: "bg-amber-100 text-amber-900",
+                    },
+                    {
+                      id: "booklet",
+                      labelEn: "Booklets & Notes",
+                      labelAr: "ملازم وملخصات",
+                      descEn: "Summaries & booklets",
+                      descAr: "ملازم ومرشحات ودفاتر",
+                      icon: <IconBookmark size={15} />,
+                      color: "hover:border-emerald-500 hover:bg-emerald-50/40",
+                      active: "border-slate-900 bg-emerald-600 text-white shadow-[2px_2px_0px_#000]",
+                      iconBoxActive: "bg-white text-emerald-700",
+                      iconBoxIdle: "bg-emerald-100 text-emerald-800",
+                    },
+                    {
+                      id: "other",
+                      labelEn: "Other",
+                      labelAr: "موضوع آخر",
+                      descEn: "Other topic",
+                      descAr: "مواضيع طلابية عامة",
+                      icon: <IconTag size={15} />,
+                      color: "hover:border-slate-400 hover:bg-slate-50",
+                      active: "border-slate-900 bg-slate-800 text-white shadow-[2px_2px_0px_#000]",
+                      iconBoxActive: "bg-white text-slate-800",
+                      iconBoxIdle: "bg-slate-200 text-slate-700",
+                    },
+                  ].map(cat => {
+                    const isSelected = postTag === cat.id;
+                    return (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        onClick={() => setPostTag(cat.id as PostTag)}
+                        className={`p-2.5 border-2 text-start transition-all cursor-pointer flex items-start gap-2 ${
+                          isSelected
+                            ? `${cat.active}`
+                            : `border-slate-200 bg-slate-50/70 text-slate-800 ${cat.color}`
+                        }`}
+                      >
+                        <div
+                          className={`w-6 h-6 rounded-none border border-slate-900 flex items-center justify-center shrink-0 mt-0.5 ${
+                            isSelected ? cat.iconBoxActive : cat.iconBoxIdle
+                          }`}
+                        >
+                          {cat.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-black text-xs leading-snug truncate">
+                            {siteLang === "en" ? cat.labelEn : cat.labelAr}
+                          </p>
+                          <p className={`text-[10px] leading-tight truncate ${isSelected ? "opacity-90" : "text-slate-500"}`}>
+                            {siteLang === "en" ? cat.descEn : cat.descAr}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. Related Teacher & Grade Level (2-Column Grid) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Related Teacher */}
                 <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-bold text-slate-800 text-xs">
+                      {siteLang === "en" ? "Related Teacher (Optional)" : "الأستاذ المعني (اختياري)"}
+                    </label>
+                    {postTeacher && (
+                      <button
+                        type="button"
+                        onClick={() => setPostTeacher("")}
+                        className="text-[10px] text-red-600 hover:underline font-bold cursor-pointer"
+                      >
+                        {siteLang === "en" ? "Clear" : "إلغاء"}
+                      </button>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       type="text"
                       value={postTeacherSearch}
                       onChange={e => setPostTeacherSearch(e.target.value)}
-                      placeholder={siteLang === "en" ? "Search teacher by name, subject, or governorate..." : "ابحث عن الأستاذ بالاسم، المادة أو المحافظة..."}
-                      className="w-full p-2 ps-8 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none"
+                      placeholder={siteLang === "en" ? "Search teacher..." : "ابحث بالاسم أو المادة أو المحافظة..."}
+                      className="w-full p-2 ps-7 bg-slate-50 border-2 border-slate-900 text-xs font-semibold focus:outline-none focus:bg-white"
                     />
-                    <span className="absolute start-2.5 top-2.5 text-slate-500 pointer-events-none">
-                      <IconSearch size={13} />
+                    <span className="absolute start-2 top-2 text-slate-400 pointer-events-none">
+                      <IconSearch size={12} />
                     </span>
                     {postTeacherSearch && (
                       <button
                         type="button"
                         onClick={() => setPostTeacherSearch("")}
-                        className="absolute end-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-700"
-                        title={siteLang === "en" ? "Clear" : "مسح"}
+                        className="absolute end-2 top-2 text-slate-400 hover:text-slate-700 cursor-pointer"
                       >
                         <IconX size={12} />
                       </button>
                     )}
                   </div>
-
                   <select
                     value={postTeacher}
                     onChange={e => setPostTeacher(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none text-xs"
+                    className="w-full p-2 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white text-xs cursor-pointer"
                   >
                     <option value="">
-                      {siteLang === "en" ? "-- No Teacher --" : "-- بدون أستاذ --"}
+                      {siteLang === "en" ? "-- No Teacher Selected --" : "-- بدون أستاذ محدد --"}
                     </option>
                     {activeTeachers
                       .filter(t => matchesArabicFuzzy(postTeacherSearch, t.name, t.normalizedName, t.normalized_name, t.subject, t.gov))
                       .map(t => (
                         <option key={t.id} value={t.id}>
-                          {t.name} - {t.subject} - {t.gov}
+                          {t.name} - {t.subject} ({t.gov})
                         </option>
                       ))}
                   </select>
                 </div>
-              </div>
 
-              {/* 1-Click Post Tag Selector (Zero typing needed) */}
-              <div>
-                <label className="block font-bold mb-1.5 text-slate-800">
-                  {t("postTypeLabel")}
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {[
-                    { id: "question", label: t("tagQuestion"), icon: <IconHelpCircle size={13} />, color: "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-500", active: "bg-indigo-600 text-white border-slate-900" },
-                    { id: "discussion", label: t("tagDiscussion"), icon: <IconPen size={13} />, color: "bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-400", active: "bg-slate-900 text-white border-slate-900" },
-                    { id: "news", label: t("tagNews"), icon: <IconPalmTree size={13} />, color: "bg-blue-50 hover:bg-blue-100 text-blue-950 border-blue-900", active: "bg-blue-900 text-white border-slate-900" },
-                    { id: "tips", label: t("tagTips"), icon: <IconCheck size={13} />, color: "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-500", active: "bg-emerald-600 text-white border-slate-900" },
-                    { id: "booklet", label: t("tagBooklet"), icon: <IconBookmark size={13} />, color: "bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-500", active: "bg-blue-600 text-white border-slate-900" },
-                    { id: "other", label: t("tagOther"), icon: <IconTag size={13} />, color: "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-400", active: "bg-slate-800 text-white border-slate-900" },
-                  ].map(tItem => (
-                    <button
-                      type="button"
-                      key={tItem.id}
-                      onClick={() => setPostTag(tItem.id as PostTag)}
-                      className={`p-2 border-2 text-xs font-black flex items-center justify-center gap-1.5 transition-all shadow-[1px_1px_0px_#000] active:translate-x-px active:translate-y-px ${
-                        postTag === tItem.id ? `${tItem.active} shadow-[2px_2px_0px_#000]` : tItem.color
-                      }`}
-                    >
-                      {tItem.icon}
-                      <span>{tItem.label}</span>
-                    </button>
-                  ))}
+                {/* Grade Level */}
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-800 text-xs">
+                    {siteLang === "en" ? "Grade Level" : "المرحلة الدراسية"}
+                  </label>
+                  <select
+                    value={postGrade}
+                    onChange={e => setPostGrade(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white text-xs cursor-pointer mt-0 sm:mt-[2px]"
+                  >
+                    <option value="General">{siteLang === "en" ? "General (All Grades)" : "عام لكل المراحل"}</option>
+                    {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <p className="text-[10px] text-slate-500 font-semibold pt-0.5">
+                    {siteLang === "en" ? "Helps students find posts relevant to their grade" : "يساعد الطلاب على تصفية المنشورات حسب مرحلتهم"}
+                  </p>
                 </div>
               </div>
 
+              {/* 3. Post Title */}
               <div>
-                <label className="block font-bold mb-1">{siteLang === "en" ? "Post Title" : "عنوان المشاركة"}</label>
-                <input type="text" value={postTitle} onChange={e => setPostTitle(e.target.value)} maxLength={100} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none" placeholder={siteLang === "en" ? "Post title" : "عنوان المنشور"} />
-                <span className="text-[10px] text-slate-400 font-bold">{postTitle.length}/100</span>
-              </div>
-              <div>
-                <label className="block font-bold mb-1">{siteLang === "en" ? "Content" : "محتوى المنشور"}</label>
-                <textarea value={postBody} onChange={e => setPostBody(e.target.value)} maxLength={1500} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[100px] resize-none focus:outline-none" placeholder={siteLang === "en" ? "Write something helpful..." : "اكتب هنا..."} />
-                <span className="text-[10px] text-slate-400 font-bold">{postBody.length}/1500</span>
-              </div>
-              <div>
-                <label className="block font-bold mb-1">{siteLang === "en" ? "Grade Level" : "المرحلة الدراسية"}</label>
-                <select value={postGrade} onChange={e => setPostGrade(e.target.value)} className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none">
-                  <option value="General">{siteLang === "en" ? "General" : "عام لكل المراحل"}</option>
-                  {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-800 text-xs">
+                    {siteLang === "en" ? "Post Title" : "عنوان المشاركة"} <span className="text-red-600">*</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-slate-400">{postTitle.length}/100</span>
+                </div>
+                <input
+                  type="text"
+                  value={postTitle}
+                  onChange={e => setPostTitle(e.target.value)}
+                  maxLength={100}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold focus:outline-none focus:bg-white text-xs"
+                  placeholder={siteLang === "en" ? "Summarize your question or topic..." : "اكتب عنواناً مختصراً وواضحاً..."}
+                />
               </div>
 
-              {/* Multi-Image Upload */}
+              {/* 4. Content */}
               <div>
-                <label className="block font-bold mb-1 text-slate-800">
-                  {siteLang === "en" ? "Attach Study Images" : "إرفاق صور الملازم والملخصات"}
-                </label>
-                <div className="border-2 border-dashed border-slate-300 p-3 bg-slate-50 text-center space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-800 text-xs">
+                    {siteLang === "en" ? "Content Details" : "محتوى المنشور وتفاصيله"} <span className="text-red-600">*</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-slate-400">{postBody.length}/1500</span>
+                </div>
+                <textarea
+                  value={postBody}
+                  onChange={e => setPostBody(e.target.value)}
+                  maxLength={1500}
+                  className="w-full p-2.5 bg-slate-50 border-2 border-slate-900 font-semibold min-h-[110px] resize-y focus:outline-none focus:bg-white text-xs leading-relaxed"
+                  placeholder={siteLang === "en" ? "Write the details of your question, note, or advice..." : "اكتب التفاصيل والملاحظات بوضوح هنا..."}
+                />
+              </div>
+
+              {/* 5. Media & Attachments (Images + YouTube) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Images Upload Box */}
+                <div className="border-2 border-slate-900 p-3 bg-slate-50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <IconImage size={14} className="text-emerald-primary" />
+                      <span>{siteLang === "en" ? "Attach Study Images" : "إرفاق صور الملازم"}</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      {postImages.length > 0 ? `${postImages.length} ${siteLang === "en" ? "images" : "صور"}` : ""}
+                    </span>
+                  </div>
+
                   <input
                     type="file"
                     id="post-images-input"
@@ -8531,82 +8688,107 @@ export default function Home() {
                   />
                   <label
                     htmlFor="post-images-input"
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border border-slate-900 shadow-[1px_1px_0px_#000] cursor-pointer transition-all ${
+                    className={`w-full py-2 bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs border-2 border-dashed border-slate-400 hover:border-slate-900 flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                       isCompressingImages ? "opacity-60 cursor-not-allowed pointer-events-none" : ""
                     }`}
                   >
-                    <IconImage size={14} className="text-emerald-primary" />
+                    <IconPlus size={13} />
                     <span>
                       {isCompressingImages
                         ? (siteLang === "en" ? "Compressing images..." : "جاري ضغط الصور...")
-                        : (siteLang === "en" ? "+ Add images from device" : "+ إضافة صور من جهازك")}
+                        : (siteLang === "en" ? "Select images from device" : "اختيار صور من جهازك")}
                     </span>
                   </label>
-                  <p className="text-[11px] text-slate-500">
+
+                  <p className="text-[10px] text-slate-500 leading-tight">
                     {siteLang === "en"
-                      ? "Images are automatically compressed. Multi-image posts support swipe slider."
-                      : "يتم ضغط الصور تلقائياً. المنشورات متعددة الصور تدعم التمرير بالسحب."}
+                      ? "Images are automatically optimized and compressed for quick loading."
+                      : "يتم ضغط الصور تلقائياً لتسريع التصفح ودعم السحب."}
                   </p>
 
                   {postImages.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-center pt-2">
+                    <div className="flex flex-wrap gap-1.5 pt-1">
                       {postImages.map((img, idx) => (
-                        <div key={idx} className="relative group w-14 h-14 border border-slate-900 bg-white shadow-[1px_1px_0px_#000]">
+                        <div key={idx} className="relative group w-12 h-12 border-2 border-slate-900 bg-white shadow-[1px_1px_0px_#000]">
                           <img src={img} alt={siteLang === "en" ? `Attachment ${idx + 1}` : `مرفق ${idx + 1}`} className="w-full h-full object-cover" />
                           <button
                             type="button"
                             onClick={() => removePostImage(idx)}
-                            className="absolute -top-1.5 -left-1.5 bg-red-600 text-white w-4 h-4 text-[10px] font-black rounded-full flex items-center justify-center border border-slate-900 hover:bg-red-700"
+                            className="absolute -top-1.5 -left-1.5 bg-red-600 text-white w-4 h-4 text-[10px] font-black rounded-full flex items-center justify-center border border-slate-900 hover:bg-red-700 cursor-pointer shadow-xs"
                             title={siteLang === "en" ? "Remove image" : "حذف الصورة"}
                           >
-                            <IconX size={10} />
+                            <IconX size={9} />
                           </button>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* YouTube URL */}
-              <div>
-                <label className="block font-bold mb-1 text-slate-800 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <IconVideo size={13} className="text-red-600" />
-                    <span>{siteLang === "en" ? "YouTube Explanation Link" : "رابط شرح يوتيوب"}</span>
-                  </span>
-                  {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
-                    <span className="text-[10px] text-red-600 font-bold">
-                      {siteLang === "en" ? "Invalid YouTube URL" : "رابط يوتيوب غير صالح"}
+                {/* YouTube Link Box */}
+                <div className="border-2 border-slate-900 p-3 bg-slate-50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <IconVideo size={14} className="text-red-600" />
+                      <span>{siteLang === "en" ? "YouTube Explanation Link" : "رابط شرح يوتيوب"}</span>
                     </span>
-                  )}
-                </label>
-                <input
-                  type="url"
-                  value={postYoutube}
-                  onChange={e => setPostYoutube(e.target.value)}
-                  className={`w-full p-2.5 bg-slate-50 border-2 font-semibold focus:outline-none ${
-                    postYoutube.trim() && !isValidYoutubeUrl(postYoutube)
-                      ? "border-red-600 bg-red-50 text-red-900"
-                      : "border-slate-900"
-                  }`}
-                  placeholder="https://youtube.com/watch?v=... / https://youtu.be/..."
-                />
-                {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
-                  <p className="text-[10px] text-red-600 font-bold mt-1">
-                    {siteLang === "en" ? "Must be a valid YouTube link" : "يجب أن يكون الرابط من موقع يوتيوب"}
+                    {postYoutube.trim() && !isValidYoutubeUrl(postYoutube) && (
+                      <span className="text-[10px] text-red-600 font-black">
+                        {siteLang === "en" ? "Invalid URL" : "رابط غير صالح"}
+                      </span>
+                    )}
+                  </div>
+
+                  <input
+                    type="url"
+                    value={postYoutube}
+                    onChange={e => setPostYoutube(e.target.value)}
+                    className={`w-full p-2 bg-white border-2 font-semibold focus:outline-none text-xs ${
+                      postYoutube.trim() && !isValidYoutubeUrl(postYoutube)
+                        ? "border-red-600 bg-red-50 text-red-900"
+                        : "border-slate-900"
+                    }`}
+                    placeholder="https://youtube.com/watch?v=..."
+                  />
+
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    {siteLang === "en"
+                      ? "Optional: Attach a video explanation from YouTube."
+                      : "اختياري: يمكنك وضع رابط فيديو لشرح مسألة أو ملخص."}
                   </p>
-                )}
+                </div>
               </div>
 
-              <button
-                onClick={submitPost}
-                disabled={!postTitle.trim() || !postBody.trim() || (!!postYoutube.trim() && !isValidYoutubeUrl(postYoutube))}
-                className="w-full py-3 bg-emerald-primary text-white font-black border-2 border-slate-900 shadow-[2px_2px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 hover:bg-emerald-dark active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
-              >
-                {siteLang === "en" ? "Publish Post" : "نشر المشاركة"}
-              </button>
             </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 border-t-2 border-slate-900 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+              <span className="text-[11px] font-bold text-slate-500 hidden sm:inline">
+                {(!postTitle.trim() || !postBody.trim())
+                  ? (siteLang === "en" ? "Title and content are required to publish" : "يرجى كتابة العنوان والمحتوى للنشر")
+                  : (siteLang === "en" ? "Ready to publish" : "جاهز للنشر")}
+              </span>
+
+              <div className="flex items-center gap-2 ms-auto w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setPostModal(false)}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs border-2 border-slate-900 shadow-[1.5px_1.5px_0px_#000] active:translate-x-px active:translate-y-px transition-all cursor-pointer"
+                >
+                  {siteLang === "en" ? "Cancel" : "إلغاء"}
+                </button>
+                <button
+                  type="button"
+                  onClick={submitPost}
+                  disabled={!postTitle.trim() || !postBody.trim() || (!!postYoutube.trim() && !isValidYoutubeUrl(postYoutube))}
+                  className="flex-1 sm:flex-none px-6 py-2 bg-emerald-primary hover:bg-emerald-dark text-white font-black text-xs border-2 border-slate-900 shadow-[2.5px_2.5px_0px_#000] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:border-slate-400 active:translate-x-px active:translate-y-px active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <IconPlus size={14} />
+                  <span>{siteLang === "en" ? "Publish Post" : "نشر المشاركة"}</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
