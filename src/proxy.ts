@@ -9,7 +9,16 @@ import { checkRateLimit, getClientIp } from "@/utils/rateLimit";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Apply Rate Limiting to API Routes
+  // 1. Rewrite legacy/client SPA routes (/main, /feed) to / so existing shared links work seamlessly
+  if (pathname === "/main" || pathname === "/feed") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    const response = NextResponse.rewrite(url);
+    applySecurityHeaders(response);
+    return response;
+  }
+
+  // 2. Apply Rate Limiting to API Routes
   if (pathname.startsWith("/api/")) {
     const ip = getClientIp(request.headers);
 

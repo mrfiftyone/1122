@@ -1183,6 +1183,7 @@ export default function Home() {
 
       // 1. Profile route: /profile or /profile/:username or query ?profile=... / ?user=...
       if (pathname.startsWith("/profile")) {
+        setTargetedPostId(null);
         const parts = window.location.pathname.split("/").filter(Boolean);
         if (parts.length > 1) {
           const userFromPath = decodeURIComponent(parts[1]);
@@ -1197,6 +1198,7 @@ export default function Home() {
 
       const queryProfile = searchParams.get("profile") || searchParams.get("user");
       if (queryProfile) {
+        setTargetedPostId(null);
         setViewedUser(queryProfile);
         setTab("profile");
         return;
@@ -1204,6 +1206,7 @@ export default function Home() {
 
       // 2. Teachers / Directory route: /teachers or /directory or /teachers/:id
       if (pathname === "/teachers" || pathname === "/directory" || pathname.startsWith("/teachers/")) {
+        setTargetedPostId(null);
         const teacherId = searchParams.get("id") || searchParams.get("teacher");
         const parts = window.location.pathname.split("/").filter(Boolean);
         const idFromPath = parts.length > 1 && parts[0].toLowerCase() === "teachers" ? decodeURIComponent(parts[1]) : null;
@@ -1225,12 +1228,14 @@ export default function Home() {
 
       // 3. Notifications route: /notifications
       if (pathname === "/notifications") {
+        setTargetedPostId(null);
         setTab("notifications");
         return;
       }
 
       // 4. Admin route: /admin
       if (pathname === "/admin") {
+        setTargetedPostId(null);
         setTab("admin");
         return;
       }
@@ -1244,6 +1249,7 @@ export default function Home() {
           setTargetedPostId(queryPost);
           return;
         }
+        setTargetedPostId(null);
         setTab("feed");
         return;
       }
@@ -1658,9 +1664,9 @@ export default function Home() {
       return;
     }
 
-    let targetPath = "/main";
+    let targetPath = "/";
     if (tab === "feed") {
-      targetPath = targetedPostId ? `/main?post=${encodeURIComponent(targetedPostId)}` : "/main";
+      targetPath = targetedPostId ? `/?post=${encodeURIComponent(targetedPostId)}` : "/";
     } else if (tab === "directory") {
       targetPath = "/teachers";
     } else if (tab === "teacher") {
@@ -1676,7 +1682,7 @@ export default function Home() {
 
     const currentFull = window.location.pathname + window.location.search;
     if (currentFull !== targetPath) {
-      if ((window.location.pathname === "/" || window.location.pathname === "/main") && targetPath.startsWith("/main")) {
+      if ((window.location.pathname === "/" || window.location.pathname === "/main" || window.location.pathname === "/feed") && (targetPath === "/" || targetPath.startsWith("/?post="))) {
         window.history.replaceState({ tab, viewedUser, teacherId: selectedTeacher?.id }, "", targetPath);
       } else {
         window.history.pushState({ tab, viewedUser, teacherId: selectedTeacher?.id }, "", targetPath);
@@ -1786,22 +1792,27 @@ export default function Home() {
       setSelectedFeedTag("all");
     }
 
-    // 3. Scroll to post card in DOM and highlight
-    const timer = setTimeout(() => {
+    // 3. Robust polling to find DOM card, scroll smoothly, and spotlight
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
       const el = document.getElementById(`post-${targetedPostId}`);
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        clearInterval(interval);
         setScrolledTargetPostId(targetedPostId);
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
 
         el.classList.add("ring-4", "ring-emerald-500", "shadow-[0_0_24px_rgba(16,185,129,0.35)]");
         const removeTimer = setTimeout(() => {
           el.classList.remove("ring-4", "ring-emerald-500", "shadow-[0_0_24px_rgba(16,185,129,0.35)]");
-        }, 4000);
+        }, 5000);
         return () => clearTimeout(removeTimer);
+      } else if (attempts >= 40) {
+        clearInterval(interval);
       }
-    }, 150);
+    }, 100);
 
-    return () => clearTimeout(timer);
+    return () => clearInterval(interval);
   }, [targetedPostId, isInitialLoading, posts, selectedFeedTag, scrolledTargetPostId]);
 
   if (!mounted) return null;
@@ -4297,7 +4308,7 @@ export default function Home() {
     if (!p) return;
 
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const shareUrl = `${origin}/main?post=${encodeURIComponent(postId)}`;
+    const shareUrl = `${origin}/?post=${encodeURIComponent(postId)}`;
     const shareData = {
       title: p.title,
       text: p.body ? p.body.replace(/<!--meta:.*?-->/, "").slice(0, 120) : p.title,
@@ -4331,6 +4342,30 @@ export default function Home() {
 
       (async () => {
         try {
+          // 1. Try Supabase RPC increment_post_shares (works for guest & authenticated)
+          const { data: rpcCount, error: rpcError } = await supabase.rpc("increment_post_shares", { target_post_id: postId });
+          if (!rpcError && typeof rpcCount === "number") {
+            setLocalPostShares(postId, rpcCount);
+            setPostsList(prev => prev.map(post => post.id === postId ? { ...post, shares_count: rpcCount } : post));
+            return;
+          }
+
+          // 2. Call Next.js API /api/share-post
+          const apiRes = await fetch("/api/share-post", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ postId }),
+          });
+          if (apiRes.ok) {
+            const apiData = await apiRes.json();
+            if (typeof apiData.shares_count === "number") {
+              setLocalPostShares(postId, apiData.shares_count);
+              setPostsList(prev => prev.map(post => post.id === postId ? { ...post, shares_count: apiData.shares_count } : post));
+              return;
+            }
+          }
+
+          // 3. Fallback direct update attempt
           const { error } = await supabase.from('posts').update({ shares_count: nextShares }).eq('id', postId);
           if (error && p) {
             let cleanBody = p.body || "";
@@ -4385,6 +4420,13 @@ export default function Home() {
 
       (async () => {
         try {
+          const { data: rpcCount, error: rpcError } = await supabase.rpc("increment_post_bookmarks", { target_post_id: targetId, delta });
+          if (!rpcError && typeof rpcCount === "number") {
+            setLocalPostBookmarks(targetId, rpcCount);
+            setPostsList(prev => prev.map(post => post.id === targetId ? { ...post, bookmarks_count: rpcCount } : post));
+            return;
+          }
+
           const { error } = await supabase.from('posts').update({ bookmarks_count: nextCount }).eq('id', targetId);
           if (error && p) {
             let cleanBody = p.body || "";
@@ -4416,6 +4458,12 @@ export default function Home() {
 
       (async () => {
         try {
+          const { data: rpcCount, error: rpcError } = await supabase.rpc("increment_teacher_bookmarks", { target_teacher_id: targetId, delta });
+          if (!rpcError && typeof rpcCount === "number") {
+            setLocalTeacherBookmarks(targetId, rpcCount);
+            setTeachersList(prev => prev.map(teacher => teacher.id === targetId ? { ...teacher, bookmarks_count: rpcCount } : teacher));
+            return;
+          }
           await supabase.from('teachers').update({ bookmarks_count: nextCount }).eq('id', targetId);
         } catch (e) {
           console.warn("Could not sync teacher bookmark count:", e);
@@ -5294,12 +5342,17 @@ export default function Home() {
 
             {(() => {
               const filteredFeedPosts = activePosts.filter(p => {
+                if (targetedPostId && p.id === targetedPostId) return true;
                 if (selectedFeedTag === "all") return true;
                 if (selectedFeedTag === "discussion") return p.tag === "discussion" || !p.tag;
                 return p.tag === selectedFeedTag;
               });
 
               const sortedFeedPosts = [...filteredFeedPosts].sort((a, b) => {
+                if (targetedPostId) {
+                  if (a.id === targetedPostId) return -1;
+                  if (b.id === targetedPostId) return 1;
+                }
                 const aPin = pinnedPostIds.includes(a.id) || a.pinned;
                 const bPin = pinnedPostIds.includes(b.id) || b.pinned;
                 if (aPin && !bPin) return -1;
@@ -5370,7 +5423,9 @@ export default function Home() {
                         key={p.id}
                         id={`post-${p.id}`}
                         className={`bg-white border-2 space-y-3 transition-all ${
-                          isPinned
+                          p.id === targetedPostId
+                            ? "border-emerald-500 shadow-[4px_4px_0px_#10b981] ring-2 ring-emerald-400 p-5"
+                            : isPinned
                             ? "border-amber-500 shadow-[4px_4px_0px_#d97706] ring-2 ring-amber-400 p-5"
                             : postTagVal === "news"
                             ? "border-blue-900 shadow-[4px_4px_0px_#1e3a8a] p-5"

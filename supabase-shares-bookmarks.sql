@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- IQ ACADEMY: SHARES & BOOKMARKS COUNTERS MIGRATION (IDEMPOTENT)
--- Run this script in your Supabase Dashboard → SQL Editor → Run
+-- Run this script in your Supabase Dashboard -> SQL Editor -> Run
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- 1. Add shares_count and bookmarks_count columns to posts
@@ -14,3 +14,63 @@ ALTER TABLE IF EXISTS public.teachers ADD COLUMN IF NOT EXISTS bookmarks_count i
 UPDATE public.posts SET shares_count = 0 WHERE shares_count IS NULL;
 UPDATE public.posts SET bookmarks_count = 0 WHERE bookmarks_count IS NULL;
 UPDATE public.teachers SET bookmarks_count = 0 WHERE bookmarks_count IS NULL;
+
+-- 4. Function: increment_post_shares
+-- Runs with SECURITY DEFINER so any visitor (guest or logged in) can increment share counter
+CREATE OR REPLACE FUNCTION increment_post_shares(target_post_id text)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  new_count integer;
+BEGIN
+  UPDATE public.posts
+  SET shares_count = COALESCE(shares_count, 0) + 1
+  WHERE id::text = target_post_id
+  RETURNING shares_count INTO new_count;
+
+  RETURN new_count;
+END;
+$$;
+
+-- 5. Function: increment_post_bookmarks
+CREATE OR REPLACE FUNCTION increment_post_bookmarks(target_post_id text, delta integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  new_count integer;
+BEGIN
+  UPDATE public.posts
+  SET bookmarks_count = GREATEST(0, COALESCE(bookmarks_count, 0) + delta)
+  WHERE id::text = target_post_id
+  RETURNING bookmarks_count INTO new_count;
+
+  RETURN new_count;
+END;
+$$;
+
+-- 6. Function: increment_teacher_bookmarks
+CREATE OR REPLACE FUNCTION increment_teacher_bookmarks(target_teacher_id text, delta integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  new_count integer;
+BEGIN
+  UPDATE public.teachers
+  SET bookmarks_count = GREATEST(0, COALESCE(bookmarks_count, 0) + delta)
+  WHERE id::text = target_teacher_id
+  RETURNING bookmarks_count INTO new_count;
+
+  RETURN new_count;
+END;
+$$;
+
+-- 7. Grant execution privileges to anon and authenticated roles
+GRANT EXECUTE ON FUNCTION increment_post_shares(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION increment_post_bookmarks(text, integer) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION increment_teacher_bookmarks(text, integer) TO anon, authenticated;
