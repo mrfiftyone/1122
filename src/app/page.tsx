@@ -957,6 +957,8 @@ export default function Home() {
   const [profileSubTab, setProfileSubTab] = useState<"activities" | "saved">("activities");
   const [userBookmarks, setUserBookmarks] = useState<BookmarkItem[]>([]);
   const [shareToastMessage, setShareToastMessage] = useState("");
+  const [targetedPostId, setTargetedPostId] = useState<string | null>(null);
+  const [scrolledTargetPostId, setScrolledTargetPostId] = useState<string | null>(null);
 
   // Profile Comments Expansion State
   const [expandedProfileComments, setExpandedProfileComments] = useState<Record<string, boolean>>({});
@@ -1238,14 +1240,8 @@ export default function Home() {
         const queryPost = searchParams.get("post") || searchParams.get("p");
         if (queryPost) {
           setTab("feed");
-          setTimeout(() => {
-            const el = document.getElementById(`post-${queryPost}`);
-            if (el) {
-              el.scrollIntoView({ behavior: "smooth", block: "center" });
-              el.classList.add("ring-4", "ring-emerald-400");
-              setTimeout(() => el.classList.remove("ring-4", "ring-emerald-400"), 3000);
-            }
-          }, 350);
+          setSelectedFeedTag("all");
+          setTargetedPostId(queryPost);
           return;
         }
         setTab("feed");
@@ -1664,7 +1660,7 @@ export default function Home() {
 
     let targetPath = "/main";
     if (tab === "feed") {
-      targetPath = "/main";
+      targetPath = targetedPostId ? `/main?post=${encodeURIComponent(targetedPostId)}` : "/main";
     } else if (tab === "directory") {
       targetPath = "/teachers";
     } else if (tab === "teacher") {
@@ -1680,13 +1676,13 @@ export default function Home() {
 
     const currentFull = window.location.pathname + window.location.search;
     if (currentFull !== targetPath) {
-      if (window.location.pathname === "/" && targetPath === "/main") {
+      if ((window.location.pathname === "/" || window.location.pathname === "/main") && targetPath.startsWith("/main")) {
         window.history.replaceState({ tab, viewedUser, teacherId: selectedTeacher?.id }, "", targetPath);
       } else {
         window.history.pushState({ tab, viewedUser, teacherId: selectedTeacher?.id }, "", targetPath);
       }
     }
-  }, [tab, viewedUser, selectedTeacher, mounted, session?.username]);
+  }, [tab, viewedUser, selectedTeacher, mounted, session?.username, targetedPostId]);
 
   // Lockout countdown timer
   useEffect(() => {
@@ -1703,6 +1699,110 @@ export default function Home() {
     }, 1000);
     return () => clearInterval(timer);
   }, [lockoutRemaining]);
+
+  // Deep-link post resolver and spotlight effect
+  useEffect(() => {
+    if (!targetedPostId || isInitialLoading) return;
+    if (scrolledTargetPostId === targetedPostId) return;
+
+    // 1. Check if post exists in current posts list
+    const found = posts.find(p => p.id === targetedPostId);
+    if (!found) {
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('posts')
+            .select('*, comments(*)')
+            .eq('id', targetedPostId)
+            .single();
+
+          if (data && !error) {
+            let cleanBody = data.body || "";
+            let meta: any = {};
+            const metaMatch = cleanBody.match(/<!--meta:(.*?)-->/);
+            if (metaMatch) {
+              try {
+                meta = JSON.parse(metaMatch[1]);
+                cleanBody = cleanBody.replace(/<!--meta:.*?-->/, "").trim();
+              } catch {}
+            }
+            const localShares = getLocalPostShares(data.id);
+            const localBookmarks = getLocalPostBookmarks(data.id);
+            const dbShares = data.shares_count ?? data.shares ?? meta.shares_count ?? meta.shares;
+            const dbBookmarks = data.bookmarks_count ?? data.bookmarks ?? meta.bookmarks_count ?? meta.bookmarks;
+
+            const fetchedPost: Post = {
+              id: data.id,
+              author: data.author,
+              teacherId: data.teacher_id,
+              teacher_id: data.teacher_id,
+              title: data.title,
+              body: cleanBody,
+              tag: (meta.tag || data.tag || "discussion") as PostTag,
+              pinned: meta.pinned !== undefined ? meta.pinned : (data.pinned || false),
+              grade_level: data.grade_level || "General",
+              likes: data.likes || 0,
+              dislikes: data.dislikes || 0,
+              reports: data.reports || 0,
+              shares_count: dbShares !== undefined && dbShares !== null ? Number(dbShares) : localShares,
+              bookmarks_count: dbBookmarks !== undefined && dbBookmarks !== null ? Number(dbBookmarks) : localBookmarks,
+              status: data.status || "active",
+              images: meta.images || [],
+              youtubeUrl: meta.youtubeUrl || data.youtube_url || "",
+              telegramUrl: meta.telegramUrl || data.telegram_url || "",
+              comments: (data.comments || []).map((c: any) => {
+                let cText = c.text || "";
+                let pId = c.parent_id || c.parentId || null;
+                const rMatch = cText.match(/<!--replyTo:(.*?)-->/);
+                if (rMatch) {
+                  pId = rMatch[1];
+                  cText = cText.replace(/<!--replyTo:.*?-->/, "").trim();
+                }
+                return {
+                  id: c.id,
+                  author: c.author,
+                  text: cText,
+                  parentId: pId,
+                  created_at: c.created_at,
+                  likes: c.likes || 0,
+                  dislikes: c.dislikes || 0,
+                  reports: c.reports || 0,
+                };
+              }),
+              created_at: data.created_at,
+            };
+
+            setPostsList(prev => [fetchedPost, ...prev.filter(p => p.id !== fetchedPost.id)]);
+          }
+        } catch (e) {
+          console.warn("Could not fetch targeted post:", e);
+        }
+      })();
+      return;
+    }
+
+    // 2. Make sure category filter is "all" so the post isn't hidden
+    if (selectedFeedTag !== "all") {
+      setSelectedFeedTag("all");
+    }
+
+    // 3. Scroll to post card in DOM and highlight
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`post-${targetedPostId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setScrolledTargetPostId(targetedPostId);
+
+        el.classList.add("ring-4", "ring-emerald-500", "shadow-[0_0_24px_rgba(16,185,129,0.35)]");
+        const removeTimer = setTimeout(() => {
+          el.classList.remove("ring-4", "ring-emerald-500", "shadow-[0_0_24px_rgba(16,185,129,0.35)]");
+        }, 4000);
+        return () => clearTimeout(removeTimer);
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [targetedPostId, isInitialLoading, posts, selectedFeedTag, scrolledTargetPostId]);
 
   if (!mounted) return null;
 
@@ -4197,7 +4297,7 @@ export default function Home() {
     if (!p) return;
 
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const shareUrl = `${origin}/?post=${encodeURIComponent(postId)}`;
+    const shareUrl = `${origin}/main?post=${encodeURIComponent(postId)}`;
     const shareData = {
       title: p.title,
       text: p.body ? p.body.replace(/<!--meta:.*?-->/, "").slice(0, 120) : p.title,
@@ -5333,6 +5433,11 @@ export default function Home() {
                             {postTagVal === "other" && (
                               <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-bold text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
                                 <IconTag size={11} /> {t("tagOther")}
+                              </span>
+                            )}
+                            {p.id === targetedPostId && (
+                              <span className="px-2 py-0.5 bg-emerald-600 text-white font-black text-[10px] border border-slate-900 shadow-[1px_1px_0px_#000] flex items-center gap-1">
+                                <IconLink size={11} /> {siteLang === "en" ? "Shared Post" : "المنشور المشارك"}
                               </span>
                             )}
                           </div>
